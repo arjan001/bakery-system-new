@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface RecipeIngredient {
   id: string;
@@ -33,79 +34,20 @@ const PRODUCT_TYPES = ['White Bread', 'Brown Bread', 'Sourdough', 'Croissant', '
 const UNITS = ['g', 'kg', 'ml', 'L', 'tsp', 'tbsp', 'cups', 'pieces', 'dozen'];
 
 export default function RecipesPage() {
-  const [recipes, setRecipes] = useState<Recipe[]>([
-    {
-      id: '1',
-      name: 'Standard White Bread',
-      code: 'WB-001',
-      category: 'Bread',
-      productType: 'White Bread',
-      batchSize: 1,
-      expectedOutput: 10,
-      outputUnit: 'loaves',
-      ingredients: [
-        { id: '1', name: 'Flour (All Purpose)', quantity: 2500, unit: 'g', costPerUnit: 0.045 },
-        { id: '2', name: 'Yeast (Active Dry)', quantity: 15, unit: 'g', costPerUnit: 0.5 },
-        { id: '3', name: 'Salt', quantity: 25, unit: 'g', costPerUnit: 0.02 },
-        { id: '4', name: 'Sugar', quantity: 50, unit: 'g', costPerUnit: 0.06 },
-        { id: '5', name: 'Butter', quantity: 100, unit: 'g', costPerUnit: 0.35 },
-        { id: '6', name: 'Water (Warm)', quantity: 1500, unit: 'ml', costPerUnit: 0 },
-      ],
-      instructions: '1. Mix dry ingredients. 2. Add warm water and butter. 3. Knead for 10 min. 4. Let rise 1hr. 5. Shape loaves. 6. Bake.',
-      prepTime: 90,
-      bakeTime: 35,
-      bakeTemp: 200,
-      status: 'active',
-    },
-    {
-      id: '2',
-      name: 'Chocolate Muffins',
-      code: 'MF-001',
-      category: 'Cake',
-      productType: 'Muffin',
-      batchSize: 1,
-      expectedOutput: 24,
-      outputUnit: 'pieces',
-      ingredients: [
-        { id: '1', name: 'Flour (All Purpose)', quantity: 500, unit: 'g', costPerUnit: 0.045 },
-        { id: '2', name: 'Cocoa Powder', quantity: 80, unit: 'g', costPerUnit: 0.8 },
-        { id: '3', name: 'Sugar', quantity: 200, unit: 'g', costPerUnit: 0.06 },
-        { id: '4', name: 'Butter', quantity: 150, unit: 'g', costPerUnit: 0.35 },
-        { id: '5', name: 'Eggs', quantity: 4, unit: 'pieces', costPerUnit: 15 },
-        { id: '6', name: 'Baking Powder', quantity: 10, unit: 'g', costPerUnit: 0.3 },
-        { id: '7', name: 'Milk', quantity: 250, unit: 'ml', costPerUnit: 0.05 },
-      ],
-      instructions: '1. Preheat oven. 2. Mix dry ingredients. 3. Melt butter. 4. Combine wet and dry. 5. Fill muffin tins. 6. Bake 20 min.',
-      prepTime: 20,
-      bakeTime: 20,
-      bakeTemp: 180,
-      status: 'active',
-    },
-    {
-      id: '3',
-      name: 'Dinner Buns',
-      code: 'BN-001',
-      category: 'Buns',
-      productType: 'Buns',
-      batchSize: 1,
-      expectedOutput: 30,
-      outputUnit: 'pieces',
-      ingredients: [
-        { id: '1', name: 'Flour (All Purpose)', quantity: 1500, unit: 'g', costPerUnit: 0.045 },
-        { id: '2', name: 'Yeast (Active Dry)', quantity: 10, unit: 'g', costPerUnit: 0.5 },
-        { id: '3', name: 'Salt', quantity: 15, unit: 'g', costPerUnit: 0.02 },
-        { id: '4', name: 'Sugar', quantity: 100, unit: 'g', costPerUnit: 0.06 },
-        { id: '5', name: 'Butter', quantity: 80, unit: 'g', costPerUnit: 0.35 },
-        { id: '6', name: 'Milk', quantity: 400, unit: 'ml', costPerUnit: 0.05 },
-        { id: '7', name: 'Eggs', quantity: 2, unit: 'pieces', costPerUnit: 15 },
-      ],
-      instructions: '1. Mix dry ingredients. 2. Add warm milk, eggs, butter. 3. Knead 8 min. 4. Rise 45 min. 5. Shape buns. 6. Rise again 20 min. 7. Bake.',
-      prepTime: 75,
-      bakeTime: 18,
-      bakeTemp: 190,
-      status: 'active',
-    },
-  ]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+
+  const fetchRecipes = useCallback(async () => {
+    const { data } = await supabase.from('recipes').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) {
+      const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
+        const { data: ings } = await supabase.from('recipe_ingredients').select('*').eq('recipe_id', r.id);
+        return { id: r.id as string, name: (r.name || '') as string, code: (r.code || '') as string, category: (r.product_type || 'Bread') as string, productType: (r.product_type || '') as string, batchSize: (r.batch_size || 1) as number, expectedOutput: (r.expected_output || 0) as number, outputUnit: (r.output_unit || 'pieces') as string, ingredients: (ings || []).map((i: Record<string, unknown>) => ({ id: i.id as string, name: (i.name || '') as string, quantity: (i.quantity || 0) as number, unit: (i.unit || 'g') as string, costPerUnit: (i.cost_per_unit || 0) as number })), instructions: (r.instructions || '') as string, prepTime: (r.prep_time || 0) as number, bakeTime: (r.bake_time || 0) as number, bakeTemp: (r.bake_temp || 180) as number, status: (r.status || 'active') as Recipe['status'] };
+      }));
+      setRecipes(mapped);
+    }
+  }, []);
+
+  useEffect(() => { fetchRecipes(); }, [fetchRecipes]);
 
   const [showForm, setShowForm] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
@@ -142,14 +84,21 @@ export default function RecipesPage() {
     return calcBatchCost(recipe) / recipe.expectedOutput;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editId) {
-      setRecipes(recipes.map(r => r.id === editId ? { ...formData, id: editId } : r));
-      setEditId(null);
-    } else {
-      setRecipes([...recipes, { ...formData, id: Date.now().toString() }]);
-    }
+    const row = { name: formData.name, code: formData.code, product_type: formData.productType, batch_size: formData.batchSize, expected_output: formData.expectedOutput, output_unit: formData.outputUnit, instructions: formData.instructions, prep_time: formData.prepTime, bake_time: formData.bakeTime, bake_temp: formData.bakeTemp, status: formData.status };
+    try {
+      if (editId) {
+        await supabase.from('recipes').update(row).eq('id', editId);
+        await supabase.from('recipe_ingredients').delete().eq('recipe_id', editId);
+        if (formData.ingredients.length > 0) await supabase.from('recipe_ingredients').insert(formData.ingredients.map(i => ({ recipe_id: editId, name: i.name, quantity: i.quantity, unit: i.unit, cost_per_unit: i.costPerUnit })));
+      } else {
+        const { data: created } = await supabase.from('recipes').insert(row).select().single();
+        if (created && formData.ingredients.length > 0) await supabase.from('recipe_ingredients').insert(formData.ingredients.map(i => ({ recipe_id: created.id, name: i.name, quantity: i.quantity, unit: i.unit, cost_per_unit: i.costPerUnit })));
+      }
+      await fetchRecipes();
+    } catch (err) { console.error('Recipe save error:', err); }
+    setEditId(null);
     setFormData(emptyForm);
     setShowForm(false);
   };
@@ -160,8 +109,10 @@ export default function RecipesPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this recipe? Production runs using this recipe will not be affected.')) {
+      await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
+      await supabase.from('recipes').delete().eq('id', id);
       setRecipes(recipes.filter(r => r.id !== id));
     }
   };

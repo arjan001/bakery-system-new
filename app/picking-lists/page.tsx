@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface PickingListItem {
   id: string;
@@ -20,21 +21,20 @@ interface PickingList {
 }
 
 export default function PickingListsPage() {
-  const [pickingLists, setPickingLists] = useState<PickingList[]>([
-    {
-      id: '1',
-      recipeCode: 'SD-001',
-      batchSize: 50,
-      createdDate: '2024-01-15',
-      status: 'completed',
-      items: [
-        { id: '1', ingredient: 'Flour', quantity: 25, unit: 'kg' },
-        { id: '2', ingredient: 'Water', quantity: 15, unit: 'L' },
-        { id: '3', ingredient: 'Salt', quantity: 0.5, unit: 'kg' },
-        { id: '4', ingredient: 'Yeast', quantity: 0.25, unit: 'kg' },
-      ],
-    },
-  ]);
+  const [pickingLists, setPickingLists] = useState<PickingList[]>([]);
+
+  const fetchLists = useCallback(async () => {
+    const { data } = await supabase.from('picking_lists').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) {
+      const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
+        const { data: items } = await supabase.from('picking_list_items').select('*').eq('picking_list_id', r.id);
+        return { id: r.id as string, recipeCode: (r.recipe_code || '') as string, batchSize: (r.batch_size || 0) as number, createdDate: (r.created_date || '') as string, status: (r.status || 'pending') as PickingList['status'], items: (items || []).map((i: Record<string, unknown>) => ({ id: i.id as string, ingredient: (i.ingredient || '') as string, quantity: (i.quantity || 0) as number, unit: (i.unit || 'kg') as string })) };
+      }));
+      setPickingLists(mapped);
+    }
+  }, []);
+
+  useEffect(() => { fetchLists(); }, [fetchLists]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -71,29 +71,21 @@ export default function PickingListsPage() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (editId) {
-      setPickingLists(pickingLists.map(pl => pl.id === editId ? {
-        ...pl,
-        recipeCode: formData.recipeCode,
-        batchSize: parseFloat(formData.batchSize),
-        status: formData.status,
-        items: formData.items,
-      } : pl));
-      setEditId(null);
-    } else {
-      setPickingLists([...pickingLists, {
-        id: Date.now().toString(),
-        recipeCode: formData.recipeCode,
-        batchSize: parseFloat(formData.batchSize),
-        createdDate: new Date().toISOString().split('T')[0],
-        status: formData.status,
-        items: formData.items,
-      }]);
-    }
-
+    const row = { recipe_code: formData.recipeCode, batch_size: parseFloat(formData.batchSize) || 0, status: formData.status };
+    try {
+      if (editId) {
+        await supabase.from('picking_lists').update(row).eq('id', editId);
+        await supabase.from('picking_list_items').delete().eq('picking_list_id', editId);
+        if (formData.items.length > 0) await supabase.from('picking_list_items').insert(formData.items.map(i => ({ picking_list_id: editId, ingredient: i.ingredient, quantity: i.quantity, unit: i.unit })));
+      } else {
+        const { data: created } = await supabase.from('picking_lists').insert(row).select().single();
+        if (created && formData.items.length > 0) await supabase.from('picking_list_items').insert(formData.items.map(i => ({ picking_list_id: created.id, ingredient: i.ingredient, quantity: i.quantity, unit: i.unit })));
+      }
+      await fetchLists();
+    } catch { /* fallback */ }
+    setEditId(null);
     resetForm();
     setShowForm(false);
   };
@@ -114,8 +106,10 @@ export default function PickingListsPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this picking list?')) {
+      await supabase.from('picking_list_items').delete().eq('picking_list_id', id);
+      await supabase.from('picking_lists').delete().eq('id', id);
       setPickingLists(pickingLists.filter(pl => pl.id !== id));
     }
   };

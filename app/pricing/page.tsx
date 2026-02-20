@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface PricingTier {
   id: string;
@@ -16,19 +17,14 @@ interface PricingTier {
 }
 
 export default function PricingPage() {
-  const [tiers, setTiers] = useState<PricingTier[]>([
-    {
-      id: '1',
-      productCode: 'SD-001',
-      productName: 'Sourdough Loaf',
-      cost: 2.5,
-      basePrice: 5.99,
-      wholesale: 4.49,
-      retail: 5.99,
-      margin: 41.6,
-      active: true,
-    },
-  ]);
+  const [tiers, setTiers] = useState<PricingTier[]>([]);
+
+  const fetchTiers = useCallback(async () => {
+    const { data } = await supabase.from('pricing_tiers').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) setTiers(data.map((r: Record<string, unknown>) => ({ id: r.id as string, productCode: (r.product_code || '') as string, productName: (r.product_name || '') as string, cost: (r.cost || 0) as number, basePrice: (r.base_price || 0) as number, wholesale: (r.wholesale_price || 0) as number, retail: (r.retail_price || 0) as number, margin: (r.margin || 0) as number, active: (r.active !== false) as boolean })));
+  }, []);
+
+  useEffect(() => { fetchTiers(); }, [fetchTiers]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -46,40 +42,19 @@ export default function PricingPage() {
     return { wholesale, margin };
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const cost = parseFloat(formData.cost);
     const basePrice = parseFloat(formData.basePrice);
     const discount = parseFloat(formData.wholesaleDiscount);
     const { wholesale, margin } = calculatePrices(cost, basePrice, discount);
-
-    if (editId) {
-      setTiers(tiers.map(t => t.id === editId ? {
-        ...t,
-        productCode: formData.productCode,
-        productName: formData.productName,
-        cost,
-        basePrice,
-        wholesale,
-        retail: basePrice,
-        margin,
-      } : t));
-      setEditId(null);
-    } else {
-      setTiers([...tiers, {
-        id: Date.now().toString(),
-        productCode: formData.productCode,
-        productName: formData.productName,
-        cost,
-        basePrice,
-        wholesale,
-        retail: basePrice,
-        margin,
-        active: true,
-      }]);
-    }
-
+    const row = { product_code: formData.productCode, product_name: formData.productName, cost, base_price: basePrice, wholesale_price: wholesale, retail_price: basePrice, margin, active: true };
+    try {
+      if (editId) await supabase.from('pricing_tiers').update(row).eq('id', editId);
+      else await supabase.from('pricing_tiers').insert(row);
+      await fetchTiers();
+    } catch { /* fallback */ }
+    setEditId(null);
     setFormData({ productCode: '', productName: '', cost: '', basePrice: '', wholesaleDiscount: '25' });
     setShowForm(false);
   };
@@ -96,14 +71,19 @@ export default function PricingPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this pricing tier?')) {
+      await supabase.from('pricing_tiers').delete().eq('id', id);
       setTiers(tiers.filter(t => t.id !== id));
     }
   };
 
-  const toggleActive = (id: string) => {
-    setTiers(tiers.map(t => t.id === id ? {...t, active: !t.active} : t));
+  const toggleActive = async (id: string) => {
+    const tier = tiers.find(t => t.id === id);
+    if (tier) {
+      await supabase.from('pricing_tiers').update({ active: !tier.active }).eq('id', id);
+      setTiers(tiers.map(t => t.id === id ? {...t, active: !t.active} : t));
+    }
   };
 
   const avgMargin = tiers.length > 0 ? (tiers.reduce((sum, t) => sum + t.margin, 0) / tiers.length).toFixed(1) : '0';

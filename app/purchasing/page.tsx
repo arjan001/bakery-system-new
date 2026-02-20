@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface PurchaseItem {
   id: string;
@@ -25,21 +26,20 @@ interface PurchaseOrder {
 }
 
 export default function PurchasingPage() {
-  const [orders, setOrders] = useState<PurchaseOrder[]>([
-    {
-      id: '1',
-      poNumber: 'PO-2024-001',
-      supplier: 'Grain Mills Ltd',
-      orderDate: '2024-01-15',
-      deliveryDate: '2024-01-22',
-      status: 'received',
-      items: [
-        { id: '1', itemId: 'FLOUR-001', ingredient: 'Bread Flour', quantity: 100, unit: 'kg', unitPrice: 0.45, total: 45 },
-        { id: '2', itemId: 'SALT-001', ingredient: 'Sea Salt', quantity: 5, unit: 'kg', unitPrice: 2.5, total: 12.5 },
-      ],
-      notes: 'Standard monthly order',
-    },
-  ]);
+  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+
+  const fetchOrders = useCallback(async () => {
+    const { data } = await supabase.from('purchase_orders').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) {
+      const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
+        const { data: items } = await supabase.from('purchase_order_items').select('*').eq('purchase_order_id', r.id);
+        return { id: r.id as string, poNumber: (r.po_number || '') as string, supplier: (r.supplier || '') as string, orderDate: (r.order_date || '') as string, deliveryDate: (r.delivery_date || '') as string, status: (r.status || 'draft') as PurchaseOrder['status'], notes: (r.notes || '') as string, items: (items || []).map((i: Record<string, unknown>) => ({ id: i.id as string, itemId: (i.item_id || '') as string, ingredient: (i.ingredient || '') as string, quantity: (i.quantity || 0) as number, unit: (i.unit || 'kg') as string, unitPrice: (i.unit_price || 0) as number, total: (i.total || 0) as number })) };
+      }));
+      setOrders(mapped);
+    }
+  }, []);
+
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -90,34 +90,21 @@ export default function PurchasingPage() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (editId) {
-      setOrders(orders.map(o => o.id === editId ? {
-        ...o,
-        poNumber: formData.poNumber,
-        supplier: formData.supplier,
-        orderDate: formData.orderDate,
-        deliveryDate: formData.deliveryDate,
-        status: formData.status,
-        items: formData.items,
-        notes: formData.notes,
-      } : o));
-      setEditId(null);
-    } else {
-      setOrders([...orders, {
-        id: Date.now().toString(),
-        poNumber: formData.poNumber,
-        supplier: formData.supplier,
-        orderDate: formData.orderDate,
-        deliveryDate: formData.deliveryDate,
-        status: formData.status,
-        items: formData.items,
-        notes: formData.notes,
-      }]);
-    }
-
+    const row = { po_number: formData.poNumber, supplier: formData.supplier, order_date: formData.orderDate || null, delivery_date: formData.deliveryDate || null, status: formData.status, notes: formData.notes };
+    try {
+      if (editId) {
+        await supabase.from('purchase_orders').update(row).eq('id', editId);
+        await supabase.from('purchase_order_items').delete().eq('purchase_order_id', editId);
+        if (formData.items.length > 0) await supabase.from('purchase_order_items').insert(formData.items.map(i => ({ purchase_order_id: editId, item_id: i.itemId, ingredient: i.ingredient, quantity: i.quantity, unit: i.unit, unit_price: i.unitPrice, total: i.total })));
+      } else {
+        const { data: created } = await supabase.from('purchase_orders').insert(row).select().single();
+        if (created && formData.items.length > 0) await supabase.from('purchase_order_items').insert(formData.items.map(i => ({ purchase_order_id: created.id, item_id: i.itemId, ingredient: i.ingredient, quantity: i.quantity, unit: i.unit, unit_price: i.unitPrice, total: i.total })));
+      }
+      await fetchOrders();
+    } catch { /* fallback */ }
+    setEditId(null);
     resetForm();
     setShowForm(false);
   };
@@ -149,8 +136,10 @@ export default function PurchasingPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this purchase order?')) {
+      await supabase.from('purchase_order_items').delete().eq('purchase_order_id', id);
+      await supabase.from('purchase_orders').delete().eq('id', id);
       setOrders(orders.filter(o => o.id !== id));
     }
   };

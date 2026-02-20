@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface FoodInfo {
   id: string;
@@ -29,20 +30,14 @@ const ALLERGEN_OPTIONS = [
 ];
 
 export default function FoodInfoPage() {
-  const [items, setItems] = useState<FoodInfo[]>([
-    {
-      id: '1',
-      productName: 'Sourdough Loaf',
-      code: 'SD-001',
-      allergens: ['Gluten'],
-      calories: 265,
-      protein: 9,
-      fat: 1.5,
-      carbs: 52,
-      shelf_life_days: 5,
-      certification: 'Organic',
-    },
-  ]);
+  const [items, setItems] = useState<FoodInfo[]>([]);
+
+  const fetchItems = useCallback(async () => {
+    const { data } = await supabase.from('food_info').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) setItems(data.map((r: Record<string, unknown>) => ({ id: r.id as string, productName: (r.product_name || '') as string, code: (r.code || '') as string, allergens: (r.allergens || []) as string[], calories: (r.calories || 0) as number, protein: (r.protein || 0) as number, fat: (r.fat || 0) as number, carbs: (r.carbs || 0) as number, shelf_life_days: (r.shelf_life_days || 0) as number, certification: (r.certification || '') as string })));
+  }, []);
+
+  useEffect(() => { fetchItems(); }, [fetchItems]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -58,38 +53,15 @@ export default function FoodInfoPage() {
     certification: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (editId) {
-      setItems(items.map(item => item.id === editId ? {
-        ...item,
-        productName: formData.productName,
-        code: formData.code,
-        allergens: formData.allergens,
-        calories: parseFloat(formData.calories),
-        protein: parseFloat(formData.protein),
-        fat: parseFloat(formData.fat),
-        carbs: parseFloat(formData.carbs),
-        shelf_life_days: parseFloat(formData.shelf_life_days),
-        certification: formData.certification,
-      } : item));
-      setEditId(null);
-    } else {
-      setItems([...items, {
-        id: Date.now().toString(),
-        productName: formData.productName,
-        code: formData.code,
-        allergens: formData.allergens,
-        calories: parseFloat(formData.calories),
-        protein: parseFloat(formData.protein),
-        fat: parseFloat(formData.fat),
-        carbs: parseFloat(formData.carbs),
-        shelf_life_days: parseFloat(formData.shelf_life_days),
-        certification: formData.certification,
-      }]);
-    }
-
+    const row = { product_name: formData.productName, code: formData.code, allergens: formData.allergens, calories: parseFloat(formData.calories) || 0, protein: parseFloat(formData.protein) || 0, fat: parseFloat(formData.fat) || 0, carbs: parseFloat(formData.carbs) || 0, shelf_life_days: parseFloat(formData.shelf_life_days) || 0, certification: formData.certification };
+    try {
+      if (editId) await supabase.from('food_info').update(row).eq('id', editId);
+      else await supabase.from('food_info').insert(row);
+      await fetchItems();
+    } catch { /* fallback */ }
+    setEditId(null);
     resetForm();
     setShowForm(false);
   };
@@ -124,8 +96,9 @@ export default function FoodInfoPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this product?')) {
+      await supabase.from('food_info').delete().eq('id', id);
       setItems(items.filter(item => item.id !== id));
     }
   };

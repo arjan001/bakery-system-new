@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface LotTracking {
   id: string;
@@ -19,22 +20,14 @@ interface LotTracking {
 }
 
 export default function LotTrackingPage() {
-  const [lots, setLots] = useState<LotTracking[]>([
-    {
-      id: '1',
-      lotNumber: 'LOT-2024-001-SD',
-      productCode: 'SD-001',
-      productName: 'Sourdough Loaf',
-      batchDate: '2024-01-15',
-      quantity: 480,
-      unit: 'units',
-      expirationDate: '2024-01-20',
-      location: 'Shelf A1',
-      status: 'active',
-      supplier: 'Internal Production',
-      batchNotes: 'Standard batch',
-    },
-  ]);
+  const [lots, setLots] = useState<LotTracking[]>([]);
+
+  const fetchLots = useCallback(async () => {
+    const { data } = await supabase.from('lot_tracking').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) setLots(data.map((r: Record<string, unknown>) => ({ id: r.id as string, lotNumber: (r.lot_number || '') as string, productCode: (r.product_code || '') as string, productName: (r.product_name || '') as string, batchDate: (r.batch_date || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'units') as string, expirationDate: (r.expiration_date || '') as string, location: (r.location || '') as string, status: (r.status || 'active') as LotTracking['status'], supplier: (r.supplier || '') as string, batchNotes: (r.batch_notes || '') as string })));
+  }, []);
+
+  useEffect(() => { fetchLots(); }, [fetchLots]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -52,42 +45,15 @@ export default function LotTrackingPage() {
     batchNotes: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (editId) {
-      setLots(lots.map(lot => lot.id === editId ? {
-        ...lot,
-        lotNumber: formData.lotNumber,
-        productCode: formData.productCode,
-        productName: formData.productName,
-        batchDate: formData.batchDate,
-        quantity: parseFloat(formData.quantity),
-        unit: formData.unit,
-        expirationDate: formData.expirationDate,
-        location: formData.location,
-        status: formData.status,
-        supplier: formData.supplier,
-        batchNotes: formData.batchNotes,
-      } : lot));
-      setEditId(null);
-    } else {
-      setLots([...lots, {
-        id: Date.now().toString(),
-        lotNumber: formData.lotNumber,
-        productCode: formData.productCode,
-        productName: formData.productName,
-        batchDate: formData.batchDate,
-        quantity: parseFloat(formData.quantity),
-        unit: formData.unit,
-        expirationDate: formData.expirationDate,
-        location: formData.location,
-        status: formData.status,
-        supplier: formData.supplier,
-        batchNotes: formData.batchNotes,
-      }]);
-    }
-
+    const row = { lot_number: formData.lotNumber, product_code: formData.productCode, product_name: formData.productName, batch_date: formData.batchDate || null, quantity: parseFloat(formData.quantity) || 0, unit: formData.unit, expiration_date: formData.expirationDate || null, location: formData.location, status: formData.status, supplier: formData.supplier, batch_notes: formData.batchNotes };
+    try {
+      if (editId) await supabase.from('lot_tracking').update(row).eq('id', editId);
+      else await supabase.from('lot_tracking').insert(row);
+      await fetchLots();
+    } catch { /* fallback */ }
+    setEditId(null);
     resetForm();
     setShowForm(false);
   };
@@ -126,8 +92,9 @@ export default function LotTrackingPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this lot?')) {
+      await supabase.from('lot_tracking').delete().eq('id', id);
       setLots(lots.filter(lot => lot.id !== id));
     }
   };

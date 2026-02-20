@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface WasteRecord {
   id: string;
@@ -28,20 +29,14 @@ const WASTE_REASONS = [
 ];
 
 export default function WasteControlPage() {
-  const [records, setRecords] = useState<WasteRecord[]>([
-    {
-      id: '1',
-      date: '2024-01-15',
-      productCode: 'SD-001',
-      productName: 'Sourdough Loaf',
-      quantity: 5,
-      unit: 'units',
-      reason: 'Quality defect',
-      cost: 29.95,
-      batchNumber: 'LOT-2024-001-SD',
-      notes: 'Dark spots on crust',
-    },
-  ]);
+  const [records, setRecords] = useState<WasteRecord[]>([]);
+
+  const fetchRecords = useCallback(async () => {
+    const { data } = await supabase.from('waste_records').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) setRecords(data.map((r: Record<string, unknown>) => ({ id: r.id as string, date: (r.date || '') as string, productCode: (r.product_code || '') as string, productName: (r.product_name || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'units') as string, reason: (r.reason || '') as string, cost: (r.cost || 0) as number, batchNumber: (r.batch_number || '') as string, notes: (r.notes || '') as string })));
+  }, []);
+
+  useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -57,14 +52,15 @@ export default function WasteControlPage() {
     notes: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editId) {
-      setRecords(records.map(r => r.id === editId ? { ...formData, id: editId } : r));
-      setEditId(null);
-    } else {
-      setRecords([...records, { ...formData, id: Date.now().toString() }]);
-    }
+    const row = { date: formData.date || null, product_code: formData.productCode, product_name: formData.productName, quantity: formData.quantity, unit: formData.unit, reason: formData.reason, cost: formData.cost, batch_number: formData.batchNumber, notes: formData.notes };
+    try {
+      if (editId) await supabase.from('waste_records').update(row).eq('id', editId);
+      else await supabase.from('waste_records').insert(row);
+      await fetchRecords();
+    } catch { /* fallback */ }
+    setEditId(null);
     resetForm();
     setShowForm(false);
   };
@@ -89,8 +85,9 @@ export default function WasteControlPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this waste record?')) {
+      await supabase.from('waste_records').delete().eq('id', id);
       setRecords(records.filter(r => r.id !== id));
     }
   };
