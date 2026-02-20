@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Sidebar } from '@/components/sidebar'
+import { Header } from '@/components/header'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -40,9 +41,12 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
-          <main className="flex-1 overflow-auto bg-background">
-            {children}
-          </main>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header />
+            <main className="flex-1 overflow-auto bg-background">
+              {children}
+            </main>
+          </div>
         </div>
         <Analytics />
       </body>

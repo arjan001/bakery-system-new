@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Navigation } from '@/components/navigation';
+import { Modal } from '@/components/modal';
 
 interface WasteRecord {
   id: string;
@@ -46,324 +46,281 @@ export default function WasteControlPage() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    date: '',
+    date: new Date().toISOString().split('T')[0],
     productCode: '',
     productName: '',
-    quantity: '',
+    quantity: 0,
     unit: 'units',
-    reason: '',
-    cost: '',
+    reason: WASTE_REASONS[0],
+    cost: 0,
     batchNumber: '',
     notes: '',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (editId) {
-      setRecords(records.map(r => r.id === editId ? {
-        ...r,
-        date: formData.date,
-        productCode: formData.productCode,
-        productName: formData.productName,
-        quantity: parseFloat(formData.quantity),
-        unit: formData.unit,
-        reason: formData.reason,
-        cost: parseFloat(formData.cost),
-        batchNumber: formData.batchNumber,
-        notes: formData.notes,
-      } : r));
+      setRecords(records.map(r => r.id === editId ? { ...formData, id: editId } : r));
       setEditId(null);
     } else {
-      setRecords([...records, {
-        id: Date.now().toString(),
-        date: formData.date,
-        productCode: formData.productCode,
-        productName: formData.productName,
-        quantity: parseFloat(formData.quantity),
-        unit: formData.unit,
-        reason: formData.reason,
-        cost: parseFloat(formData.cost),
-        batchNumber: formData.batchNumber,
-        notes: formData.notes,
-      }]);
+      setRecords([...records, { ...formData, id: Date.now().toString() }]);
     }
-
-    setFormData({
-      date: '',
-      productCode: '',
-      productName: '',
-      quantity: '',
-      unit: 'units',
-      reason: '',
-      cost: '',
-      batchNumber: '',
-      notes: '',
-    });
+    resetForm();
     setShowForm(false);
   };
 
-  const handleEdit = (record: WasteRecord) => {
-    setEditId(record.id);
+  const resetForm = () => {
     setFormData({
-      date: record.date,
-      productCode: record.productCode,
-      productName: record.productName,
-      quantity: record.quantity.toString(),
-      unit: record.unit,
-      reason: record.reason,
-      cost: record.cost.toString(),
-      batchNumber: record.batchNumber,
-      notes: record.notes,
+      date: new Date().toISOString().split('T')[0],
+      productCode: '',
+      productName: '',
+      quantity: 0,
+      unit: 'units',
+      reason: WASTE_REASONS[0],
+      cost: 0,
+      batchNumber: '',
+      notes: '',
     });
+  };
+
+  const handleEdit = (record: WasteRecord) => {
+    setFormData(record);
+    setEditId(record.id);
     setShowForm(true);
   };
 
   const handleDelete = (id: string) => {
-    setRecords(records.filter(r => r.id !== id));
+    if (confirm('Delete this waste record?')) {
+      setRecords(records.filter(r => r.id !== id));
+    }
   };
 
-  const totalWasteQty = records.reduce((sum, r) => sum + r.quantity, 0);
-  const totalWasteCost = records.reduce((sum, r) => sum + r.cost, 0);
-  const avgWasteCost = records.length > 0 ? (totalWasteCost / records.length).toFixed(2) : '0';
-
-  const reasonCounts = WASTE_REASONS.map(reason => ({
+  const totalWaste = records.reduce((sum, r) => sum + r.cost, 0);
+  const wasteByReason = WASTE_REASONS.map(reason => ({
     reason,
     count: records.filter(r => r.reason === reason).length,
-  })).filter(r => r.count > 0);
+    cost: records.filter(r => r.reason === reason).reduce((sum, r) => sum + r.cost, 0),
+  }));
 
   return (
-    <div className="min-h-screen bg-white">
-      <Navigation />
+    <div className="p-8">
+      <div className="mb-8">
+        <h1 className="mb-2">Production Waste Control</h1>
+        <p className="text-muted-foreground">Track and manage production waste</p>
+      </div>
 
-      <main className="mx-auto max-w-7xl px-4 py-8">
-        <div className="mb-8 flex items-center justify-between border-b-2 border-black pb-4">
-          <h1 className="text-4xl font-black">PRODUCTION WASTE CONTROL</h1>
-          <button
-            onClick={() => {
-              setEditId(null);
-              setFormData({
-                date: '',
-                productCode: '',
-                productName: '',
-                quantity: '',
-                unit: 'units',
-                reason: '',
-                cost: '',
-                batchNumber: '',
-                notes: '',
-              });
-              setShowForm(!showForm);
-            }}
-            className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
-          >
-            {showForm ? 'CANCEL' : '+ LOG WASTE'}
-          </button>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="border border-border rounded-lg p-6 bg-card">
+          <p className="text-sm text-muted-foreground mb-1">Total Waste Records</p>
+          <p className="text-3xl font-bold">{records.length}</p>
         </div>
-
-        <div className="mb-8 grid grid-cols-4 gap-4">
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">TOTAL RECORDS</p>
-            <p className="text-3xl font-black">{records.length}</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">WASTED QTY</p>
-            <p className="text-3xl font-black text-red-600">{totalWasteQty}</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">TOTAL COST</p>
-            <p className="text-3xl font-black">${totalWasteCost.toFixed(2)}</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">AVG COST/RECORD</p>
-            <p className="text-3xl font-black">${avgWasteCost}</p>
-          </div>
+        <div className="border border-border rounded-lg p-6 bg-card">
+          <p className="text-sm text-muted-foreground mb-1">Total Waste Cost</p>
+          <p className="text-3xl font-bold">KSH {totalWaste.toLocaleString()}</p>
         </div>
-
-        {reasonCounts.length > 0 && (
-          <div className="mb-8 border-2 border-black p-6">
-            <h3 className="mb-4 text-lg font-black">WASTE REASON BREAKDOWN</h3>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              {reasonCounts.map((item) => (
-                <div key={item.reason} className="border-2 border-black p-3">
-                  <p className="text-xs font-bold">{item.reason.toUpperCase()}</p>
-                  <p className="text-2xl font-black text-red-600">{item.count}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {showForm && (
-          <div className="mb-8 border-2 border-black p-6">
-            <h2 className="mb-4 text-xl font-black">LOG WASTE RECORD</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold">Date</label>
-                  <input
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({...formData, date: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Batch Number</label>
-                  <input
-                    type="text"
-                    value={formData.batchNumber}
-                    onChange={(e) => setFormData({...formData, batchNumber: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Product Code</label>
-                  <input
-                    type="text"
-                    value={formData.productCode}
-                    onChange={(e) => setFormData({...formData, productCode: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Product Name</label>
-                  <input
-                    type="text"
-                    value={formData.productName}
-                    onChange={(e) => setFormData({...formData, productName: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Quantity</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({...formData, quantity: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Unit</label>
-                  <select
-                    value={formData.unit}
-                    onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                  >
-                    <option value="units">units</option>
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="L">L</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Waste Reason</label>
-                  <select
-                    value={formData.reason}
-                    onChange={(e) => setFormData({...formData, reason: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  >
-                    <option value="">Select reason...</option>
-                    {WASTE_REASONS.map(reason => (
-                      <option key={reason} value={reason}>{reason}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Cost</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.cost}
-                    onChange={(e) => setFormData({...formData, cost: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-bold">Notes</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    rows={3}
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
-              >
-                {editId ? 'UPDATE' : 'LOG'}
-              </button>
-            </form>
-          </div>
-        )}
-
-        <div className="overflow-x-auto border-2 border-black">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b-2 border-black bg-black text-white">
-                <th className="px-4 py-3 text-left font-bold">DATE</th>
-                <th className="px-4 py-3 text-left font-bold">PRODUCT</th>
-                <th className="px-4 py-3 text-left font-bold">CODE</th>
-                <th className="px-4 py-3 text-center font-bold">QTY</th>
-                <th className="px-4 py-3 text-left font-bold">REASON</th>
-                <th className="px-4 py-3 text-right font-bold">COST</th>
-                <th className="px-4 py-3 text-center font-bold">ACTIONS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {records.map((record) => (
-                <tr key={record.id} className="border-b border-gray-300 hover:bg-gray-50">
-                  <td className="px-4 py-3">{record.date}</td>
-                  <td className="px-4 py-3 font-bold">{record.productName}</td>
-                  <td className="px-4 py-3">{record.productCode}</td>
-                  <td className="px-4 py-3 text-center">{record.quantity} {record.unit}</td>
-                  <td className="px-4 py-3 text-sm">{record.reason}</td>
-                  <td className="px-4 py-3 text-right font-bold">${record.cost.toFixed(2)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-center gap-2">
-                      <button
-                        onClick={() => handleEdit(record)}
-                        className="border border-black px-3 py-1 text-sm font-bold hover:bg-black hover:text-white"
-                      >
-                        EDIT
-                      </button>
-                      <button
-                        onClick={() => handleDelete(record.id)}
-                        className="border border-red-600 px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-600 hover:text-white"
-                      >
-                        DELETE
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-border rounded-lg p-6 bg-card">
+          <p className="text-sm text-muted-foreground mb-1">This Month</p>
+          <p className="text-3xl font-bold">{records.filter(r => r.date.startsWith('2024-02')).length}</p>
         </div>
+      </div>
 
-        {records.length === 0 && !showForm && (
-          <div className="mt-8 border-2 border-black p-12 text-center">
-            <p className="mb-4 text-lg font-bold">NO WASTE RECORDS</p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
+      {/* Add Button */}
+      <div className="mb-6">
+        <button
+          onClick={() => {
+            setShowForm(true);
+            setEditId(null);
+            resetForm();
+          }}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold"
+        >
+          + Record Waste
+        </button>
+      </div>
+
+      {/* Form Modal */}
+      <Modal
+        isOpen={showForm}
+        onClose={() => {
+          setShowForm(false);
+          setEditId(null);
+          resetForm();
+        }}
+        title={editId ? 'Edit Waste Record' : 'Record Production Waste'}
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <input
+              type="date"
+              value={formData.date}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              required
+            />
+            <input
+              type="text"
+              placeholder="Product Code"
+              value={formData.productCode}
+              onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              required
+            />
+            <input
+              type="text"
+              placeholder="Product Name"
+              value={formData.productName}
+              onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <input
+              type="number"
+              placeholder="Quantity"
+              value={formData.quantity}
+              onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              required
+            />
+            <select
+              value={formData.unit}
+              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
             >
-              LOG FIRST RECORD
+              <option>units</option>
+              <option>kg</option>
+              <option>liters</option>
+              <option>boxes</option>
+            </select>
+            <input
+              type="number"
+              placeholder="Cost"
+              value={formData.cost}
+              onChange={(e) => setFormData({ ...formData, cost: parseFloat(e.target.value) })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <select
+              value={formData.reason}
+              onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+            >
+              {WASTE_REASONS.map(reason => <option key={reason}>{reason}</option>)}
+            </select>
+            <input
+              type="text"
+              placeholder="Batch Number"
+              value={formData.batchNumber}
+              onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
+              className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+            />
+          </div>
+
+          <textarea
+            placeholder="Additional Notes"
+            value={formData.notes}
+            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none w-full h-20"
+          />
+
+          <div className="flex gap-2 justify-end pt-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(false);
+                setEditId(null);
+                resetForm();
+              }}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold"
+            >
+              {editId ? 'Update' : 'Record'} Waste
             </button>
           </div>
-        )}
-      </main>
+        </form>
+      </Modal>
+
+      {/* Waste by Reason */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold mb-4">Waste Analysis by Reason</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {wasteByReason.map(item => (
+            <div key={item.reason} className="border border-border rounded-lg p-4 bg-card">
+              <p className="text-sm font-medium text-foreground">{item.reason}</p>
+              <p className="text-2xl font-bold mt-2">{item.count}</p>
+              <p className="text-xs text-muted-foreground mt-1">KSH {item.cost.toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Records Table */}
+      <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary border-b border-border">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold">Date</th>
+              <th className="px-4 py-3 text-left font-semibold">Product</th>
+              <th className="px-4 py-3 text-left font-semibold">Quantity</th>
+              <th className="px-4 py-3 text-left font-semibold">Reason</th>
+              <th className="px-4 py-3 text-left font-semibold">Cost</th>
+              <th className="px-4 py-3 text-left font-semibold">Batch</th>
+              <th className="px-4 py-3 text-left font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                  No waste records found
+                </td>
+              </tr>
+            ) : (
+              records.map(record => (
+                <tr key={record.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{record.date}</td>
+                  <td className="px-4 py-3">
+                    <div>
+                      <p className="font-medium">{record.productName}</p>
+                      <p className="text-xs text-muted-foreground">{record.productCode}</p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">{record.quantity} {record.unit}</td>
+                  <td className="px-4 py-3 text-sm">{record.reason}</td>
+                  <td className="px-4 py-3 font-semibold">KSH {record.cost.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{record.batchNumber}</td>
+                  <td className="px-4 py-3 flex gap-2">
+                    <button
+                      onClick={() => handleEdit(record)}
+                      className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(record.id)}
+                      className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors font-medium"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
