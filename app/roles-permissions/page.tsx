@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface Permission {
   id: string;
@@ -23,63 +24,30 @@ interface Role {
 const DEFAULT_CATEGORIES = ['Dashboard', 'Recipes', 'Production', 'Orders', 'Employees', 'POS', 'Inventory', 'Admin', 'Delivery', 'Finance'];
 
 export default function RolesPermissionsPage() {
-  const [roles, setRoles] = useState<Role[]>([
-    {
-      id: '1',
-      name: 'Administrator',
-      description: 'Full system access',
-      permissions: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
-      userCount: 1,
-      createdAt: '2024-01-01',
-    },
-    {
-      id: '2',
-      name: 'Manager',
-      description: 'Can manage production and employees',
-      permissions: ['2', '3', '4', '6', '7', '8'],
-      userCount: 3,
-      createdAt: '2024-01-10',
-    },
-    {
-      id: '3',
-      name: 'Baker',
-      description: 'Production floor access',
-      permissions: ['3', '4', '9'],
-      userCount: 5,
-      createdAt: '2024-01-15',
-    },
-    {
-      id: '4',
-      name: 'Driver',
-      description: 'Delivery and order viewing',
-      permissions: ['6'],
-      userCount: 4,
-      createdAt: '2024-01-20',
-    },
-    {
-      id: '5',
-      name: 'Cashier',
-      description: 'POS access only',
-      permissions: ['8'],
-      userCount: 2,
-      createdAt: '2024-02-01',
-    },
-  ]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
 
-  const [permissions, setPermissions] = useState<Permission[]>([
-    { id: '1', name: 'View Dashboard', description: 'Access dashboard analytics', category: 'Dashboard', enabled: true },
-    { id: '2', name: 'Manage Recipes', description: 'Create, edit, delete recipes', category: 'Recipes', enabled: true },
-    { id: '3', name: 'View Production', description: 'View production reports', category: 'Production', enabled: true },
-    { id: '4', name: 'Manage Production', description: 'Create and manage production runs', category: 'Production', enabled: true },
-    { id: '5', name: 'Manage Orders', description: 'Create and manage customer orders', category: 'Orders', enabled: true },
-    { id: '6', name: 'View Orders', description: 'View customer orders', category: 'Orders', enabled: true },
-    { id: '7', name: 'Manage Employees', description: 'Create, edit, delete employees', category: 'Employees', enabled: true },
-    { id: '8', name: 'Access POS', description: 'Use POS system', category: 'POS', enabled: true },
-    { id: '9', name: 'Manage Inventory', description: 'Manage inventory items', category: 'Inventory', enabled: true },
-    { id: '10', name: 'View Reports', description: 'View system reports', category: 'Admin', enabled: true },
-    { id: '11', name: 'Manage Users', description: 'Create and manage system users', category: 'Admin', enabled: true },
-    { id: '12', name: 'System Settings', description: 'Manage system configuration', category: 'Admin', enabled: true },
-  ]);
+  const fetchRoles = useCallback(async () => {
+    const { data } = await supabase.from('roles').select('*').order('created_at', { ascending: true });
+    if (data) {
+      // Also fetch role_permissions mapping
+      const { data: rp } = await supabase.from('role_permissions').select('*');
+      const rpMap: Record<string, string[]> = {};
+      (rp || []).forEach((r: Record<string, unknown>) => {
+        const rid = r.role_id as string;
+        if (!rpMap[rid]) rpMap[rid] = [];
+        rpMap[rid].push(r.permission_id as string);
+      });
+      setRoles(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, description: (r.description || '') as string, permissions: rpMap[r.id as string] || [], userCount: 0, createdAt: ((r.created_at || '') as string).split('T')[0] })));
+    }
+  }, []);
+
+  const fetchPermissions = useCallback(async () => {
+    const { data } = await supabase.from('permissions').select('*').order('category', { ascending: true });
+    if (data) setPermissions(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, description: (r.description || '') as string, category: (r.category || '') as string, enabled: r.enabled !== false })));
+  }, []);
+
+  useEffect(() => { fetchRoles(); fetchPermissions(); }, [fetchRoles, fetchPermissions]);
 
   const [activeTab, setActiveTab] = useState<'roles' | 'permissions'>('roles');
 
@@ -112,25 +80,26 @@ export default function RolesPermissionsPage() {
     setShowRoleForm(true);
   };
 
-  const handleSubmitRole = (e: React.FormEvent) => {
+  const handleSubmitRole = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingRoleId) {
-      setRoles(roles.map(r => r.id === editingRoleId ? { ...r, name: roleFormData.name, description: roleFormData.description, permissions: selectedPermissions } : r));
-    } else {
-      setRoles([...roles, {
-        id: Date.now().toString(),
-        name: roleFormData.name,
-        description: roleFormData.description,
-        permissions: selectedPermissions,
-        userCount: 0,
-        createdAt: new Date().toISOString().split('T')[0],
-      }]);
-    }
+    try {
+      if (editingRoleId) {
+        await supabase.from('roles').update({ name: roleFormData.name, description: roleFormData.description }).eq('id', editingRoleId);
+        await supabase.from('role_permissions').delete().eq('role_id', editingRoleId);
+        if (selectedPermissions.length > 0) await supabase.from('role_permissions').insert(selectedPermissions.map(pid => ({ role_id: editingRoleId, permission_id: pid })));
+      } else {
+        const { data: created } = await supabase.from('roles').insert({ name: roleFormData.name, description: roleFormData.description }).select().single();
+        if (created && selectedPermissions.length > 0) await supabase.from('role_permissions').insert(selectedPermissions.map(pid => ({ role_id: created.id, permission_id: pid })));
+      }
+      await fetchRoles();
+    } catch { /* fallback */ }
     setShowRoleForm(false);
   };
 
-  const handleDeleteRole = (id: string) => {
+  const handleDeleteRole = async (id: string) => {
     if (confirm('Delete this role?')) {
+      await supabase.from('role_permissions').delete().eq('role_id', id);
+      await supabase.from('roles').delete().eq('id', id);
       setRoles(roles.filter(r => r.id !== id));
     }
   };
@@ -167,38 +136,35 @@ export default function RolesPermissionsPage() {
     setShowPermForm(true);
   };
 
-  const handleSubmitPerm = (e: React.FormEvent) => {
+  const handleSubmitPerm = async (e: React.FormEvent) => {
     e.preventDefault();
     const category = permFormData.category === 'custom' ? permFormData.customCategory : permFormData.category;
-
-    if (editingPermId) {
-      setPermissions(permissions.map(p => p.id === editingPermId ? {
-        ...p,
-        name: permFormData.name,
-        description: permFormData.description,
-        category,
-      } : p));
-    } else {
-      setPermissions([...permissions, {
-        id: Date.now().toString(),
-        name: permFormData.name,
-        description: permFormData.description,
-        category,
-        enabled: true,
-      }]);
-    }
+    try {
+      if (editingPermId) {
+        await supabase.from('permissions').update({ name: permFormData.name, description: permFormData.description, category }).eq('id', editingPermId);
+      } else {
+        await supabase.from('permissions').insert({ name: permFormData.name, description: permFormData.description, category, enabled: true });
+      }
+      await fetchPermissions();
+    } catch { /* fallback */ }
     setShowPermForm(false);
   };
 
-  const handleDeletePerm = (id: string) => {
+  const handleDeletePerm = async (id: string) => {
     if (confirm('Delete this permission? It will be removed from all roles.')) {
+      await supabase.from('role_permissions').delete().eq('permission_id', id);
+      await supabase.from('permissions').delete().eq('id', id);
       setPermissions(permissions.filter(p => p.id !== id));
       setRoles(roles.map(r => ({ ...r, permissions: r.permissions.filter(p => p !== id) })));
     }
   };
 
-  const handleTogglePerm = (id: string) => {
-    setPermissions(permissions.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p));
+  const handleTogglePerm = async (id: string) => {
+    const perm = permissions.find(p => p.id === id);
+    if (perm) {
+      await supabase.from('permissions').update({ enabled: !perm.enabled }).eq('id', id);
+      setPermissions(permissions.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p));
+    }
   };
 
   // Get unique categories from permissions

@@ -50,7 +50,13 @@ export default function OrdersPage() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  const [drivers] = useState(['John Mwangi', 'Mary Kipchoge', 'David Omondi']);
+  const [drivers, setDrivers] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase.from('employees').select('first_name, last_name').eq('category', 'Driver').eq('status', 'Active').then(({ data }) => {
+      if (data) setDrivers(data.map((d: Record<string, unknown>) => `${d.first_name} ${d.last_name}`));
+    });
+  }, []);
   const [showForm, setShowForm] = useState(false);
   const [showTracking, setShowTracking] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);

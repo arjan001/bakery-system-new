@@ -54,7 +54,7 @@ export function Header() {
     <header className="border-b border-border bg-background px-6 py-3 flex items-center justify-between">
       {/* Left: breadcrumb / title area */}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground font-semibold">SNACKOH BAKERY</span>
+        <span className="text-xs text-muted-foreground font-semibold">SNACKOH BAKERS</span>
       </div>
 
       {/* Right: user profile */}

@@ -1,561 +1,329 @@
 'use client';
 
-import { useState } from 'react';
-import { Modal } from '@/components/modal';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
-interface Category {
-  id: string;
-  name: string;
-  description: string;
-}
-
-interface Ingredient {
-  id: string;
-  name: string;
-  unit: string;
-  costPerUnit: number;
-}
-
-interface Recipe {
-  id: string;
-  name: string;
-  categoryId: string;
-  ingredients: { ingredientId: string; quantity: number }[];
-  yield: number;
-}
-
-interface MenuItem {
-  id: string;
-  name: string;
-  recipeId: string;
-  price: number;
-  categoryId: string;
-}
+type SettingsTab = 'general' | 'receipt' | 'security' | 'backup' | 'sessions';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'categories' | 'ingredients' | 'recipes' | 'menu'>('categories');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState('');
 
-  const [categories, setCategories] = useState<Category[]>([
-    { id: '1', name: 'Breads', description: 'Various bread products' },
-    { id: '2', name: 'Pastries', description: 'Sweet pastry items' },
-    { id: '3', name: 'Cakes', description: 'Custom cakes and desserts' },
-  ]);
-
-  const [ingredients, setIngredients] = useState<Ingredient[]>([
-    { id: '1', name: 'Flour', unit: 'kg', costPerUnit: 45 },
-    { id: '2', name: 'Yeast', unit: 'g', costPerUnit: 0.5 },
-    { id: '3', name: 'Salt', unit: 'g', costPerUnit: 0.05 },
-    { id: '4', name: 'Sugar', unit: 'kg', costPerUnit: 60 },
-    { id: '5', name: 'Butter', unit: 'kg', costPerUnit: 350 },
-    { id: '6', name: 'Eggs', unit: 'dozen', costPerUnit: 150 },
-  ]);
-
-  const [recipes, setRecipes] = useState<Recipe[]>([
-    {
-      id: '1',
-      name: 'White Bread',
-      categoryId: '1',
-      ingredients: [
-        { ingredientId: '1', quantity: 2.5 },
-        { ingredientId: '2', quantity: 10 },
-        { ingredientId: '3', quantity: 15 },
-      ],
-      yield: 10,
-    },
-    {
-      id: '2',
-      name: 'Croissant',
-      categoryId: '2',
-      ingredients: [
-        { ingredientId: '1', quantity: 1.5 },
-        { ingredientId: '5', quantity: 0.5 },
-        { ingredientId: '4', quantity: 0.2 },
-      ],
-      yield: 12,
-    },
-  ]);
-
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([
-    { id: '1', name: 'White Loaf', recipeId: '1', price: 200, categoryId: '1' },
-    { id: '2', name: 'Croissant Single', recipeId: '2', price: 150, categoryId: '2' },
-  ]);
-
-  // Modal States
-  const [showCategoryForm, setShowCategoryForm] = useState(false);
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
-
-  const [showIngredientForm, setShowIngredientForm] = useState(false);
-  const [editingIngredientId, setEditingIngredientId] = useState<string | null>(null);
-  const [ingredientForm, setIngredientForm] = useState({ name: '', unit: 'kg', costPerUnit: 0 });
-
-  const [showRecipeForm, setShowRecipeForm] = useState(false);
-  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
-  const [recipeForm, setRecipeForm] = useState({
-    name: '',
-    categoryId: '',
-    ingredients: [] as { ingredientId: string; quantity: number }[],
-    yield: 1,
+  // ── General Settings ──
+  const [general, setGeneral] = useState({
+    businessName: 'Snackoh Bakers',
+    tagline: 'Quality Baked Goods',
+    phone: '+254 700 000 000',
+    email: 'info@snackoh.com',
+    address: 'Nairobi, Kenya',
+    currency: 'KES',
+    taxRate: 16,
+    timezone: 'Africa/Nairobi',
+    language: 'en',
+    logoUrl: '',
   });
 
-  const [showMenuForm, setShowMenuForm] = useState(false);
-  const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
-  const [menuForm, setMenuForm] = useState({ name: '', recipeId: '', price: 0, categoryId: '' });
+  // ── Receipt Settings ──
+  const [receipt, setReceipt] = useState({
+    showLogo: true,
+    headerText: 'SNACKOH BAKERS',
+    subHeaderText: 'Quality Baked Goods',
+    footerText: 'Thank you for choosing Snackoh!',
+    showTax: true,
+    showCashier: true,
+    showCustomer: true,
+    disclaimer: 'Goods once sold are not returnable',
+    paperWidth: '80mm',
+    autoPrint: false,
+  });
 
-  // Handlers for Categories
-  const handleCategorySubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingCategoryId) {
-      setCategories(categories.map(c => c.id === editingCategoryId ? { ...c, ...categoryForm } : c));
-    } else {
-      setCategories([...categories, { id: Date.now().toString(), ...categoryForm }]);
-    }
-    setCategoryForm({ name: '', description: '' });
-    setEditingCategoryId(null);
-    setShowCategoryForm(false);
+  // ── Security Settings ──
+  const [security, setSecurity] = useState({
+    requirePosPin: true,
+    pinLength: 4,
+    sessionTimeout: 30,
+    maxLoginAttempts: 5,
+    enforceStrongPasswords: false,
+    twoFactorAuth: false,
+    auditLogging: true,
+    ipWhitelist: '',
+  });
+
+  // ── Backup Settings ──
+  const [backup, setBackup] = useState({
+    autoBackup: true,
+    backupFrequency: 'daily',
+    backupTime: '02:00',
+    retentionDays: 30,
+    lastBackup: 'Never',
+    backupLocation: 'supabase',
+  });
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('snackoh_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
+        if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
+        if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
+        if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const saveSettings = () => {
+    setSaving(true);
+    localStorage.setItem('snackoh_settings', JSON.stringify({ general, receipt, security, backup }));
+    setTimeout(() => { setSaving(false); setSavedMsg('Settings saved successfully!'); setTimeout(() => setSavedMsg(''), 3000); }, 500);
   };
 
-  const handleCategoryEdit = (cat: Category) => {
-    setCategoryForm(cat);
-    setEditingCategoryId(cat.id);
-    setShowCategoryForm(true);
-  };
+  // ── Active Sessions (from Supabase) ──
+  const [sessions, setSessions] = useState<{ id: string; email: string; lastActive: string; device: string }[]>([]);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        setSessions([{ id: data.session.access_token.slice(-8), email: data.session.user.email || 'admin', lastActive: new Date().toLocaleString(), device: navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop' }]);
+      }
+    });
+  }, []);
 
-  const handleCategoryDelete = (id: string) => {
-    if (confirm('Delete this category?')) {
-      setCategories(categories.filter(c => c.id !== id));
-    }
-  };
+  const tabs: { key: SettingsTab; label: string; icon: string; tip: string }[] = [
+    { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
+    { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
+    { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
+    { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
+    { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
+  ];
 
-  // Handlers for Ingredients
-  const handleIngredientSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingIngredientId) {
-      setIngredients(ingredients.map(i => i.id === editingIngredientId ? { ...i, ...ingredientForm } : i));
-    } else {
-      setIngredients([...ingredients, { id: Date.now().toString(), ...ingredientForm }]);
-    }
-    setIngredientForm({ name: '', unit: 'kg', costPerUnit: 0 });
-    setEditingIngredientId(null);
-    setShowIngredientForm(false);
-  };
-
-  const handleIngredientEdit = (ing: Ingredient) => {
-    setIngredientForm(ing);
-    setEditingIngredientId(ing.id);
-    setShowIngredientForm(true);
-  };
-
-  const handleIngredientDelete = (id: string) => {
-    if (confirm('Delete this ingredient?')) {
-      setIngredients(ingredients.filter(i => i.id !== id));
-    }
-  };
-
-  // Handlers for Recipes
-  const handleRecipeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingRecipeId) {
-      setRecipes(recipes.map(r => r.id === editingRecipeId ? { ...r, ...recipeForm } : r));
-    } else {
-      setRecipes([...recipes, { id: Date.now().toString(), ...recipeForm }]);
-    }
-    setRecipeForm({ name: '', categoryId: '', ingredients: [], yield: 1 });
-    setEditingRecipeId(null);
-    setShowRecipeForm(false);
-  };
-
-  const handleRecipeEdit = (rec: Recipe) => {
-    setRecipeForm(rec);
-    setEditingRecipeId(rec.id);
-    setShowRecipeForm(true);
-  };
-
-  const handleRecipeDelete = (id: string) => {
-    if (confirm('Delete this recipe?')) {
-      setRecipes(recipes.filter(r => r.id !== id));
-    }
-  };
-
-  // Handlers for Menu Items
-  const handleMenuSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingMenuId) {
-      setMenuItems(menuItems.map(m => m.id === editingMenuId ? { ...m, ...menuForm } : m));
-    } else {
-      setMenuItems([...menuItems, { id: Date.now().toString(), ...menuForm }]);
-    }
-    setMenuForm({ name: '', recipeId: '', price: 0, categoryId: '' });
-    setEditingMenuId(null);
-    setShowMenuForm(false);
-  };
-
-  const handleMenuEdit = (item: MenuItem) => {
-    setMenuForm(item);
-    setEditingMenuId(item.id);
-    setShowMenuForm(true);
-  };
-
-  const handleMenuDelete = (id: string) => {
-    if (confirm('Delete this menu item?')) {
-      setMenuItems(menuItems.filter(m => m.id !== id));
-    }
-  };
+  const inputCls = 'w-full px-3 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-background';
+  const labelCls = 'block text-xs text-muted-foreground mb-1 font-medium';
 
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="mb-2">System Settings & Configuration</h1>
-        <p className="text-muted-foreground">Manage recipes, categories, ingredients, and menu items</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="mb-2">System Settings</h1>
+          <p className="text-muted-foreground">Configure system preferences, receipt printing, security & backups</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {savedMsg && <span className="text-sm text-green-600 font-medium">{savedMsg}</span>}
+          <button onClick={saveSettings} disabled={saving} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save All Settings'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-border">
-        {(['categories', 'ingredients', 'recipes', 'menu'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-3 font-semibold border-b-2 transition-colors ${
-              activeTab === tab
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+      <div className="flex gap-2 mb-6 border-b border-border overflow-x-auto">
+        {tabs.map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} title={tab.tip} className={`flex items-center gap-2 px-4 py-3 font-medium border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === tab.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            <span>{tab.icon}</span>{tab.label}
           </button>
         ))}
       </div>
 
-      {/* Categories Tab */}
-      {activeTab === 'categories' && (
-        <div>
-          <div className="mb-6 flex justify-end">
-            <button
-              onClick={() => {
-                setShowCategoryForm(true);
-                setEditingCategoryId(null);
-                setCategoryForm({ name: '', description: '' });
-              }}
-              className="btn-primary"
-            >
-              + Add Category
-            </button>
+      {/* ── GENERAL ── */}
+      {activeTab === 'general' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Business Information</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className={labelCls}>Business Name</label><input type="text" value={general.businessName} onChange={e => setGeneral({ ...general, businessName: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Tagline</label><input type="text" value={general.tagline} onChange={e => setGeneral({ ...general, tagline: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Phone</label><input type="tel" value={general.phone} onChange={e => setGeneral({ ...general, phone: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Email</label><input type="email" value={general.email} onChange={e => setGeneral({ ...general, email: e.target.value })} className={inputCls} /></div>
+              <div className="col-span-2"><label className={labelCls}>Address</label><input type="text" value={general.address} onChange={e => setGeneral({ ...general, address: e.target.value })} className={inputCls} /></div>
+            </div>
           </div>
 
-          <Modal isOpen={showCategoryForm} onClose={() => setShowCategoryForm(false)} title={editingCategoryId ? 'Edit Category' : 'Add Category'}>
-            <form onSubmit={handleCategorySubmit} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Category Name"
-                value={categoryForm.name}
-                onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                required
-              />
-              <textarea
-                placeholder="Description"
-                value={categoryForm.description}
-                onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                rows={3}
-              />
-              <div className="flex gap-2 justify-end pt-4 border-t border-border">
-                <button type="button" onClick={() => setShowCategoryForm(false)} className="btn-secondary">Cancel</button>
-                <button type="submit" className="btn-primary">Save Category</button>
-              </div>
-            </form>
-          </Modal>
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Regional & Tax</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <div><label className={labelCls}>Currency</label><select value={general.currency} onChange={e => setGeneral({ ...general, currency: e.target.value })} className={inputCls}><option>KES</option><option>USD</option><option>EUR</option><option>GBP</option></select></div>
+              <div><label className={labelCls}>Tax Rate (%)</label><input type="number" value={general.taxRate} onChange={e => setGeneral({ ...general, taxRate: parseFloat(e.target.value) || 0 })} className={inputCls} /></div>
+              <div><label className={labelCls}>Timezone</label><select value={general.timezone} onChange={e => setGeneral({ ...general, timezone: e.target.value })} className={inputCls}><option>Africa/Nairobi</option><option>UTC</option><option>Europe/London</option></select></div>
+            </div>
+          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {categories.map(cat => (
-              <div key={cat.id} className="border border-border rounded-lg p-4 bg-card hover:shadow-md transition-shadow">
-                <h3 className="font-semibold mb-1">{cat.name}</h3>
-                <p className="text-sm text-muted-foreground mb-4">{cat.description}</p>
-                <div className="flex gap-2">
-                  <button onClick={() => handleCategoryEdit(cat)} className="px-3 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">Edit</button>
-                  <button onClick={() => handleCategoryDelete(cat.id)} className="px-3 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">Delete</button>
-                </div>
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Logo</h3>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 bg-secondary rounded-lg flex items-center justify-center text-2xl font-black text-primary border-2 border-dashed border-border">
+                {general.logoUrl ? <img src={general.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" /> : 'S'}
               </div>
-            ))}
+              <div>
+                <input type="text" placeholder="Logo URL (or upload to Supabase Storage)" value={general.logoUrl} onChange={e => setGeneral({ ...general, logoUrl: e.target.value })} className={`${inputCls} w-80`} />
+                <p className="text-xs text-muted-foreground mt-1">Paste a URL or upload to Supabase Storage bucket</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Ingredients Tab */}
-      {activeTab === 'ingredients' && (
-        <div>
-          <div className="mb-6 flex justify-end">
-            <button
-              onClick={() => {
-                setShowIngredientForm(true);
-                setEditingIngredientId(null);
-                setIngredientForm({ name: '', unit: 'kg', costPerUnit: 0 });
-              }}
-              className="btn-primary"
-            >
-              + Add Ingredient
-            </button>
-          </div>
-
-          <Modal isOpen={showIngredientForm} onClose={() => setShowIngredientForm(false)} title={editingIngredientId ? 'Edit Ingredient' : 'Add Ingredient'}>
-            <form onSubmit={handleIngredientSubmit} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Ingredient Name"
-                value={ingredientForm.name}
-                onChange={(e) => setIngredientForm({ ...ingredientForm, name: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                required
-              />
-              <input
-                type="text"
-                placeholder="Unit (kg, g, dozen, etc)"
-                value={ingredientForm.unit}
-                onChange={(e) => setIngredientForm({ ...ingredientForm, unit: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-              />
-              <input
-                type="number"
-                placeholder="Cost Per Unit"
-                value={ingredientForm.costPerUnit}
-                onChange={(e) => setIngredientForm({ ...ingredientForm, costPerUnit: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                step="0.01"
-              />
-              <div className="flex gap-2 justify-end pt-4 border-t border-border">
-                <button type="button" onClick={() => setShowIngredientForm(false)} className="btn-secondary">Cancel</button>
-                <button type="submit" className="btn-primary">Save Ingredient</button>
+      {/* ── RECEIPT ── */}
+      {activeTab === 'receipt' && (
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div className="border border-border rounded-lg p-6 bg-card">
+              <h3 className="font-semibold mb-4">Receipt Content</h3>
+              <div className="space-y-3">
+                <div><label className={labelCls}>Header Text</label><input type="text" value={receipt.headerText} onChange={e => setReceipt({ ...receipt, headerText: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>Sub-Header</label><input type="text" value={receipt.subHeaderText} onChange={e => setReceipt({ ...receipt, subHeaderText: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>Footer Message</label><input type="text" value={receipt.footerText} onChange={e => setReceipt({ ...receipt, footerText: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>Disclaimer</label><input type="text" value={receipt.disclaimer} onChange={e => setReceipt({ ...receipt, disclaimer: e.target.value })} className={inputCls} /></div>
               </div>
-            </form>
-          </Modal>
-
-          <div className="border border-border rounded-lg overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-secondary border-b border-border">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Ingredient</th>
-                  <th className="px-4 py-3 text-left font-semibold">Unit</th>
-                  <th className="px-4 py-3 text-right font-semibold">Cost/Unit</th>
-                  <th className="px-4 py-3 text-left font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ingredients.map(ing => (
-                  <tr key={ing.id} className="border-b border-border hover:bg-secondary/50">
-                    <td className="px-4 py-3 font-medium">{ing.name}</td>
-                    <td className="px-4 py-3">{ing.unit}</td>
-                    <td className="px-4 py-3 text-right">KES {ing.costPerUnit.toFixed(2)}</td>
-                    <td className="px-4 py-3 flex gap-2">
-                      <button onClick={() => handleIngredientEdit(ing)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">Edit</button>
-                      <button onClick={() => handleIngredientDelete(ing.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Recipes Tab */}
-      {activeTab === 'recipes' && (
-        <div>
-          <div className="mb-6 flex justify-end">
-            <button
-              onClick={() => {
-                setShowRecipeForm(true);
-                setEditingRecipeId(null);
-                setRecipeForm({ name: '', categoryId: '', ingredients: [], yield: 1 });
-              }}
-              className="btn-primary"
-            >
-              + Add Recipe
-            </button>
-          </div>
-
-          <Modal isOpen={showRecipeForm} onClose={() => setShowRecipeForm(false)} title={editingRecipeId ? 'Edit Recipe' : 'Add Recipe'} size="lg">
-            <form onSubmit={handleRecipeSubmit} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Recipe Name"
-                value={recipeForm.name}
-                onChange={(e) => setRecipeForm({ ...recipeForm, name: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                required
-              />
-              <select
-                value={recipeForm.categoryId}
-                onChange={(e) => setRecipeForm({ ...recipeForm, categoryId: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-              >
-                <option value="">Select Category</option>
-                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-              </select>
-              <input
-                type="number"
-                placeholder="Yield (how many units does this recipe make)"
-                value={recipeForm.yield}
-                onChange={(e) => setRecipeForm({ ...recipeForm, yield: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                min="1"
-              />
-              <div className="border border-border rounded-lg p-4 bg-secondary">
-                <h4 className="font-semibold mb-3">Ingredients</h4>
-                {recipeForm.ingredients.map((ing, idx) => (
-                  <div key={idx} className="flex gap-2 mb-2">
-                    <select
-                      value={ing.ingredientId}
-                      onChange={(e) => {
-                        const newIng = [...recipeForm.ingredients];
-                        newIng[idx].ingredientId = e.target.value;
-                        setRecipeForm({ ...recipeForm, ingredients: newIng });
-                      }}
-                      className="flex-1 px-2 py-1 border border-border rounded text-sm"
-                    >
-                      <option value="">Select Ingredient</option>
-                      {ingredients.map(ing => <option key={ing.id} value={ing.id}>{ing.name}</option>)}
-                    </select>
-                    <input
-                      type="number"
-                      placeholder="Qty"
-                      value={ing.quantity}
-                      onChange={(e) => {
-                        const newIng = [...recipeForm.ingredients];
-                        newIng[idx].quantity = parseFloat(e.target.value);
-                        setRecipeForm({ ...recipeForm, ingredients: newIng });
-                      }}
-                      className="w-24 px-2 py-1 border border-border rounded text-sm"
-                      step="0.1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newIng = recipeForm.ingredients.filter((_, i) => i !== idx);
-                        setRecipeForm({ ...recipeForm, ingredients: newIng });
-                      }}
-                      className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200"
-                    >
-                      Remove
+            </div>
+            <div className="border border-border rounded-lg p-6 bg-card">
+              <h3 className="font-semibold mb-4">Receipt Options</h3>
+              <div className="space-y-3">
+                {[
+                  { key: 'showLogo', label: 'Show logo on receipt' },
+                  { key: 'showTax', label: 'Show tax breakdown' },
+                  { key: 'showCashier', label: 'Show cashier name' },
+                  { key: 'showCustomer', label: 'Show customer name' },
+                  { key: 'autoPrint', label: 'Auto-print after sale' },
+                ].map(opt => (
+                  <label key={opt.key} className="flex items-center justify-between cursor-pointer">
+                    <span className="text-sm">{opt.label}</span>
+                    <button type="button" onClick={() => setReceipt({ ...receipt, [opt.key]: !receipt[opt.key as keyof typeof receipt] })} className={`w-10 h-5 rounded-full transition-colors ${receipt[opt.key as keyof typeof receipt] ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${receipt[opt.key as keyof typeof receipt] ? 'translate-x-5' : 'translate-x-0.5'}`} />
                     </button>
-                  </div>
+                  </label>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setRecipeForm({ ...recipeForm, ingredients: [...recipeForm.ingredients, { ingredientId: '', quantity: 1 }] })}
-                  className="text-sm text-primary hover:underline"
-                >
-                  + Add Ingredient
-                </button>
+                <div><label className={labelCls}>Paper Width</label><select value={receipt.paperWidth} onChange={e => setReceipt({ ...receipt, paperWidth: e.target.value })} className={inputCls}><option>58mm</option><option>80mm</option></select></div>
               </div>
-              <div className="flex gap-2 justify-end pt-4 border-t border-border">
-                <button type="button" onClick={() => setShowRecipeForm(false)} className="btn-secondary">Cancel</button>
-                <button type="submit" className="btn-primary">Save Recipe</button>
-              </div>
-            </form>
-          </Modal>
+            </div>
+          </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            {recipes.map(rec => (
-              <div key={rec.id} className="border border-border rounded-lg p-4 bg-card">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h3 className="font-semibold">{rec.name}</h3>
-                    <p className="text-xs text-muted-foreground">Category: {categories.find(c => c.id === rec.categoryId)?.name} | Yield: {rec.yield}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleRecipeEdit(rec)} className="px-3 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">Edit</button>
-                    <button onClick={() => handleRecipeDelete(rec.id)} className="px-3 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">Delete</button>
-                  </div>
-                </div>
+          {/* Receipt Preview */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Receipt Preview</h3>
+            <div className="bg-white border border-gray-200 rounded-lg p-4 max-w-[300px] mx-auto font-mono text-[11px] shadow-sm">
+              <div className="text-center mb-2">
+                <p className="text-sm font-black">{receipt.headerText}</p>
+                <p className="text-[10px]">{receipt.subHeaderText}</p>
+                <p className="text-[10px]">{general.phone}</p>
+                <hr className="border-dashed my-2" />
+                <p className="text-[10px]">Receipt: SNK-SAMPLE</p>
+                <p className="text-[10px]">{new Date().toLocaleString()}</p>
+                {receipt.showCashier && <p className="text-[10px]">Cashier: John Mwangi</p>}
+                {receipt.showCustomer && <p className="text-[10px]">Customer: Walk-in</p>}
               </div>
-            ))}
+              <hr className="border-dashed my-2" />
+              <div className="space-y-1">
+                <div className="flex justify-between"><span>White Bread x2</span><span>400</span></div>
+                <div className="flex justify-between"><span>Croissant x3</span><span>450</span></div>
+              </div>
+              <hr className="border-dashed my-2" />
+              <div className="flex justify-between"><span>Subtotal:</span><span>850</span></div>
+              {receipt.showTax && <div className="flex justify-between"><span>VAT ({general.taxRate}%):</span><span>{Math.round(850 * general.taxRate / 100)}</span></div>}
+              <div className="flex justify-between font-bold text-xs mt-1"><span>TOTAL:</span><span>{general.currency} {850 + Math.round(850 * general.taxRate / 100)}</span></div>
+              <hr className="border-dashed my-2" />
+              <div className="flex justify-between"><span>Cash:</span><span>1000</span></div>
+              <div className="flex justify-between"><span>Change:</span><span>{1000 - 850 - Math.round(850 * general.taxRate / 100)}</span></div>
+              <hr className="border-dashed my-2" />
+              <div className="text-center text-[10px]">
+                <p>{receipt.footerText}</p>
+                <p>{receipt.disclaimer}</p>
+                <p className="font-bold mt-1">*** {receipt.headerText} ***</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Menu Items Tab */}
-      {activeTab === 'menu' && (
-        <div>
-          <div className="mb-6 flex justify-end">
-            <button
-              onClick={() => {
-                setShowMenuForm(true);
-                setEditingMenuId(null);
-                setMenuForm({ name: '', recipeId: '', price: 0, categoryId: '' });
-              }}
-              className="btn-primary"
-            >
-              + Add Menu Item
-            </button>
-          </div>
-
-          <Modal isOpen={showMenuForm} onClose={() => setShowMenuForm(false)} title={editingMenuId ? 'Edit Menu Item' : 'Add Menu Item'}>
-            <form onSubmit={handleMenuSubmit} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Menu Item Name"
-                value={menuForm.name}
-                onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                required
-              />
-              <select
-                value={menuForm.recipeId}
-                onChange={(e) => setMenuForm({ ...menuForm, recipeId: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-              >
-                <option value="">Select Recipe</option>
-                {recipes.map(rec => <option key={rec.id} value={rec.id}>{rec.name}</option>)}
-              </select>
-              <select
-                value={menuForm.categoryId}
-                onChange={(e) => setMenuForm({ ...menuForm, categoryId: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-              >
-                <option value="">Select Category</option>
-                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-              </select>
-              <input
-                type="number"
-                placeholder="Price (KES)"
-                value={menuForm.price}
-                onChange={(e) => setMenuForm({ ...menuForm, price: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                step="0.01"
-              />
-              <div className="flex gap-2 justify-end pt-4 border-t border-border">
-                <button type="button" onClick={() => setShowMenuForm(false)} className="btn-secondary">Cancel</button>
-                <button type="submit" className="btn-primary">Save Menu Item</button>
+      {/* ── SECURITY ── */}
+      {activeTab === 'security' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">POS Authentication</h3>
+            <div className="space-y-3">
+              <label className="flex items-center justify-between">
+                <div><p className="text-sm font-medium">Require PIN for POS login</p><p className="text-xs text-muted-foreground">Cashiers must enter a PIN before accessing POS</p></div>
+                <button type="button" onClick={() => setSecurity({ ...security, requirePosPin: !security.requirePosPin })} className={`w-10 h-5 rounded-full transition-colors ${security.requirePosPin ? 'bg-primary' : 'bg-gray-300'}`}><div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${security.requirePosPin ? 'translate-x-5' : 'translate-x-0.5'}`} /></button>
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className={labelCls}>PIN Length</label><select value={security.pinLength} onChange={e => setSecurity({ ...security, pinLength: parseInt(e.target.value) })} className={inputCls}><option value={4}>4 digits</option><option value={6}>6 digits</option></select></div>
+                <div><label className={labelCls}>Max Login Attempts</label><input type="number" value={security.maxLoginAttempts} onChange={e => setSecurity({ ...security, maxLoginAttempts: parseInt(e.target.value) || 5 })} className={inputCls} /></div>
               </div>
-            </form>
-          </Modal>
+            </div>
+          </div>
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Session & Access</h3>
+            <div className="space-y-3">
+              <div><label className={labelCls}>Session Timeout (minutes)</label><input type="number" value={security.sessionTimeout} onChange={e => setSecurity({ ...security, sessionTimeout: parseInt(e.target.value) || 30 })} className={`${inputCls} max-w-xs`} /></div>
+              {[
+                { key: 'enforceStrongPasswords', label: 'Enforce Strong Passwords', desc: 'Require uppercase, lowercase, number & special char' },
+                { key: 'twoFactorAuth', label: 'Two-Factor Authentication', desc: 'Require 2FA for admin accounts' },
+                { key: 'auditLogging', label: 'Audit Logging', desc: 'Log all user actions for compliance' },
+              ].map(opt => (
+                <label key={opt.key} className="flex items-center justify-between">
+                  <div><p className="text-sm font-medium">{opt.label}</p><p className="text-xs text-muted-foreground">{opt.desc}</p></div>
+                  <button type="button" onClick={() => setSecurity({ ...security, [opt.key]: !security[opt.key as keyof typeof security] })} className={`w-10 h-5 rounded-full transition-colors ${security[opt.key as keyof typeof security] ? 'bg-primary' : 'bg-gray-300'}`}><div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${security[opt.key as keyof typeof security] ? 'translate-x-5' : 'translate-x-0.5'}`} /></button>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-          <div className="border border-border rounded-lg overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-secondary border-b border-border">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Menu Item</th>
-                  <th className="px-4 py-3 text-left font-semibold">Recipe</th>
-                  <th className="px-4 py-3 text-left font-semibold">Category</th>
-                  <th className="px-4 py-3 text-right font-semibold">Price</th>
-                  <th className="px-4 py-3 text-left font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {menuItems.map(item => (
-                  <tr key={item.id} className="border-b border-border hover:bg-secondary/50">
-                    <td className="px-4 py-3 font-medium">{item.name}</td>
-                    <td className="px-4 py-3">{recipes.find(r => r.id === item.recipeId)?.name}</td>
-                    <td className="px-4 py-3">{categories.find(c => c.id === item.categoryId)?.name}</td>
-                    <td className="px-4 py-3 text-right font-semibold">KES {item.price.toFixed(2)}</td>
-                    <td className="px-4 py-3 flex gap-2">
-                      <button onClick={() => handleMenuEdit(item)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">Edit</button>
-                      <button onClick={() => handleMenuDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* ── BACKUP ── */}
+      {activeTab === 'backup' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Automatic Backup</h3>
+            <div className="space-y-3">
+              <label className="flex items-center justify-between">
+                <div><p className="text-sm font-medium">Enable Auto-Backup</p><p className="text-xs text-muted-foreground">Automatically backup data on schedule</p></div>
+                <button type="button" onClick={() => setBackup({ ...backup, autoBackup: !backup.autoBackup })} className={`w-10 h-5 rounded-full transition-colors ${backup.autoBackup ? 'bg-primary' : 'bg-gray-300'}`}><div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${backup.autoBackup ? 'translate-x-5' : 'translate-x-0.5'}`} /></button>
+              </label>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className={labelCls}>Frequency</label><select value={backup.backupFrequency} onChange={e => setBackup({ ...backup, backupFrequency: e.target.value })} className={inputCls}><option>hourly</option><option>daily</option><option>weekly</option><option>monthly</option></select></div>
+                <div><label className={labelCls}>Time</label><input type="time" value={backup.backupTime} onChange={e => setBackup({ ...backup, backupTime: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>Retention (days)</label><input type="number" value={backup.retentionDays} onChange={e => setBackup({ ...backup, retentionDays: parseInt(e.target.value) || 30 })} className={inputCls} /></div>
+              </div>
+            </div>
+          </div>
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Backup Status</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Last Backup</p><p className="font-bold">{backup.lastBackup}</p></div>
+              <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Storage</p><p className="font-bold capitalize">{backup.backupLocation}</p></div>
+            </div>
+            <button className="mt-4 px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm font-medium">Run Manual Backup Now</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── SESSIONS ── */}
+      {activeTab === 'sessions' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Active Sessions</h3>
+            <div className="space-y-3">
+              {sessions.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">No active sessions detected</p>
+              ) : sessions.map(s => (
+                <div key={s.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-sm font-bold">●</div>
+                    <div>
+                      <p className="text-sm font-medium">{s.email}</p>
+                      <p className="text-xs text-muted-foreground">{s.device} &bull; Last active: {s.lastActive}</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">Current</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-2">Session Management</h3>
+            <p className="text-sm text-muted-foreground mb-4">Sign out from all other devices and sessions.</p>
+            <button className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium">Sign Out All Other Sessions</button>
           </div>
         </div>
       )}

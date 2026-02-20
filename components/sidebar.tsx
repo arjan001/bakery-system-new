@@ -4,102 +4,122 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
+interface NavItem {
+  label: string;
+  href: string;
+  tip: string;
+}
+
+interface NavGroup {
+  title: string;
+  color: string;
+  items: NavItem[];
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
-  const navGroups = [
+  const navGroups: NavGroup[] = [
     {
       title: 'CORE',
+      color: 'border-l-blue-500',
       items: [
-        { label: 'Dashboard', href: '/' },
-        { label: 'POS System', href: '/pos' },
+        { label: 'Dashboard', href: '/', tip: 'Overview of key metrics, recent activity & quick actions' },
+        { label: 'POS System', href: '/pos', tip: 'Point of Sale — process sales, payments & receipts' },
       ],
     },
     {
       title: 'PRODUCTION',
+      color: 'border-l-amber-500',
       items: [
-        { label: 'Recipes & Products', href: '/recipes' },
-        { label: 'Product Catalogue', href: '/food-info' },
-        { label: 'Production Runs', href: '/production' },
-        { label: 'Picking Lists', href: '/picking-lists' },
-        { label: 'Lot Tracking', href: '/lot-tracking' },
-        { label: 'Waste Control', href: '/waste-control' },
+        { label: 'Recipes & Products', href: '/recipes', tip: 'Define recipes with ingredients, costs & output' },
+        { label: 'Product Catalogue', href: '/food-info', tip: 'Allergens, nutrition info & certifications' },
+        { label: 'Production Runs', href: '/production', tip: 'Schedule & track production batches' },
+        { label: 'Picking Lists', href: '/picking-lists', tip: 'Ingredient lists for production batches' },
+        { label: 'Lot Tracking', href: '/lot-tracking', tip: 'Track batches, expiry dates & traceability' },
+        { label: 'Waste Control', href: '/waste-control', tip: 'Record & analyze production waste' },
       ],
     },
     {
       title: 'SALES & ORDERS',
+      color: 'border-l-green-500',
       items: [
-        { label: 'Customers', href: '/customers' },
-        { label: 'Orders', href: '/orders' },
-        { label: 'Delivery', href: '/delivery' },
-        { label: 'Pricing', href: '/pricing' },
+        { label: 'Customers', href: '/customers', tip: 'Customer profiles, geo-location & segmentation' },
+        { label: 'Orders', href: '/orders', tip: 'Create & manage customer orders with delivery' },
+        { label: 'Delivery', href: '/delivery', tip: 'Schedule deliveries & assign drivers' },
+        { label: 'Pricing', href: '/pricing', tip: 'Set retail & wholesale pricing tiers' },
       ],
     },
     {
-      title: 'INVENTORY & ASSETS',
+      title: 'INVENTORY',
+      color: 'border-l-purple-500',
       items: [
-        { label: 'Inventory', href: '/inventory' },
-        { label: 'Purchasing', href: '/purchasing' },
-        { label: 'Assets', href: '/assets' },
+        { label: 'Inventory', href: '/inventory', tip: 'Raw materials, packaging & stock levels' },
+        { label: 'Purchasing', href: '/purchasing', tip: 'Purchase orders & supplier procurement' },
+        { label: 'Assets', href: '/assets', tip: 'Equipment, vehicles & depreciation tracking' },
       ],
     },
     {
       title: 'FINANCE',
+      color: 'border-l-rose-500',
       items: [
-        { label: 'Debtors', href: '/debtors' },
-        { label: 'Creditors', href: '/creditors' },
-        { label: 'P&L Accounting', href: '/reports' },
+        { label: 'Debtors', href: '/debtors', tip: 'Track credit sales & customer debts' },
+        { label: 'Creditors', href: '/creditors', tip: 'Supplier credit & payment schedules' },
       ],
     },
     {
-      title: 'HR & ADMIN',
+      title: 'PEOPLE',
+      color: 'border-l-teal-500',
       items: [
-        { label: 'Employees', href: '/employees' },
-        { label: 'Roles & Permissions', href: '/roles-permissions' },
-        { label: 'Settings', href: '/settings' },
+        { label: 'Employees', href: '/employees', tip: 'Staff profiles, certificates & payroll info' },
+        { label: 'Roles & Permissions', href: '/roles-permissions', tip: 'Access control — who can do what' },
+      ],
+    },
+    {
+      title: 'SYSTEM',
+      color: 'border-l-gray-400',
+      items: [
+        { label: 'Reports', href: '/reports', tip: 'P&L accounting, revenue & cost analysis' },
+        { label: 'Settings', href: '/settings', tip: 'System config, receipt, theme & security' },
       ],
     },
   ];
 
   return (
-    <aside className={`flex flex-col border-r border-border bg-sidebar transition-all duration-300 ${
-      collapsed ? 'w-16' : 'w-64'
-    }`}>
+    <aside className={`flex flex-col border-r border-border bg-sidebar transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'}`}>
       <div className="border-b border-border p-4 flex items-center justify-between">
-        {!collapsed && <h2 className="text-xl font-bold text-foreground">SNACKOH</h2>}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="rounded p-2 hover:bg-secondary text-foreground"
-        >
-          {collapsed ? '→' : '←'}
-        </button>
+        {!collapsed && <h2 className="text-lg font-black text-primary tracking-wide">SNACKOH</h2>}
+        <button onClick={() => setCollapsed(!collapsed)} className="rounded p-1.5 hover:bg-secondary text-muted-foreground text-xs">{collapsed ? '▶' : '◀'}</button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
+      <nav className="flex-1 overflow-y-auto py-3 px-1.5">
         {navGroups.map((group) => (
-          <div key={group.title} className="mb-5">
+          <div key={group.title} className="mb-4">
             {!collapsed && (
-              <p className="px-2 mb-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                {group.title}
-              </p>
+              <p className="px-3 mb-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{group.title}</p>
             )}
             <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center px-3 py-2 rounded text-sm transition-colors ${
-                    pathname === item.href
-                      ? 'bg-primary text-primary-foreground font-semibold'
-                      : 'text-sidebar-foreground hover:bg-secondary'
-                  }`}
-                  title={collapsed ? item.label : undefined}
-                >
-                  {!collapsed && item.label}
-                  {collapsed && item.label.charAt(0)}
-                </Link>
-              ))}
+              {group.items.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center px-3 py-2 rounded-lg text-[13px] transition-colors border-l-2 ${
+                      isActive
+                        ? `bg-primary/10 text-primary font-semibold ${group.color}`
+                        : `border-l-transparent text-sidebar-foreground hover:bg-secondary/70 hover:${group.color}`
+                    }`}
+                    title={item.tip}
+                  >
+                    {!collapsed && item.label}
+                    {collapsed && (
+                      <span className="w-full text-center text-xs font-bold" title={item.tip}>{item.label.charAt(0)}</span>
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -107,9 +127,7 @@ export function Sidebar() {
 
       <div className="border-t border-border p-3">
         {!collapsed && (
-          <p className="text-xs text-muted-foreground text-center">
-            v2.0 | Snackoh Bakery
-          </p>
+          <p className="text-[10px] text-muted-foreground text-center">v2.0 | Snackoh Bakers</p>
         )}
       </div>
     </aside>

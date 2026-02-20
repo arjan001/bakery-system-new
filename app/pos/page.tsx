@@ -31,10 +31,8 @@ export default function POSPage() {
 
   // ── Products ──
   const [products, setProducts] = useState<Product[]>([]);
-  const [customers] = useState<Customer[]>([
+  const [customers, setCustomers] = useState<Customer[]>([
     { id: 'walk-in', name: 'Walk-in Customer', phone: '', type: 'Retail' },
-    { id: '1', name: 'Main Retail Outlet', phone: '+254712345678', type: 'Retail' },
-    { id: '2', name: 'Wholesale Distributors', phone: '+254723456789', type: 'Wholesale' },
   ]);
 
   // ── Cart ──
@@ -85,7 +83,15 @@ export default function POSPage() {
     }
   }, []);
 
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  const fetchCustomers = useCallback(async () => {
+    const { data } = await supabase.from('customers').select('*').eq('status', 'Active').order('name');
+    if (data && data.length > 0) {
+      const mapped = data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, phone: (r.phone || '') as string, type: (r.type || 'Retail') as string }));
+      setCustomers([{ id: 'walk-in', name: 'Walk-in Customer', phone: '', type: 'Retail' }, ...mapped]);
+    }
+  }, []);
+
+  useEffect(() => { fetchProducts(); fetchCustomers(); }, [fetchProducts, fetchCustomers]);
 
   // Totals
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);

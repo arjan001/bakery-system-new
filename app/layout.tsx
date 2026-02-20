@@ -9,8 +9,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Snackoh Bakery - Management System',
-  description: 'Snackoh Bakery management system with POS, production, inventory and more',
+  title: 'Snackoh Bakers - Management System',
+  description: 'Snackoh Bakers management system with POS, production, inventory and more',
   generator: 'v0.app',
   icons: {
     icon: [

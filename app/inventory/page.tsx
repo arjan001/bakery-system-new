@@ -40,16 +40,17 @@ export default function InventoryPage() {
   useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
   const [inventoryTypes] = useState<InventoryType[]>([
-    { id: '1', name: 'Consumable', description: 'Items used up in production (flour, sugar, etc)' },
+    { id: '1', name: 'Consumable', description: 'Items used up in production' },
     { id: '2', name: 'Non-Consumable', description: 'Durable equipment and machinery' },
   ]);
 
-  const [categories, setCategories] = useState<InventoryCategory[]>([
-    { id: '1', name: 'Raw Materials', type: 'Consumable' },
-    { id: '2', name: 'Packaging', type: 'Consumable' },
-    { id: '3', name: 'Equipment', type: 'Non-Consumable' },
-    { id: '4', name: 'Utensils', type: 'Non-Consumable' },
-  ]);
+  const [categories, setCategories] = useState<InventoryCategory[]>([]);
+
+  useEffect(() => {
+    supabase.from('inventory_categories').select('*').order('name').then(({ data }) => {
+      if (data && data.length > 0) setCategories(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryCategory['type'] })));
+    });
+  }, []);
 
   const [showForm, setShowForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
