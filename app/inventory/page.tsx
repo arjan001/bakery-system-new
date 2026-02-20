@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface InventoryItem {
   id: string;
@@ -29,11 +30,14 @@ interface InventoryCategory {
 }
 
 export default function InventoryPage() {
-  const [inventory, setInventory] = useState<InventoryItem[]>([
-    { id: '1', name: 'Flour', type: 'Consumable', category: 'Raw Materials', quantity: 500, unit: 'kg', unitCost: 45, reorderLevel: 100, supplier: 'Flour Supplier Co', lastRestocked: '2024-02-15' },
-    { id: '2', name: 'Sugar', type: 'Consumable', category: 'Raw Materials', quantity: 200, unit: 'kg', unitCost: 60, reorderLevel: 50, supplier: 'Sugar Supplier Ltd', lastRestocked: '2024-02-10' },
-    { id: '3', name: 'Mixing Machine', type: 'Non-Consumable', category: 'Equipment', quantity: 2, unit: 'units', unitCost: 45000, reorderLevel: 1, supplier: 'Equipment Dealer', lastRestocked: '2024-01-01' },
-  ]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+
+  const fetchInventory = useCallback(async () => {
+    const { data } = await supabase.from('inventory_items').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) setInventory(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryItem['type'], category: (r.category || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'kg') as string, unitCost: (r.unit_cost || 0) as number, reorderLevel: (r.reorder_level || 0) as number, supplier: (r.supplier || '') as string, lastRestocked: (r.last_restocked || '') as string })));
+  }, []);
+
+  useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
   const [inventoryTypes] = useState<InventoryType[]>([
     { id: '1', name: 'Consumable', description: 'Items used up in production (flour, sugar, etc)' },
@@ -72,13 +76,14 @@ export default function InventoryPage() {
     type: 'Consumable',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingId) {
-      setInventory(inventory.map(i => i.id === editingId ? { ...formData, id: editingId } : i));
-    } else {
-      setInventory([...inventory, { ...formData, id: Date.now().toString() }]);
-    }
+    const row = { name: formData.name, type: formData.type, category: formData.category, quantity: formData.quantity, unit: formData.unit, unit_cost: formData.unitCost, reorder_level: formData.reorderLevel, supplier: formData.supplier, last_restocked: formData.lastRestocked || null };
+    try {
+      if (editingId) await supabase.from('inventory_items').update(row).eq('id', editingId);
+      else await supabase.from('inventory_items').insert(row);
+      await fetchInventory();
+    } catch { /* fallback */ }
     resetForm();
     setShowForm(false);
   };
@@ -111,8 +116,9 @@ export default function InventoryPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this inventory item?')) {
+      await supabase.from('inventory_items').delete().eq('id', id);
       setInventory(inventory.filter(i => i.id !== id));
     }
   };

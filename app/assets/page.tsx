@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface Asset {
   id: string;
@@ -24,21 +25,14 @@ interface AssetCategory {
 }
 
 export default function AssetsPage() {
-  const [assets, setAssets] = useState<Asset[]>([
-    {
-      id: '1',
-      name: 'Industrial Oven',
-      category: 'Equipment',
-      serialNumber: 'IOV-2024-001',
-      purchaseDate: '2024-01-15',
-      purchasePrice: 150000,
-      currentValue: 140000,
-      condition: 'Excellent',
-      location: 'Main Production',
-      assignedTo: 'John Mwangi',
-      notes: 'Main bakery oven',
-    },
-  ]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+
+  const fetchAssets = useCallback(async () => {
+    const { data } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) setAssets(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, category: (r.category || '') as string, serialNumber: (r.serial_number || '') as string, purchaseDate: (r.purchase_date || '') as string, purchasePrice: (r.purchase_price || 0) as number, currentValue: (r.current_value || 0) as number, condition: (r.condition || 'Good') as Asset['condition'], location: (r.location || '') as string, assignedTo: (r.assigned_to || '') as string, notes: (r.notes || '') as string })));
+  }, []);
+
+  useEffect(() => { fetchAssets(); }, [fetchAssets]);
 
   const [categories, setCategories] = useState<AssetCategory[]>([
     { id: '1', name: 'Equipment', description: 'Production machinery and equipment' },
@@ -73,13 +67,14 @@ export default function AssetsPage() {
     description: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingId) {
-      setAssets(assets.map(a => a.id === editingId ? { ...formData, id: editingId } : a));
-    } else {
-      setAssets([...assets, { ...formData, id: Date.now().toString() }]);
-    }
+    const row = { name: formData.name, category: formData.category, serial_number: formData.serialNumber, purchase_date: formData.purchaseDate || null, purchase_price: formData.purchasePrice, current_value: formData.currentValue, condition: formData.condition, location: formData.location, assigned_to: formData.assignedTo, notes: formData.notes };
+    try {
+      if (editingId) await supabase.from('assets').update(row).eq('id', editingId);
+      else await supabase.from('assets').insert(row);
+      await fetchAssets();
+    } catch { /* fallback */ }
     resetForm();
     setShowForm(false);
   };
@@ -113,8 +108,9 @@ export default function AssetsPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this asset?')) {
+      await supabase.from('assets').delete().eq('id', id);
       setAssets(assets.filter(a => a.id !== id));
     }
   };

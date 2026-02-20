@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
+import { mapToDb } from '@/lib/db-utils';
 
 interface Certificate {
   id: string;
@@ -27,7 +29,6 @@ interface Employee {
   nextOfKinPhone: string;
   address: string;
   idNumber: string;
-  // HR fields
   driverLicenseId: string;
   driverLicenseExpiry: string;
   hygieneCertNo: string;
@@ -43,71 +44,53 @@ interface Employee {
   notes: string;
 }
 
+function dbToEmployee(row: Record<string, unknown>): Employee {
+  return {
+    id: row.id as string,
+    firstName: (row.first_name as string) || '',
+    lastName: (row.last_name as string) || '',
+    designation: (row.designation as Employee['designation']) || 'Mr',
+    email: (row.email as string) || '',
+    phone: (row.phone as string) || '',
+    department: (row.department as string) || '',
+    role: (row.role as string) || '',
+    category: (row.category as Employee['category']) || 'Baker',
+    hireDate: (row.hire_date as string) || '',
+    status: (row.status as Employee['status']) || 'Active',
+    nextOfKin: (row.next_of_kin as string) || '',
+    nextOfKinPhone: (row.next_of_kin_phone as string) || '',
+    address: (row.address as string) || '',
+    idNumber: (row.id_number as string) || '',
+    driverLicenseId: (row.driver_license_id as string) || '',
+    driverLicenseExpiry: (row.driver_license_expiry as string) || '',
+    hygieneCertNo: (row.hygiene_cert_no as string) || '',
+    hygieneCertExpiry: (row.hygiene_cert_expiry as string) || '',
+    certificates: [],
+    bankName: (row.bank_name as string) || '',
+    bankAccountNo: (row.bank_account_no as string) || '',
+    nhifNo: (row.nhif_no as string) || '',
+    nssfNo: (row.nssf_no as string) || '',
+    kraPin: (row.kra_pin as string) || '',
+    emergencyContact: (row.emergency_contact as string) || '',
+    emergencyPhone: (row.emergency_phone as string) || '',
+    notes: (row.notes as string) || '',
+  };
+}
+
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState<Employee[]>([
-    {
-      id: '1',
-      firstName: 'John',
-      lastName: 'Mwangi',
-      designation: 'Mr',
-      email: 'john@bakery.com',
-      phone: '+254712345678',
-      department: 'Production',
-      role: 'Production Manager',
-      category: 'Baker',
-      hireDate: '2024-01-15',
-      status: 'Active',
-      nextOfKin: 'Jane Mwangi',
-      nextOfKinPhone: '+254798765432',
-      address: '123 Main St, Nairobi',
-      idNumber: 'ID12345678',
-      driverLicenseId: '',
-      driverLicenseExpiry: '',
-      hygieneCertNo: 'HYG-2024-001',
-      hygieneCertExpiry: '2025-01-15',
-      certificates: [
-        { id: '1', name: 'Food Safety Level 2', number: 'FS-001', issueDate: '2024-01-01', expiryDate: '2025-01-01' },
-      ],
-      bankName: 'KCB',
-      bankAccountNo: '1234567890',
-      nhifNo: 'NHIF-001',
-      nssfNo: 'NSSF-001',
-      kraPin: 'A001234567Z',
-      emergencyContact: 'Jane Mwangi',
-      emergencyPhone: '+254798765432',
-      notes: '',
-    },
-    {
-      id: '2',
-      firstName: 'Peter',
-      lastName: 'Odhiambo',
-      designation: 'Mr',
-      email: 'peter@bakery.com',
-      phone: '+254723456789',
-      department: 'Delivery',
-      role: 'Delivery Rider',
-      category: 'Driver',
-      hireDate: '2024-02-01',
-      status: 'Active',
-      nextOfKin: 'Mary Odhiambo',
-      nextOfKinPhone: '+254787654321',
-      address: '456 Mombasa Rd, Nairobi',
-      idNumber: 'ID87654321',
-      driverLicenseId: 'DL-2024-5678',
-      driverLicenseExpiry: '2026-02-01',
-      hygieneCertNo: '',
-      hygieneCertExpiry: '',
-      certificates: [],
-      bankName: 'Equity',
-      bankAccountNo: '9876543210',
-      nhifNo: 'NHIF-002',
-      nssfNo: 'NSSF-002',
-      kraPin: 'B002345678Z',
-      emergencyContact: 'Mary Odhiambo',
-      emergencyPhone: '+254787654321',
-      notes: 'Has motorcycle license',
-    },
-  ]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchEmployees = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
+    if (!error && data && data.length > 0) {
+      setEmployees(data.map(r => dbToEmployee(r as Record<string, unknown>)));
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
   const [showForm, setShowForm] = useState(false);
   const [showDetail, setShowDetail] = useState<Employee | null>(null);
@@ -154,14 +137,28 @@ export default function EmployeesPage() {
   const categories: Employee['category'][] = ['Baker', 'Driver', 'Sales', 'Admin', 'Quality', 'Packer', 'Supervisor', 'Manager'];
   const designations: Employee['designation'][] = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof'];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingId) {
-      setEmployees(employees.map(emp => emp.id === editingId ? { ...formData, id: editingId } : emp));
-      setEditingId(null);
-    } else {
-      setEmployees([...employees, { ...formData, id: Date.now().toString() }]);
+    const dbRow = mapToDb(formData as unknown as Record<string, unknown>);
+    try {
+      if (editingId) {
+        const { error } = await supabase.from('employees').update(dbRow).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('employees').insert(dbRow);
+        if (error) throw error;
+      }
+      await fetchEmployees();
+    } catch (err) {
+      console.error('Employee save error:', err);
+      // Fallback local
+      if (editingId) {
+        setEmployees(employees.map(emp => emp.id === editingId ? { ...formData, id: editingId } : emp));
+      } else {
+        setEmployees([...employees, { ...formData, id: Date.now().toString() }]);
+      }
     }
+    setEditingId(null);
     resetForm();
     setShowForm(false);
   };
@@ -179,8 +176,12 @@ export default function EmployeesPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this employee?')) {
+      try {
+        const { error } = await supabase.from('employees').delete().eq('id', id);
+        if (error) throw error;
+      } catch (err) { console.error('Delete error:', err); }
       setEmployees(employees.filter(emp => emp.id !== id));
     }
   };
@@ -552,6 +553,7 @@ export default function EmployeesPage() {
         )}
       </Modal>
 
+      {loading && <div className="text-center py-4 text-muted-foreground text-sm">Loading employees...</div>}
       {/* Table */}
       <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
         <table className="w-full text-sm">

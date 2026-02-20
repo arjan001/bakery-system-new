@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface ProductionRun {
   id: string;
@@ -16,19 +17,14 @@ interface ProductionRun {
 }
 
 export default function ProductionPage() {
-  const [runs, setRuns] = useState<ProductionRun[]>([
-    {
-      id: '1',
-      recipeCode: 'SD-001',
-      batchSize: 50,
-      startTime: '2024-01-15T06:00',
-      endTime: '2024-01-15T08:30',
-      yield: 48,
-      status: 'completed',
-      notes: 'No issues',
-      operator: 'John Smith',
-    },
-  ]);
+  const [runs, setRuns] = useState<ProductionRun[]>([]);
+
+  const fetchRuns = useCallback(async () => {
+    const { data } = await supabase.from('production_runs').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) setRuns(data.map((r: Record<string, unknown>) => ({ id: r.id as string, recipeCode: (r.recipe_code || '') as string, batchSize: (r.batch_size || 0) as number, startTime: (r.start_time || '') as string, endTime: (r.end_time || '') as string, yield: (r.yield_qty || 0) as number, status: (r.status || 'scheduled') as ProductionRun['status'], notes: (r.notes || '') as string, operator: (r.operator || '') as string })));
+  }, []);
+
+  useEffect(() => { fetchRuns(); }, [fetchRuns]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -43,36 +39,15 @@ export default function ProductionPage() {
     operator: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (editId) {
-      setRuns(runs.map(r => r.id === editId ? {
-        ...r,
-        recipeCode: formData.recipeCode,
-        batchSize: parseFloat(formData.batchSize),
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        yield: parseFloat(formData.yield),
-        status: formData.status,
-        notes: formData.notes,
-        operator: formData.operator,
-      } : r));
-      setEditId(null);
-    } else {
-      setRuns([...runs, {
-        id: Date.now().toString(),
-        recipeCode: formData.recipeCode,
-        batchSize: parseFloat(formData.batchSize),
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        yield: parseFloat(formData.yield),
-        status: formData.status,
-        notes: formData.notes,
-        operator: formData.operator,
-      }]);
-    }
-
+    const row = { recipe_code: formData.recipeCode, batch_size: parseFloat(formData.batchSize) || 0, start_time: formData.startTime || null, end_time: formData.endTime || null, yield_qty: parseFloat(formData.yield) || 0, status: formData.status, notes: formData.notes, operator: formData.operator };
+    try {
+      if (editId) await supabase.from('production_runs').update(row).eq('id', editId);
+      else await supabase.from('production_runs').insert(row);
+      await fetchRuns();
+    } catch { /* fallback */ }
+    setEditId(null);
     resetForm();
     setShowForm(false);
   };
@@ -105,8 +80,9 @@ export default function ProductionPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this production run?')) {
+      await supabase.from('production_runs').delete().eq('id', id);
       setRuns(runs.filter(r => r.id !== id));
     }
   };

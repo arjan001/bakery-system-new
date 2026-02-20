@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
 interface OrderItem {
   productName: string;
@@ -25,25 +26,29 @@ interface Order {
 }
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([
-    {
-      id: '1',
-      orderNumber: 'ORD001',
-      customerName: 'Retail Outlet A',
-      customerPhone: '+254712345678',
-      items: [
-        { productName: 'White Bread', quantity: 50, unitPrice: 100 },
-        { productName: 'Croissants', quantity: 30, unitPrice: 150 },
-      ],
-      total: 9500,
-      status: 'Ready',
-      orderDate: '2024-02-15',
-      dueDate: '2024-02-16',
-      assignedDriver: 'John Mwangi',
-      deliveryNotes: 'Fragile - handle with care',
-      paymentStatus: 'Paid',
-    },
-  ]);
+  const [orders, setOrders] = useState<Order[]>([]);
+
+  const fetchOrders = useCallback(async () => {
+    const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) {
+      // Also fetch order_items for each
+      const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
+        const { data: items } = await supabase.from('order_items').select('*').eq('order_id', r.id);
+        return {
+          id: r.id as string, orderNumber: (r.order_number || '') as string, customerName: (r.customer_name || '') as string,
+          customerPhone: (r.customer_phone || '') as string,
+          items: (items || []).map((i: Record<string, unknown>) => ({ productName: i.product_name as string, quantity: i.quantity as number, unitPrice: i.unit_price as number })),
+          total: (r.total_amount || 0) as number, status: (r.status || 'Pending') as Order['status'],
+          orderDate: (r.order_date || '') as string, dueDate: (r.due_date || '') as string,
+          assignedDriver: (r.assigned_driver || '') as string, deliveryNotes: (r.delivery_notes || '') as string,
+          paymentStatus: (r.payment_status || 'Unpaid') as Order['paymentStatus'],
+        };
+      }));
+      setOrders(mapped);
+    }
+  }, []);
+
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
   const [drivers] = useState(['John Mwangi', 'Mary Kipchoge', 'David Omondi']);
   const [showForm, setShowForm] = useState(false);
@@ -67,16 +72,21 @@ export default function OrdersPage() {
     paymentStatus: 'Unpaid',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const calculatedTotal = formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-    const orderData = { ...formData, total: calculatedTotal };
-    
-    if (editingId) {
-      setOrders(orders.map(o => o.id === editingId ? { ...orderData, id: editingId } : o));
-    } else {
-      setOrders([...orders, { ...orderData, id: Date.now().toString() }]);
-    }
+    const row = { order_number: formData.orderNumber, customer_name: formData.customerName, customer_phone: formData.customerPhone, total_amount: calculatedTotal, status: formData.status, order_date: formData.orderDate || null, due_date: formData.dueDate || null, assigned_driver: formData.assignedDriver, delivery_notes: formData.deliveryNotes, payment_status: formData.paymentStatus };
+    try {
+      if (editingId) {
+        await supabase.from('orders').update(row).eq('id', editingId);
+        await supabase.from('order_items').delete().eq('order_id', editingId);
+        if (formData.items.length > 0) await supabase.from('order_items').insert(formData.items.map(i => ({ order_id: editingId, product_name: i.productName, quantity: i.quantity, unit_price: i.unitPrice, total: i.quantity * i.unitPrice })));
+      } else {
+        const { data: created } = await supabase.from('orders').insert(row).select().single();
+        if (created && formData.items.length > 0) await supabase.from('order_items').insert(formData.items.map(i => ({ order_id: created.id, product_name: i.productName, quantity: i.quantity, unit_price: i.unitPrice, total: i.quantity * i.unitPrice })));
+      }
+      await fetchOrders();
+    } catch (err) { console.error('Order save error:', err); }
     resetForm();
     setShowForm(false);
   };
@@ -104,17 +114,21 @@ export default function OrdersPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this order?')) {
+      await supabase.from('order_items').delete().eq('order_id', id);
+      await supabase.from('orders').delete().eq('id', id);
       setOrders(orders.filter(o => o.id !== id));
     }
   };
 
-  const handleStatusChange = (orderId: string, newStatus: Order['status']) => {
+  const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
+    await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
   };
 
-  const handleAssignDriver = (orderId: string, driver: string) => {
+  const handleAssignDriver = async (orderId: string, driver: string) => {
+    await supabase.from('orders').update({ assigned_driver: driver, status: 'Shipped' }).eq('id', orderId);
     setOrders(orders.map(o => o.id === orderId ? { ...o, assignedDriver: driver, status: 'Shipped' } : o));
     setShowTracking(false);
   };
