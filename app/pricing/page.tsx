@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Navigation } from '@/components/navigation';
+import { Modal } from '@/components/modal';
 
 interface PricingTier {
   id: string;
@@ -97,190 +97,198 @@ export default function PricingPage() {
   };
 
   const handleDelete = (id: string) => {
-    setTiers(tiers.filter(t => t.id !== id));
+    if (confirm('Delete this pricing tier?')) {
+      setTiers(tiers.filter(t => t.id !== id));
+    }
   };
 
   const toggleActive = (id: string) => {
     setTiers(tiers.map(t => t.id === id ? {...t, active: !t.active} : t));
   };
 
-  const totalRevenue = tiers.reduce((sum, t) => sum + (t.basePrice * (t.active ? 1 : 0)), 0);
   const avgMargin = tiers.length > 0 ? (tiers.reduce((sum, t) => sum + t.margin, 0) / tiers.length).toFixed(1) : '0';
 
   return (
-    <div className="min-h-screen bg-white">
-      <Navigation />
+    <div className="p-8">
+      <div className="mb-8">
+        <h1 className="mb-2">Pricing Management</h1>
+        <p className="text-muted-foreground">Set and manage product pricing tiers</p>
+      </div>
 
-      <main className="mx-auto max-w-7xl px-4 py-8">
-        <div className="mb-8 flex items-center justify-between border-b-2 border-black pb-4">
-          <h1 className="text-4xl font-black">PRICING MANAGEMENT</h1>
-          <button
-            onClick={() => {
-              setEditId(null);
-              setFormData({ productCode: '', productName: '', cost: '', basePrice: '', wholesaleDiscount: '25' });
-              setShowForm(!showForm);
-            }}
-            className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
-          >
-            {showForm ? 'CANCEL' : '+ NEW PRICE'}
-          </button>
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Total Products</p>
+          <p className="text-2xl font-bold">{tiers.length}</p>
         </div>
-
-        <div className="mb-8 grid grid-cols-3 gap-4">
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">TOTAL PRODUCTS</p>
-            <p className="text-3xl font-black">{tiers.length}</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">AVG MARGIN</p>
-            <p className="text-3xl font-black">{avgMargin}%</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">ACTIVE PRODUCTS</p>
-            <p className="text-3xl font-black">{tiers.filter(t => t.active).length}</p>
-          </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Avg Margin</p>
+          <p className="text-2xl font-bold">{avgMargin}%</p>
         </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Active Products</p>
+          <p className="text-2xl font-bold">{tiers.filter(t => t.active).length}</p>
+        </div>
+      </div>
 
-        {showForm && (
-          <div className="mb-8 border-2 border-black p-6">
-            <h2 className="mb-4 text-xl font-black">{editId ? 'EDIT PRICING' : 'CREATE PRICING TIER'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold">Product Code</label>
-                  <input
-                    type="text"
-                    value={formData.productCode}
-                    onChange={(e) => setFormData({...formData, productCode: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Product Name</label>
-                  <input
-                    type="text"
-                    value={formData.productName}
-                    onChange={(e) => setFormData({...formData, productName: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Cost (COGS)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.cost}
-                    onChange={(e) => setFormData({...formData, cost: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Retail Price</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.basePrice}
-                    onChange={(e) => setFormData({...formData, basePrice: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Wholesale Discount %</label>
-                  <input
-                    type="number"
-                    step="1"
-                    value={formData.wholesaleDiscount}
-                    onChange={(e) => setFormData({...formData, wholesaleDiscount: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
-              >
-                {editId ? 'UPDATE' : 'CREATE'}
-              </button>
-            </form>
+      <div className="mb-6 flex justify-end">
+        <button
+          onClick={() => {
+            setEditId(null);
+            setFormData({ productCode: '', productName: '', cost: '', basePrice: '', wholesaleDiscount: '25' });
+            setShowForm(true);
+          }}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+        >
+          + New Price Tier
+        </button>
+      </div>
+
+      <Modal
+        isOpen={showForm}
+        onClose={() => { setShowForm(false); setEditId(null); }}
+        title={editId ? 'Edit Pricing' : 'Create Pricing Tier'}
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Product Code</label>
+              <input
+                type="text"
+                value={formData.productCode}
+                onChange={(e) => setFormData({...formData, productCode: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Product Name</label>
+              <input
+                type="text"
+                value={formData.productName}
+                onChange={(e) => setFormData({...formData, productName: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Cost (COGS)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.cost}
+                onChange={(e) => setFormData({...formData, cost: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Retail Price</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.basePrice}
+                onChange={(e) => setFormData({...formData, basePrice: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Wholesale Discount %</label>
+              <input
+                type="number"
+                step="1"
+                value={formData.wholesaleDiscount}
+                onChange={(e) => setFormData({...formData, wholesaleDiscount: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
           </div>
-        )}
+          <div className="flex gap-2 justify-end pt-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => { setShowForm(false); setEditId(null); }}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+            >
+              {editId ? 'Update' : 'Create'} Pricing
+            </button>
+          </div>
+        </form>
+      </Modal>
 
-        <div className="overflow-x-auto border-2 border-black">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b-2 border-black bg-black text-white">
-                <th className="px-4 py-3 text-left font-bold">PRODUCT</th>
-                <th className="px-4 py-3 text-left font-bold">CODE</th>
-                <th className="px-4 py-3 text-right font-bold">COST</th>
-                <th className="px-4 py-3 text-right font-bold">RETAIL</th>
-                <th className="px-4 py-3 text-right font-bold">WHOLESALE</th>
-                <th className="px-4 py-3 text-center font-bold">MARGIN</th>
-                <th className="px-4 py-3 text-center font-bold">STATUS</th>
-                <th className="px-4 py-3 text-center font-bold">ACTIONS</th>
+      <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary border-b border-border">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold">Product</th>
+              <th className="px-4 py-3 text-left font-semibold">Code</th>
+              <th className="px-4 py-3 text-right font-semibold">Cost</th>
+              <th className="px-4 py-3 text-right font-semibold">Retail</th>
+              <th className="px-4 py-3 text-right font-semibold">Wholesale</th>
+              <th className="px-4 py-3 text-center font-semibold">Margin</th>
+              <th className="px-4 py-3 text-center font-semibold">Status</th>
+              <th className="px-4 py-3 text-left font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tiers.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                  No pricing tiers found
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {tiers.map((tier) => (
-                <tr key={tier.id} className="border-b border-gray-300 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-bold">{tier.productName}</td>
-                  <td className="px-4 py-3">{tier.productCode}</td>
+            ) : (
+              tiers.map((tier) => (
+                <tr key={tier.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                  <td className="px-4 py-3 font-medium">{tier.productName}</td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">{tier.productCode}</td>
                   <td className="px-4 py-3 text-right">${tier.cost.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right">${tier.retail.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right">${tier.wholesale.toFixed(2)}</td>
                   <td className="px-4 py-3 text-center">
-                    <span className="font-bold text-green-600">{tier.margin.toFixed(1)}%</span>
+                    <span className="font-semibold text-green-600">{tier.margin.toFixed(1)}%</span>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button
                       onClick={() => toggleActive(tier.id)}
-                      className={`px-3 py-1 text-xs font-bold ${
+                      className={`px-2 py-1 rounded text-xs font-semibold ${
                         tier.active
-                          ? 'bg-green-200 text-green-900'
-                          : 'bg-gray-200 text-gray-600'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-600'
                       }`}
                     >
-                      {tier.active ? 'ACTIVE' : 'INACTIVE'}
+                      {tier.active ? 'Active' : 'Inactive'}
                     </button>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-center gap-2">
+                    <div className="flex gap-2">
                       <button
                         onClick={() => handleEdit(tier)}
-                        className="border border-black px-3 py-1 text-sm font-bold hover:bg-black hover:text-white"
+                        className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium"
                       >
-                        EDIT
+                        Edit
                       </button>
                       <button
                         onClick={() => handleDelete(tier.id)}
-                        className="border border-red-600 px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-600 hover:text-white"
+                        className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors font-medium"
                       >
-                        DELETE
+                        Delete
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {tiers.length === 0 && !showForm && (
-          <div className="mt-8 border-2 border-black p-12 text-center">
-            <p className="mb-4 text-lg font-bold">NO PRICING TIERS</p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
-            >
-              CREATE FIRST TIER
-            </button>
-          </div>
-        )}
-      </main>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

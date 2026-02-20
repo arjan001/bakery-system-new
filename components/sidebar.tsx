@@ -20,6 +20,7 @@ export function Sidebar() {
       title: 'OPERATIONS',
       items: [
         { label: 'Employees', href: '/employees' },
+        { label: 'Roles & Permissions', href: '/roles-permissions' },
         { label: 'Recipes', href: '/recipes' },
         { label: 'Products', href: '/food-info' },
         { label: 'Production', href: '/production' },

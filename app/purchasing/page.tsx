@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Navigation } from '@/components/navigation';
+import { Modal } from '@/components/modal';
 
 interface PurchaseItem {
   id: string;
@@ -118,6 +118,11 @@ export default function PurchasingPage() {
       }]);
     }
 
+    resetForm();
+    setShowForm(false);
+  };
+
+  const resetForm = () => {
     setFormData({
       poNumber: '',
       supplier: '',
@@ -127,7 +132,7 @@ export default function PurchasingPage() {
       items: [],
       notes: '',
     });
-    setShowForm(false);
+    setNewItem({ itemId: '', ingredient: '', quantity: '', unit: 'kg', unitPrice: '' });
   };
 
   const handleEdit = (order: PurchaseOrder) => {
@@ -145,14 +150,18 @@ export default function PurchasingPage() {
   };
 
   const handleDelete = (id: string) => {
-    setOrders(orders.filter(o => o.id !== id));
+    if (confirm('Delete this purchase order?')) {
+      setOrders(orders.filter(o => o.id !== id));
+    }
   };
 
-  const statusColors = {
-    draft: 'bg-gray-200 text-black',
-    pending: 'bg-blue-200 text-blue-900',
-    received: 'bg-green-200 text-green-900',
-    cancelled: 'bg-red-200 text-red-900',
+  const getStatusColor = (status: PurchaseOrder['status']) => {
+    switch (status) {
+      case 'draft': return 'bg-gray-100 text-gray-800';
+      case 'pending': return 'bg-blue-100 text-blue-800';
+      case 'received': return 'bg-green-100 text-green-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+    }
   };
 
   const totalOrders = orders.length;
@@ -160,301 +169,202 @@ export default function PurchasingPage() {
   const totalOrderValue = orders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.total, 0), 0);
 
   return (
-    <div className="min-h-screen bg-white">
-      <Navigation />
+    <div className="p-8">
+      <div className="mb-8">
+        <h1 className="mb-2">Purchasing</h1>
+        <p className="text-muted-foreground">Manage purchase orders and supplier procurement</p>
+      </div>
 
-      <main className="mx-auto max-w-7xl px-4 py-8">
-        <div className="mb-8 flex items-center justify-between border-b-2 border-black pb-4">
-          <h1 className="text-4xl font-black">PURCHASING</h1>
-          <button
-            onClick={() => {
-              setEditId(null);
-              setFormData({
-                poNumber: '',
-                supplier: '',
-                orderDate: '',
-                deliveryDate: '',
-                status: 'draft',
-                items: [],
-                notes: '',
-              });
-              setNewItem({ itemId: '', ingredient: '', quantity: '', unit: 'kg', unitPrice: '' });
-              setShowForm(!showForm);
-            }}
-            className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
-          >
-            {showForm ? 'CANCEL' : '+ NEW ORDER'}
-          </button>
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Total Orders</p>
+          <p className="text-2xl font-bold">{totalOrders}</p>
         </div>
-
-        <div className="mb-8 grid grid-cols-4 gap-4">
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">TOTAL ORDERS</p>
-            <p className="text-3xl font-black">{totalOrders}</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">PENDING</p>
-            <p className="text-3xl font-black text-blue-600">{pendingOrders}</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">TOTAL VALUE</p>
-            <p className="text-3xl font-black">${totalOrderValue.toFixed(2)}</p>
-          </div>
-          <div className="border-2 border-black p-4">
-            <p className="text-xs font-black">RECEIVED</p>
-            <p className="text-3xl font-black text-green-600">{orders.filter(o => o.status === 'received').length}</p>
-          </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Pending</p>
+          <p className="text-2xl font-bold text-blue-600">{pendingOrders}</p>
         </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Total Value</p>
+          <p className="text-2xl font-bold">${totalOrderValue.toFixed(2)}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Received</p>
+          <p className="text-2xl font-bold text-green-600">{orders.filter(o => o.status === 'received').length}</p>
+        </div>
+      </div>
 
-        {showForm && (
-          <div className="mb-8 border-2 border-black p-6">
-            <h2 className="mb-4 text-xl font-black">{editId ? 'EDIT PURCHASE ORDER' : 'CREATE PURCHASE ORDER'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold">PO Number</label>
-                  <input
-                    type="text"
-                    value={formData.poNumber}
-                    onChange={(e) => setFormData({...formData, poNumber: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    placeholder="PO-YYYY-###"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Supplier</label>
-                  <input
-                    type="text"
-                    value={formData.supplier}
-                    onChange={(e) => setFormData({...formData, supplier: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Order Date</label>
-                  <input
-                    type="date"
-                    value={formData.orderDate}
-                    onChange={(e) => setFormData({...formData, orderDate: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Delivery Date</label>
-                  <input
-                    type="date"
-                    value={formData.deliveryDate}
-                    onChange={(e) => setFormData({...formData, deliveryDate: e.target.value})}
-                    className="w-full border-2 border-black px-3 py-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold">Status</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                    className="w-full border-2 border-black px-3 py-2"
-                  >
-                    <option value="draft">Draft</option>
-                    <option value="pending">Pending</option>
-                    <option value="received">Received</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-              </div>
+      <div className="mb-6 flex justify-end">
+        <button
+          onClick={() => {
+            setEditId(null);
+            resetForm();
+            setShowForm(true);
+          }}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+        >
+          + New Purchase Order
+        </button>
+      </div>
 
-              <div className="border-t-2 border-black pt-4">
-                <h3 className="mb-4 text-lg font-bold">ITEMS</h3>
-                <div className="mb-4 grid grid-cols-5 gap-2">
-                  <input
-                    type="text"
-                    placeholder="Item ID"
-                    value={newItem.itemId}
-                    onChange={(e) => setNewItem({...newItem, itemId: e.target.value})}
-                    className="border-2 border-black px-3 py-2"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Ingredient"
-                    value={newItem.ingredient}
-                    onChange={(e) => setNewItem({...newItem, ingredient: e.target.value})}
-                    className="border-2 border-black px-3 py-2"
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Qty"
-                    value={newItem.quantity}
-                    onChange={(e) => setNewItem({...newItem, quantity: e.target.value})}
-                    className="border-2 border-black px-3 py-2"
-                  />
-                  <select
-                    value={newItem.unit}
-                    onChange={(e) => setNewItem({...newItem, unit: e.target.value})}
-                    className="border-2 border-black px-3 py-2"
-                  >
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="L">L</option>
-                    <option value="units">units</option>
-                  </select>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Unit Price"
-                    value={newItem.unitPrice}
-                    onChange={(e) => setNewItem({...newItem, unitPrice: e.target.value})}
-                    className="border-2 border-black px-3 py-2"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddItem}
-                    className="col-span-5 border-2 border-black bg-black px-3 py-2 font-bold text-white hover:bg-gray-800"
-                  >
-                    ADD ITEM
-                  </button>
-                </div>
-
-                {formData.items.length > 0 && (
-                  <div className="space-y-2">
-                    {formData.items.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between border-2 border-gray-300 p-3">
-                        <span className="font-bold">{item.ingredient}</span>
-                        <span>{item.quantity} {item.unit} @ ${item.unitPrice.toFixed(2)} = ${item.total.toFixed(2)}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(item.id)}
-                          className="border border-red-600 px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-600 hover:text-white"
-                        >
-                          REMOVE
-                        </button>
-                      </div>
-                    ))}
-                    <div className="border-t-2 border-black pt-3 text-right">
-                      <p className="text-lg font-black">
-                        TOTAL: ${formData.items.reduce((sum, i) => sum + i.total, 0).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold">Notes</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                  className="w-full border-2 border-black px-3 py-2"
-                  rows={3}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={formData.items.length === 0}
-                className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800 disabled:bg-gray-400"
-              >
-                {editId ? 'UPDATE' : 'CREATE'}
-              </button>
-            </form>
-          </div>
-        )}
-
-        <div className="space-y-4">
-          {orders.map((order) => (
-            <div key={order.id} className="border-2 border-black p-6">
-              <div className="mb-4 flex items-start justify-between">
-                <div>
-                  <h3 className="text-lg font-black">{order.poNumber}</h3>
-                  <p className="text-sm text-gray-600">Supplier: {order.supplier}</p>
-                </div>
-                <div className="flex gap-2">
-                  <span className={`px-3 py-1 text-xs font-black ${statusColors[order.status]}`}>
-                    {order.status.toUpperCase()}
-                  </span>
-                  <button
-                    onClick={() => handleEdit(order)}
-                    className="border border-black px-3 py-1 text-sm font-bold hover:bg-black hover:text-white"
-                  >
-                    EDIT
-                  </button>
-                  <button
-                    onClick={() => handleDelete(order.id)}
-                    className="border border-red-600 px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-600 hover:text-white"
-                  >
-                    DELETE
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4 border-t-2 border-black py-4 text-sm">
-                <div>
-                  <p className="font-bold">ORDER DATE</p>
-                  <p>{order.orderDate}</p>
-                </div>
-                <div>
-                  <p className="font-bold">DELIVERY</p>
-                  <p>{order.deliveryDate}</p>
-                </div>
-                <div>
-                  <p className="font-bold">ITEMS</p>
-                  <p className="font-bold">{order.items.length}</p>
-                </div>
-                <div>
-                  <p className="font-bold">TOTAL VALUE</p>
-                  <p className="text-lg font-black">${order.items.reduce((sum, i) => sum + i.total, 0).toFixed(2)}</p>
-                </div>
-              </div>
-
-              <div className="border-t-2 border-black pt-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-black">
-                      <th className="text-left text-xs font-bold">INGREDIENT</th>
-                      <th className="text-center text-xs font-bold">QUANTITY</th>
-                      <th className="text-right text-xs font-bold">UNIT PRICE</th>
-                      <th className="text-right text-xs font-bold">TOTAL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {order.items.map((item) => (
-                      <tr key={item.id} className="border-b border-gray-300">
-                        <td className="py-2">{item.ingredient}</td>
-                        <td className="text-center">{item.quantity} {item.unit}</td>
-                        <td className="text-right">${item.unitPrice.toFixed(2)}</td>
-                        <td className="text-right font-bold">${item.total.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {order.notes && (
-                <div className="mt-4 border-t-2 border-black pt-4">
-                  <p className="text-xs font-bold">NOTES</p>
-                  <p className="text-sm">{order.notes}</p>
-                </div>
-              )}
+      <Modal
+        isOpen={showForm}
+        onClose={() => { setShowForm(false); setEditId(null); }}
+        title={editId ? 'Edit Purchase Order' : 'Create Purchase Order'}
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4 max-h-96 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">PO Number</label>
+              <input
+                type="text"
+                value={formData.poNumber}
+                onChange={(e) => setFormData({...formData, poNumber: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                placeholder="PO-YYYY-###"
+                required
+              />
             </div>
-          ))}
-        </div>
-
-        {orders.length === 0 && !showForm && (
-          <div className="mt-8 border-2 border-black p-12 text-center">
-            <p className="mb-4 text-lg font-bold">NO PURCHASE ORDERS</p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="border-2 border-black bg-black px-6 py-2 font-bold text-white hover:bg-gray-800"
-            >
-              CREATE FIRST ORDER
-            </button>
+            <div>
+              <label className="block text-sm font-medium mb-1">Supplier</label>
+              <input
+                type="text"
+                value={formData.supplier}
+                onChange={(e) => setFormData({...formData, supplier: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Order Date</label>
+              <input
+                type="date"
+                value={formData.orderDate}
+                onChange={(e) => setFormData({...formData, orderDate: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Delivery Date</label>
+              <input
+                type="date"
+                value={formData.deliveryDate}
+                onChange={(e) => setFormData({...formData, deliveryDate: e.target.value})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              >
+                <option value="draft">Draft</option>
+                <option value="pending">Pending</option>
+                <option value="received">Received</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
           </div>
-        )}
-      </main>
+
+          <div className="border-t border-border pt-4">
+            <label className="block text-sm font-medium mb-3">Items</label>
+            <div className="grid grid-cols-5 gap-2 mb-3">
+              <input type="text" placeholder="Item ID" value={newItem.itemId} onChange={(e) => setNewItem({...newItem, itemId: e.target.value})} className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
+              <input type="text" placeholder="Ingredient" value={newItem.ingredient} onChange={(e) => setNewItem({...newItem, ingredient: e.target.value})} className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
+              <input type="number" step="0.01" placeholder="Qty" value={newItem.quantity} onChange={(e) => setNewItem({...newItem, quantity: e.target.value})} className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
+              <select value={newItem.unit} onChange={(e) => setNewItem({...newItem, unit: e.target.value})} className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none">
+                <option value="kg">kg</option>
+                <option value="g">g</option>
+                <option value="L">L</option>
+                <option value="units">units</option>
+              </select>
+              <input type="number" step="0.01" placeholder="Unit Price" value={newItem.unitPrice} onChange={(e) => setNewItem({...newItem, unitPrice: e.target.value})} className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
+            </div>
+            <button type="button" onClick={handleAddItem} className="text-sm text-primary hover:text-primary/80 font-medium">+ Add Item</button>
+
+            {formData.items.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {formData.items.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between bg-secondary p-3 rounded-lg text-sm">
+                    <span className="font-medium">{item.ingredient}</span>
+                    <span>{item.quantity} {item.unit} @ ${item.unitPrice.toFixed(2)} = ${item.total.toFixed(2)}</span>
+                    <button type="button" onClick={() => handleRemoveItem(item.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">Remove</button>
+                  </div>
+                ))}
+                <div className="text-right font-semibold text-sm pt-2 border-t border-border">
+                  Total: ${formData.items.reduce((sum, i) => sum + i.total, 0).toFixed(2)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Notes</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex gap-2 justify-end pt-4 border-t border-border">
+            <button type="button" onClick={() => { setShowForm(false); setEditId(null); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors">Cancel</button>
+            <button type="submit" disabled={formData.items.length === 0} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">{editId ? 'Update' : 'Create'} Order</button>
+          </div>
+        </form>
+      </Modal>
+
+      <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary border-b border-border">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold">PO Number</th>
+              <th className="px-4 py-3 text-left font-semibold">Supplier</th>
+              <th className="px-4 py-3 text-left font-semibold">Order Date</th>
+              <th className="px-4 py-3 text-left font-semibold">Delivery</th>
+              <th className="px-4 py-3 text-left font-semibold">Items</th>
+              <th className="px-4 py-3 text-right font-semibold">Value</th>
+              <th className="px-4 py-3 text-center font-semibold">Status</th>
+              <th className="px-4 py-3 text-left font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No purchase orders found</td>
+              </tr>
+            ) : (
+              orders.map((order) => (
+                <tr key={order.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                  <td className="px-4 py-3 font-medium">{order.poNumber}</td>
+                  <td className="px-4 py-3 text-sm">{order.supplier}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{order.orderDate}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{order.deliveryDate}</td>
+                  <td className="px-4 py-3">{order.items.length}</td>
+                  <td className="px-4 py-3 text-right font-semibold">${order.items.reduce((sum, i) => sum + i.total, 0).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(order.status)}`}>
+                      {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEdit(order)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium">Edit</button>
+                      <button onClick={() => handleDelete(order.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors font-medium">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
