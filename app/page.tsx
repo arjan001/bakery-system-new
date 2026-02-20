@@ -18,8 +18,8 @@ export default function Dashboard() {
   return (
     <div className="p-8">
       <div className="mb-12">
-        <h1 className="mb-2">Dashboard</h1>
-        <p className="text-muted-foreground">Welcome to your bakery management system</p>
+        <h1 className="mb-2">Snackoh Bakery Dashboard</h1>
+        <p className="text-muted-foreground">Welcome to Snackoh Bakery Management System</p>
       </div>
 
       {/* Stats Grid */}

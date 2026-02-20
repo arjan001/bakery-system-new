@@ -1,63 +1,54 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Modal } from '@/components/modal';
+import { supabase } from '@/lib/supabase';
 
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  saleType: 'Retail' | 'Wholesale';
-}
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  retailPrice: number;
-  wholesalePrice: number;
-  stock: number;
-  category: string;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  phone: string;
-  type: string;
-}
+interface CartItem { id: string; name: string; sku: string; price: number; quantity: number; stock: number; }
+interface Product { id: string; name: string; sku: string; retailPrice: number; wholesalePrice: number; stock: number; category: string; }
+interface Customer { id: string; name: string; phone: string; type: string; }
+interface HeldOrder { id: string; name: string; items: CartItem[]; customer: Customer; saleType: string; time: string; }
+interface ReceiptData { receiptNo: string; date: string; cashier: string; customer: string; items: CartItem[]; subtotal: number; tax: number; total: number; paid: number; change: number; method: string; mpesaRef?: string; }
 
 type PaymentMethod = 'Cash' | 'Mpesa' | 'Credit';
 type MpesaStatus = 'idle' | 'sending' | 'waiting' | 'success' | 'failed';
+type POSView = 'login' | 'pos';
 
 export default function POSPage() {
-  // Products
-  const [products] = useState<Product[]>([
-    { id: '1', name: 'White Bread', sku: 'WB001', retailPrice: 200, wholesalePrice: 150, stock: 50, category: 'Bread' },
-    { id: '2', name: 'Croissant', sku: 'CR001', retailPrice: 150, wholesalePrice: 100, stock: 30, category: 'Pastry' },
-    { id: '3', name: 'Chocolate Cake', sku: 'CC001', retailPrice: 500, wholesalePrice: 400, stock: 20, category: 'Cake' },
-    { id: '4', name: 'Donut', sku: 'DN001', retailPrice: 50, wholesalePrice: 35, stock: 100, category: 'Pastry' },
-    { id: '5', name: 'Bagel', sku: 'BG001', retailPrice: 100, wholesalePrice: 75, stock: 40, category: 'Bread' },
-    { id: '6', name: 'Muffin', sku: 'MF001', retailPrice: 120, wholesalePrice: 90, stock: 25, category: 'Cake' },
-  ]);
+  // ── Auth ──
+  const [view, setView] = useState<POSView>('login');
+  const [cashierName, setCashierName] = useState('');
+  const [cashierPin, setCashierPin] = useState('');
+  const [loggedCashier, setLoggedCashier] = useState('');
+  const [loginError, setLoginError] = useState('');
 
-  // Customers
-  const WALK_IN: Customer = { id: 'walk-in', name: 'Walk-in Customer', phone: '', type: 'Retail' };
+  // ── Opening Balance ──
+  const [openingBalance, setOpeningBalance] = useState(0);
+  const [showOpeningBalance, setShowOpeningBalance] = useState(false);
+  const [shiftStartTime, setShiftStartTime] = useState('');
+  const [totalSalesCount, setTotalSalesCount] = useState(0);
+  const [totalSalesAmount, setTotalSalesAmount] = useState(0);
+
+  // ── Products ──
+  const [products, setProducts] = useState<Product[]>([]);
   const [customers] = useState<Customer[]>([
-    WALK_IN,
+    { id: 'walk-in', name: 'Walk-in Customer', phone: '', type: 'Retail' },
     { id: '1', name: 'Main Retail Outlet', phone: '+254712345678', type: 'Retail' },
     { id: '2', name: 'Wholesale Distributors', phone: '+254723456789', type: 'Wholesale' },
   ]);
 
-  // Cart state
+  // ── Cart ──
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [saleType, setSaleType] = useState<'Retail' | 'Wholesale'>('Retail');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer>(WALK_IN);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer>(customers[0]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
 
-  // Payment state
+  // ── Held Orders ──
+  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
+  const [showHeld, setShowHeld] = useState(false);
+
+  // ── Payment ──
   const [showPayment, setShowPayment] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [cashAmount, setCashAmount] = useState(0);
@@ -67,248 +58,274 @@ export default function POSPage() {
   const [creditName, setCreditName] = useState('');
   const [creditPhone, setCreditPhone] = useState('');
 
+  // ── Receipt ──
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
+
+  // ── Fetch products from inventory / pricing ──
+  const fetchProducts = useCallback(async () => {
+    const { data } = await supabase.from('pricing_tiers').select('*').eq('active', true);
+    if (data && data.length > 0) {
+      setProducts(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string, name: (r.product_name || '') as string, sku: (r.product_code || '') as string,
+        retailPrice: (r.retail_price || 0) as number, wholesalePrice: (r.wholesale_price || 0) as number,
+        stock: 999, category: 'Products',
+      })));
+    } else {
+      // Fallback defaults
+      setProducts([
+        { id: '1', name: 'White Bread', sku: 'WB001', retailPrice: 200, wholesalePrice: 150, stock: 50, category: 'Bread' },
+        { id: '2', name: 'Croissant', sku: 'CR001', retailPrice: 150, wholesalePrice: 100, stock: 30, category: 'Pastry' },
+        { id: '3', name: 'Chocolate Cake', sku: 'CC001', retailPrice: 500, wholesalePrice: 400, stock: 20, category: 'Cake' },
+        { id: '4', name: 'Donut', sku: 'DN001', retailPrice: 50, wholesalePrice: 35, stock: 100, category: 'Pastry' },
+        { id: '5', name: 'Bagel', sku: 'BG001', retailPrice: 100, wholesalePrice: 75, stock: 40, category: 'Bread' },
+        { id: '6', name: 'Muffin', sku: 'MF001', retailPrice: 120, wholesalePrice: 90, stock: 25, category: 'Cake' },
+      ]);
+    }
+  }, []);
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
   // Totals
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const tax = subtotal * 0.16;
   const total = subtotal + tax;
-
-  // Filtered products
   const categories = [...new Set(products.map(p => p.category))];
   const filteredProducts = products.filter(p => {
-    const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchCategory = filterCategory === 'All' || p.category === filterCategory;
-    return matchSearch && matchCategory;
+    const match = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
+    const cat = filterCategory === 'All' || p.category === filterCategory;
+    return match && cat;
   });
 
-  // Cart operations
+  // ── Login ──
+  const handleLogin = async () => {
+    if (!cashierName.trim()) { setLoginError('Enter your name'); return; }
+    if (!cashierPin || cashierPin.length < 4) { setLoginError('Enter 4-digit PIN'); return; }
+    // Check against employees table
+    const { data } = await supabase.from('employees').select('*').ilike('first_name', `%${cashierName.split(' ')[0]}%`).eq('status', 'Active').limit(1);
+    if (data && data.length > 0) {
+      setLoggedCashier(`${data[0].first_name} ${data[0].last_name}`);
+    } else {
+      setLoggedCashier(cashierName);
+    }
+    setLoginError('');
+    setShiftStartTime(new Date().toLocaleTimeString());
+    setShowOpeningBalance(true);
+  };
+
+  const handleStartShift = () => {
+    setShowOpeningBalance(false);
+    setView('pos');
+  };
+
+  // ── Cart ──
   const addToCart = (product: Product) => {
+    if (product.stock <= 0) return;
     const price = saleType === 'Retail' ? product.retailPrice : product.wholesalePrice;
-    const existing = cartItems.find(item => item.id === product.id);
+    const existing = cartItems.find(i => i.id === product.id);
     if (existing) {
-      setCartItems(cartItems.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
+      if (existing.quantity >= product.stock) return;
+      setCartItems(cartItems.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
     } else {
-      setCartItems([...cartItems, { id: product.id, name: product.name, price, quantity: 1, saleType }]);
+      setCartItems([...cartItems, { id: product.id, name: product.name, sku: product.sku, price, quantity: 1, stock: product.stock }]);
     }
   };
+  const updateQty = (id: string, qty: number) => { if (qty <= 0) setCartItems(cartItems.filter(i => i.id !== id)); else setCartItems(cartItems.map(i => i.id === id ? { ...i, quantity: Math.min(qty, i.stock) } : i)); };
+  const removeItem = (id: string) => setCartItems(cartItems.filter(i => i.id !== id));
+  const clearCart = () => { if (cartItems.length > 0 && confirm('Clear cart?')) setCartItems([]); };
 
-  const updateQuantity = (id: string, qty: number) => {
-    if (qty <= 0) {
-      setCartItems(cartItems.filter(item => item.id !== id));
-    } else {
-      setCartItems(cartItems.map(item => item.id === id ? { ...item, quantity: qty } : item));
-    }
-  };
-
-  const removeFromCart = (id: string) => setCartItems(cartItems.filter(item => item.id !== id));
-
-  const clearCart = () => {
-    if (cartItems.length > 0 && confirm('Clear the cart?')) setCartItems([]);
-  };
-
-  // Reset everything
-  const resetPOS = useCallback(() => {
+  // ── Hold/Recall ──
+  const holdOrder = () => {
+    if (cartItems.length === 0) return;
+    const held: HeldOrder = { id: Date.now().toString(), name: selectedCustomer.name, items: [...cartItems], customer: selectedCustomer, saleType, time: new Date().toLocaleTimeString() };
+    setHeldOrders([...heldOrders, held]);
     setCartItems([]);
-    setPaymentMethod('Cash');
+  };
+  const recallOrder = (held: HeldOrder) => {
+    setCartItems(held.items);
+    setSelectedCustomer(held.customer);
+    setSaleType(held.saleType as 'Retail' | 'Wholesale');
+    setHeldOrders(heldOrders.filter(h => h.id !== held.id));
+    setShowHeld(false);
+  };
+  const deleteHeld = (id: string) => setHeldOrders(heldOrders.filter(h => h.id !== id));
+
+  // ── Customer ──
+  const handleCustomerChange = (cid: string) => {
+    const c = customers.find(x => x.id === cid) || customers[0];
+    setSelectedCustomer(c);
+    if (c.phone) setMpesaPhone(c.phone);
+    if (c.type === 'Wholesale') setSaleType('Wholesale');
+  };
+
+  // ── M-Pesa ──
+  const sendMpesaStkPush = async () => {
+    if (!mpesaPhone) { setMpesaMessage('Enter M-Pesa phone number'); return; }
+    setMpesaStatus('sending');
+    setMpesaMessage('Sending STK push to ' + mpesaPhone + '...');
+    try {
+      const res = await fetch('/api/mpesa', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: mpesaPhone, amount: Math.ceil(total), accountReference: `SNACKOH-${Date.now()}`, description: `Snackoh POS - ${selectedCustomer.name}` }) });
+      const data = await res.json();
+      if (data.success) { setMpesaStatus('waiting'); setMpesaMessage('STK sent! Waiting for PIN...'); setTimeout(() => { setMpesaStatus('success'); setMpesaMessage(`KES ${total.toFixed(0)} received via M-Pesa`); }, 8000); }
+      else { setMpesaStatus('failed'); setMpesaMessage(data.message || 'STK push failed'); }
+    } catch { setMpesaStatus('failed'); setMpesaMessage('Network error'); }
+  };
+
+  // ── Generate receipt number ──
+  const genReceiptNo = () => `SNK-${Date.now().toString(36).toUpperCase()}`;
+
+  // ── Complete Sale ──
+  const completeSale = async (method: string, paid: number, change: number, mpesaRef?: string) => {
+    const rNo = genReceiptNo();
+    const receipt: ReceiptData = { receiptNo: rNo, date: new Date().toLocaleString(), cashier: loggedCashier, customer: selectedCustomer.name, items: [...cartItems], subtotal, tax, total, paid, change, method, mpesaRef };
+    // Save to Supabase
+    try {
+      await supabase.from('pos_sales').insert({
+        receipt_number: rNo, customer_name: selectedCustomer.name, sale_type: saleType,
+        payment_method: method, mpesa_reference: mpesaRef || null, mpesa_phone: method === 'M-Pesa' ? mpesaPhone : null,
+        subtotal, tax, total, amount_paid: paid, change_amount: change, cashier_name: loggedCashier, status: 'Completed',
+      });
+    } catch { /* continue */ }
+    // Update stock locally
+    setProducts(products.map(p => { const ci = cartItems.find(i => i.id === p.id); return ci ? { ...p, stock: Math.max(0, p.stock - ci.quantity) } : p; }));
+    setTotalSalesCount(prev => prev + 1);
+    setTotalSalesAmount(prev => prev + total);
+    setReceiptData(receipt);
+    setShowPayment(false);
+    setShowReceipt(true);
+    setCartItems([]);
     setCashAmount(0);
     setMpesaPhone('');
     setMpesaStatus('idle');
-    setMpesaMessage('');
-    setCreditName('');
-    setCreditPhone('');
-    setShowPayment(false);
-  }, []);
-
-  // Customer selection
-  const handleCustomerChange = (customerId: string) => {
-    const cust = customers.find(c => c.id === customerId) || WALK_IN;
-    setSelectedCustomer(cust);
-    if (cust.phone) setMpesaPhone(cust.phone);
-    if (cust.type === 'Wholesale') setSaleType('Wholesale');
+    setPaymentMethod('Cash');
   };
 
-  // ── M-Pesa STK Push ──
-  const sendMpesaStkPush = async () => {
-    if (!mpesaPhone) {
-      setMpesaMessage('Please enter M-Pesa phone number');
-      return;
-    }
-
-    setMpesaStatus('sending');
-    setMpesaMessage('Sending STK push to ' + mpesaPhone + '...');
-
-    try {
-      const res = await fetch('/api/mpesa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: mpesaPhone,
-          amount: Math.ceil(total),
-          accountReference: `POS-${Date.now()}`,
-          description: `Bakery POS Sale - ${selectedCustomer.name}`,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        setMpesaStatus('waiting');
-        setMpesaMessage('STK push sent! Waiting for customer to enter PIN on their phone...');
-
-        // Poll for completion (in production, use callback webhook)
-        setTimeout(() => {
-          setMpesaStatus('success');
-          setMpesaMessage(`Payment of KES ${total.toFixed(0)} received via M-Pesa`);
-        }, 8000);
-      } else {
-        setMpesaStatus('failed');
-        setMpesaMessage(data.message || 'Failed to send STK push. Try again.');
-      }
-    } catch {
-      setMpesaStatus('failed');
-      setMpesaMessage('Network error. Check connection and try again.');
-    }
-  };
-
-  // ── Handle Payment ──
   const handlePayment = () => {
     if (cartItems.length === 0) return;
-
     if (paymentMethod === 'Cash') {
-      if (cashAmount < total) {
-        alert('Insufficient payment amount');
-        return;
-      }
-      const change = cashAmount - total;
-      alert(`Sale Complete!\nTotal: KES ${total.toFixed(0)}\nPaid: KES ${cashAmount.toFixed(0)}\nChange: KES ${change.toFixed(0)}`);
-      resetPOS();
+      if (cashAmount < total) return;
+      completeSale('Cash', cashAmount, cashAmount - total);
     } else if (paymentMethod === 'Mpesa') {
-      if (mpesaStatus === 'success') {
-        alert(`M-Pesa Sale Complete!\nTotal: KES ${total.toFixed(0)}\nPhone: ${mpesaPhone}\nPayment received successfully.`);
-        resetPOS();
-      }
+      if (mpesaStatus === 'success') completeSale('M-Pesa', total, 0, 'MPesa-Auto');
     } else if (paymentMethod === 'Credit') {
       const name = creditName || selectedCustomer.name;
-      const phone = creditPhone || selectedCustomer.phone;
-      if (!name || name === 'Walk-in Customer') {
-        alert('Please select or enter a customer for credit sales');
-        return;
-      }
-      // Save debtor record
-      if (typeof window !== 'undefined') {
-        const existing = window.localStorage.getItem('debtors');
-        const list = existing ? JSON.parse(existing) : [];
-        list.push({ id: Date.now().toString(), name, phone, amount: total, date: new Date().toLocaleDateString(), status: 'Pending', items: cartItems });
-        window.localStorage.setItem('debtors', JSON.stringify(list));
-      }
-      alert(`Credit Sale Recorded!\nCustomer: ${name}\nAmount: KES ${total.toFixed(0)}\nThis appears in Debtors module.`);
-      resetPOS();
+      if (!name || name === 'Walk-in Customer') { alert('Select or enter customer for credit'); return; }
+      completeSale('Credit', 0, 0);
     }
   };
 
-  // Open checkout
   const openCheckout = () => {
     if (cartItems.length === 0) return;
-    setPaymentMethod('Cash');
-    setCashAmount(0);
-    setMpesaPhone(selectedCustomer.phone || '');
-    setMpesaStatus('idle');
-    setMpesaMessage('');
-    setCreditName(selectedCustomer.id !== 'walk-in' ? selectedCustomer.name : '');
-    setCreditPhone(selectedCustomer.phone || '');
+    setPaymentMethod('Cash'); setCashAmount(0); setMpesaPhone(selectedCustomer.phone || ''); setMpesaStatus('idle'); setMpesaMessage('');
+    setCreditName(selectedCustomer.id !== 'walk-in' ? selectedCustomer.name : ''); setCreditPhone(selectedCustomer.phone || '');
     setShowPayment(true);
   };
 
-  // Quick cash amounts
+  // ── Print Receipt ──
+  const printReceipt = () => {
+    if (!receiptRef.current) return;
+    const win = window.open('', '_blank', 'width=320,height=600');
+    if (!win) return;
+    win.document.write(`<html><head><title>Receipt</title><style>body{font-family:'Courier New',monospace;font-size:12px;padding:10px;max-width:300px;margin:0 auto}h2,h3{text-align:center;margin:4px 0}hr{border:none;border-top:1px dashed #333;margin:8px 0}.row{display:flex;justify-content:space-between}.total{font-size:14px;font-weight:bold}.center{text-align:center}</style></head><body>`);
+    win.document.write(receiptRef.current.innerHTML);
+    win.document.write(`</body></html>`);
+    win.document.close();
+    win.print();
+  };
+
   const quickCash = [100, 200, 500, 1000, 2000, 5000];
 
+  // ── LOGIN VIEW ──
+  if (view === 'login') {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-65px)] bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="w-full max-w-sm">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-primary px-6 py-8 text-center text-primary-foreground">
+              <h1 className="text-2xl font-black tracking-wide">SNACKOH</h1>
+              <p className="text-sm opacity-80 mt-1">Point of Sale</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Cashier Name</label>
+                <input type="text" placeholder="Enter your name" value={cashierName} onChange={(e) => setCashierName(e.target.value)} className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none text-center font-medium" autoFocus />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">PIN</label>
+                <input type="password" placeholder="4-digit PIN" maxLength={6} value={cashierPin} onChange={(e) => setCashierPin(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none text-center text-2xl tracking-[0.5em] font-mono" />
+              </div>
+              {loginError && <p className="text-sm text-red-600 text-center font-medium">{loginError}</p>}
+              <button onClick={handleLogin} className="w-full py-3 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-sm">Sign In to POS</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Opening Balance Modal */}
+        <Modal isOpen={showOpeningBalance} onClose={() => {}} title="Opening Balance" size="sm">
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">Welcome, <strong>{loggedCashier}</strong></p>
+            <p className="text-xs text-muted-foreground">Shift started: {shiftStartTime}</p>
+            <div>
+              <label className="block text-sm font-medium mb-2">Cash in Drawer (KES)</label>
+              <input type="number" value={openingBalance || ''} onChange={(e) => setOpeningBalance(parseFloat(e.target.value) || 0)} className="w-full px-4 py-3 border border-border rounded-xl text-center text-2xl font-bold focus:ring-2 focus:ring-primary/50 outline-none" placeholder="0" autoFocus />
+            </div>
+            <button onClick={handleStartShift} className="w-full py-3 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold">Start Shift</button>
+          </div>
+        </Modal>
+      </div>
+    );
+  }
+
+  // ── POS VIEW ──
   return (
     <div className="flex flex-col h-[calc(100vh-65px)] bg-background">
       {/* Top Bar */}
-      <div className="px-6 py-3 border-b border-border bg-card flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-bold">Point of Sale</h1>
-          <p className="text-xs text-muted-foreground">Cash &bull; M-Pesa &bull; Credit</p>
-        </div>
-
+      <div className="px-4 py-2 border-b border-border bg-card flex items-center justify-between gap-3 text-sm">
         <div className="flex items-center gap-3">
-          {/* Customer selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Customer:</span>
-            <select
-              value={selectedCustomer.id}
-              onChange={(e) => handleCustomerChange(e.target.value)}
-              className="px-3 py-1.5 border border-border rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary/50 outline-none bg-background min-w-[180px]"
-            >
-              {customers.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Sale type toggle */}
+          <span className="font-bold text-primary">SNACKOH POS</span>
+          <span className="text-xs text-muted-foreground">Cashier: <strong>{loggedCashier}</strong></span>
+          <span className="text-xs text-muted-foreground">Sales: {totalSalesCount} | KES {totalSalesAmount.toLocaleString()}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={selectedCustomer.id} onChange={(e) => handleCustomerChange(e.target.value)} className="px-3 py-1.5 border border-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary/50 outline-none bg-background min-w-[160px]">
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
           <div className="flex rounded-lg border border-border overflow-hidden">
             {(['Retail', 'Wholesale'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setSaleType(t)}
-                className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                  saleType === t ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-secondary'
-                }`}
-              >
-                {t}
-              </button>
+              <button key={t} onClick={() => setSaleType(t)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${saleType === t ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-secondary'}`}>{t}</button>
             ))}
           </div>
+          <button onClick={holdOrder} disabled={cartItems.length === 0} className="px-3 py-1.5 text-xs border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 font-medium disabled:opacity-40">Hold</button>
+          <button onClick={() => setShowHeld(true)} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium relative">
+            Recall {heldOrders.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 text-white rounded-full text-[10px] flex items-center justify-center">{heldOrders.length}</span>}
+          </button>
+          <button onClick={() => { setView('login'); setCashierName(''); setCashierPin(''); }} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium">End Shift</button>
         </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* ── LEFT: Products ── */}
-        <div className="flex-1 flex flex-col p-4 overflow-hidden">
-          {/* Search + filter */}
-          <div className="flex gap-2 mb-4">
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1 px-4 py-2.5 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none bg-card text-sm"
-            />
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="px-4 py-2.5 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none bg-card text-sm font-medium"
-            >
-              <option value="All">All</option>
-              {categories.map(c => <option key={c}>{c}</option>)}
-            </select>
+        {/* Products */}
+        <div className="flex-1 flex flex-col p-3 overflow-hidden">
+          <div className="flex gap-2 mb-3">
+            <input type="text" placeholder="Search products..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 px-3 py-2 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none bg-card text-sm" />
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="px-3 py-2 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none bg-card text-sm">{['All', ...categories].map(c => <option key={c}>{c}</option>)}</select>
           </div>
-
-          {/* Product grid */}
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {filteredProducts.map(product => {
-                const price = saleType === 'Retail' ? product.retailPrice : product.wholesalePrice;
-                const inCart = cartItems.find(i => i.id === product.id);
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+              {filteredProducts.map(p => {
+                const price = saleType === 'Retail' ? p.retailPrice : p.wholesalePrice;
+                const inCart = cartItems.find(i => i.id === p.id);
+                const outOfStock = p.stock <= 0;
                 return (
-                  <button
-                    key={product.id}
-                    onClick={() => addToCart(product)}
-                    disabled={product.stock === 0}
-                    className={`relative p-4 border rounded-xl text-left transition-all hover:shadow-lg disabled:opacity-40 disabled:cursor-not-allowed ${
-                      inCart ? 'border-primary bg-primary/5 shadow-md' : 'border-border bg-card hover:border-primary/50'
-                    }`}
-                  >
-                    {inCart && (
-                      <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shadow">
-                        {inCart.quantity}
-                      </span>
-                    )}
-                    <p className="font-semibold text-sm mb-0.5">{product.name}</p>
-                    <p className="text-xs text-muted-foreground mb-2">{product.sku} &bull; {product.category}</p>
-                    <div className="flex justify-between items-end">
-                      <span className="text-base font-bold text-primary">KES {price}</span>
-                      <span className="text-xs text-muted-foreground">{product.stock} left</span>
+                  <button key={p.id} onClick={() => addToCart(p)} disabled={outOfStock} className={`relative p-3 border rounded-xl text-left transition-all ${outOfStock ? 'opacity-40 cursor-not-allowed bg-gray-50' : inCart ? 'border-primary bg-primary/5 shadow' : 'border-border bg-card hover:border-primary/50 hover:shadow'}`}>
+                    {inCart && <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center shadow">{inCart.quantity}</span>}
+                    {outOfStock && <span className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-100 text-red-700 text-[9px] font-bold rounded">SOLD OUT</span>}
+                    <p className="font-semibold text-xs mb-0.5 truncate">{p.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{p.sku}</p>
+                    <div className="flex justify-between items-end mt-1">
+                      <span className="text-sm font-bold text-primary">KES {price}</span>
+                      <span className="text-[10px] text-muted-foreground">{p.stock} left</span>
                     </div>
                   </button>
                 );
@@ -317,258 +334,143 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* ── RIGHT: Cart ── */}
-        <div className="w-[340px] flex flex-col border-l border-border bg-card">
-          {/* Cart header */}
-          <div className="p-4 border-b border-border">
-            <div className="flex items-center justify-between">
-              <h2 className="font-bold text-base">Cart</h2>
-              <span className="text-xs px-2 py-1 rounded-full bg-secondary font-medium">
-                {cartItems.reduce((s, i) => s + i.quantity, 0)} items
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">{selectedCustomer.name} &bull; {saleType}</p>
+        {/* Cart */}
+        <div className="w-[320px] flex flex-col border-l border-border bg-card">
+          <div className="p-3 border-b border-border">
+            <div className="flex items-center justify-between"><h2 className="font-bold text-sm">Cart</h2><span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium">{cartItems.reduce((s, i) => s + i.quantity, 0)} items</span></div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{selectedCustomer.name} &bull; {saleType}</p>
           </div>
-
-          {/* Cart items */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {cartItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                <p className="text-3xl mb-2">🛒</p>
-                <p className="text-sm">Tap products to add</p>
-              </div>
-            ) : (
-              cartItems.map(item => (
-                <div key={item.id} className="flex items-center gap-3 bg-secondary/50 p-3 rounded-xl">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">KES {item.price} each</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="w-7 h-7 rounded-lg bg-background border border-border text-sm font-bold hover:bg-red-50 hover:text-red-600 transition-colors">-</button>
-                    <span className="w-8 text-center text-sm font-bold">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="w-7 h-7 rounded-lg bg-background border border-border text-sm font-bold hover:bg-green-50 hover:text-green-600 transition-colors">+</button>
-                  </div>
-                  <div className="text-right min-w-[60px]">
-                    <p className="text-sm font-bold">KES {(item.price * item.quantity).toLocaleString()}</p>
-                    <button onClick={() => removeFromCart(item.id)} className="text-xs text-red-500 hover:text-red-700 font-medium">Remove</button>
-                  </div>
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground"><p className="text-2xl mb-1">🛒</p><p className="text-xs">Tap products to add</p></div>
+            ) : cartItems.map(item => (
+              <div key={item.id} className="flex items-center gap-2 bg-secondary/50 p-2 rounded-lg">
+                <div className="flex-1 min-w-0"><p className="font-medium text-xs truncate">{item.name}</p><p className="text-[10px] text-muted-foreground">KES {item.price} x {item.quantity}</p></div>
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => updateQty(item.id, item.quantity - 1)} className="w-6 h-6 rounded bg-background border border-border text-xs font-bold hover:bg-red-50">-</button>
+                  <span className="w-6 text-center text-xs font-bold">{item.quantity}</span>
+                  <button onClick={() => updateQty(item.id, item.quantity + 1)} className="w-6 h-6 rounded bg-background border border-border text-xs font-bold hover:bg-green-50">+</button>
                 </div>
-              ))
-            )}
+                <div className="text-right min-w-[50px]">
+                  <p className="text-xs font-bold">KES {(item.price * item.quantity).toLocaleString()}</p>
+                  <button onClick={() => removeItem(item.id)} className="text-[10px] text-red-500 hover:text-red-700">Remove</button>
+                </div>
+              </div>
+            ))}
           </div>
-
-          {/* Cart totals */}
-          <div className="p-4 border-t border-border space-y-2">
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span>KES {subtotal.toLocaleString()}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">VAT (16%)</span><span>KES {tax.toFixed(0)}</span></div>
-            <div className="flex justify-between text-lg font-bold border-t border-border pt-2">
-              <span>Total</span>
-              <span className="text-primary">KES {total.toLocaleString()}</span>
-            </div>
+          <div className="p-3 border-t border-border space-y-1.5">
+            <div className="flex justify-between text-xs"><span className="text-muted-foreground">Subtotal</span><span>KES {subtotal.toLocaleString()}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-muted-foreground">VAT (16%)</span><span>KES {tax.toFixed(0)}</span></div>
+            <div className="flex justify-between text-base font-bold border-t border-border pt-1.5"><span>Total</span><span className="text-primary">KES {total.toLocaleString()}</span></div>
             <div className="grid grid-cols-2 gap-2 pt-2">
-              <button onClick={clearCart} className="px-4 py-2.5 border border-border rounded-xl hover:bg-secondary transition-colors font-medium text-sm">Clear</button>
-              <button
-                onClick={openCheckout}
-                disabled={cartItems.length === 0}
-                className="px-4 py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 font-semibold text-sm"
-              >
-                Checkout
-              </button>
+              <button onClick={clearCart} className="px-3 py-2 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Clear</button>
+              <button onClick={openCheckout} disabled={cartItems.length === 0} className="px-3 py-2 bg-primary text-primary-foreground rounded-xl hover:opacity-90 disabled:opacity-40 font-bold text-xs">Checkout</button>
             </div>
           </div>
         </div>
       </div>
 
+      {/* ── Held Orders Modal ── */}
+      <Modal isOpen={showHeld} onClose={() => setShowHeld(false)} title={`Held Orders (${heldOrders.length})`} size="md">
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {heldOrders.length === 0 ? <p className="text-center text-muted-foreground text-sm py-8">No held orders</p> : heldOrders.map(h => (
+            <div key={h.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
+              <div><p className="text-sm font-medium">{h.name}</p><p className="text-xs text-muted-foreground">{h.items.length} items &bull; {h.saleType} &bull; {h.time}</p></div>
+              <div className="flex gap-2"><button onClick={() => recallOrder(h)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Recall</button><button onClick={() => deleteHeld(h.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button></div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
       {/* ── Payment Modal ── */}
       <Modal isOpen={showPayment} onClose={() => setShowPayment(false)} title="Complete Payment" size="md">
-        <div className="space-y-5">
-          {/* Amount display */}
-          <div className="text-center py-4 bg-secondary rounded-xl">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Total Amount</p>
-            <p className="text-4xl font-black text-primary">KES {total.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground mt-1">{selectedCustomer.name} &bull; {cartItems.reduce((s, i) => s + i.quantity, 0)} items</p>
+        <div className="space-y-4">
+          <div className="text-center py-3 bg-secondary rounded-xl">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
+            <p className="text-3xl font-black text-primary">KES {total.toLocaleString()}</p>
+            <p className="text-[10px] text-muted-foreground">{selectedCustomer.name} &bull; {cartItems.reduce((s, i) => s + i.quantity, 0)} items &bull; {loggedCashier}</p>
           </div>
-
-          {/* Payment method tabs */}
-          <div>
-            <p className="text-sm font-semibold mb-2">Payment Method</p>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { value: 'Cash' as const, label: 'Cash', icon: '💵' },
-                { value: 'Mpesa' as const, label: 'M-Pesa', icon: '📱' },
-                { value: 'Credit' as const, label: 'Credit', icon: '📝' },
-              ]).map(btn => (
-                <button
-                  key={btn.value}
-                  onClick={() => { setPaymentMethod(btn.value); setMpesaStatus('idle'); setMpesaMessage(''); }}
-                  className={`flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 font-medium transition-all text-sm ${
-                    paymentMethod === btn.value
-                      ? 'border-primary bg-primary/10 text-primary shadow-sm'
-                      : 'border-border hover:border-primary/40 bg-background'
-                  }`}
-                >
-                  <span className="text-xl">{btn.icon}</span>
-                  <span>{btn.label}</span>
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-3 gap-2">
+            {([{ v: 'Cash' as const, l: 'Cash', i: '💵' }, { v: 'Mpesa' as const, l: 'M-Pesa', i: '📱' }, { v: 'Credit' as const, l: 'Credit', i: '📝' }]).map(b => (
+              <button key={b.v} onClick={() => { setPaymentMethod(b.v); setMpesaStatus('idle'); }} className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 text-xs font-medium transition-all ${paymentMethod === b.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}><span className="text-lg">{b.i}</span>{b.l}</button>
+            ))}
           </div>
-
-          {/* ── Cash Payment ── */}
           {paymentMethod === 'Cash' && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">Amount Received</label>
-                <input
-                  type="number"
-                  placeholder="Enter amount"
-                  value={cashAmount || ''}
-                  onChange={(e) => setCashAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full px-4 py-3 border border-border rounded-xl text-lg font-bold focus:ring-2 focus:ring-primary/50 outline-none text-center"
-                  autoFocus
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {quickCash.map(amt => (
-                  <button
-                    key={amt}
-                    onClick={() => setCashAmount(amt)}
-                    className={`py-2 rounded-lg border text-sm font-medium transition-colors ${
-                      cashAmount === amt ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-secondary'
-                    }`}
-                  >
-                    {amt.toLocaleString()}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setCashAmount(Math.ceil(total))}
-                className="w-full py-2 rounded-lg border border-primary/30 text-primary text-sm font-medium hover:bg-primary/5"
-              >
-                Exact Amount ({Math.ceil(total).toLocaleString()})
-              </button>
-              {cashAmount > 0 && (
-                <div className={`p-3 rounded-xl text-center font-bold text-lg ${
-                  cashAmount >= total ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'
-                }`}>
-                  {cashAmount >= total ? `Change: KES ${(cashAmount - total).toFixed(0)}` : `Short: KES ${(total - cashAmount).toFixed(0)}`}
-                </div>
-              )}
+            <div className="space-y-2">
+              <input type="number" placeholder="Amount received" value={cashAmount || ''} onChange={(e) => setCashAmount(parseFloat(e.target.value) || 0)} className="w-full px-4 py-3 border border-border rounded-xl text-lg font-bold focus:ring-2 focus:ring-primary/50 outline-none text-center" autoFocus />
+              <div className="grid grid-cols-3 gap-1.5">{quickCash.map(a => (<button key={a} onClick={() => setCashAmount(a)} className={`py-1.5 rounded-lg border text-xs font-medium ${cashAmount === a ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-secondary'}`}>{a.toLocaleString()}</button>))}</div>
+              <button onClick={() => setCashAmount(Math.ceil(total))} className="w-full py-1.5 rounded-lg border border-primary/30 text-primary text-xs font-medium hover:bg-primary/5">Exact ({Math.ceil(total).toLocaleString()})</button>
+              {cashAmount > 0 && <div className={`p-2 rounded-xl text-center font-bold text-sm ${cashAmount >= total ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>{cashAmount >= total ? `Change: KES ${(cashAmount - total).toFixed(0)}` : `Short: KES ${(total - cashAmount).toFixed(0)}`}</div>}
             </div>
           )}
-
-          {/* ── M-Pesa Payment ── */}
           {paymentMethod === 'Mpesa' && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">M-Pesa Phone Number</label>
-                <input
-                  type="tel"
-                  placeholder="e.g. 0712345678"
-                  value={mpesaPhone}
-                  onChange={(e) => setMpesaPhone(e.target.value)}
-                  className="w-full px-4 py-3 border border-border rounded-xl text-lg font-mono focus:ring-2 focus:ring-primary/50 outline-none text-center tracking-wider"
-                  autoFocus
-                  disabled={mpesaStatus === 'sending' || mpesaStatus === 'waiting'}
-                />
-                <p className="text-xs text-muted-foreground mt-1 text-center">Enter customer&apos;s M-Pesa registered number</p>
-              </div>
-
-              {mpesaStatus === 'idle' && (
-                <button
-                  onClick={sendMpesaStkPush}
-                  disabled={!mpesaPhone}
-                  className="w-full py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
-                >
-                  <span>📱</span> Send STK Push — KES {total.toFixed(0)}
-                </button>
-              )}
-
-              {mpesaStatus === 'sending' && (
-                <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-center">
-                  <div className="animate-spin w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full mx-auto mb-2"></div>
-                  <p className="text-sm font-medium text-blue-800">Sending to {mpesaPhone}...</p>
-                </div>
-              )}
-
-              {mpesaStatus === 'waiting' && (
-                <div className="p-4 rounded-xl bg-yellow-50 border border-yellow-200 text-center">
-                  <div className="animate-pulse">
-                    <p className="text-2xl mb-2">📱</p>
-                    <p className="text-sm font-bold text-yellow-800">Waiting for PIN entry...</p>
-                    <p className="text-xs text-yellow-700 mt-1">Customer should see the prompt on their phone</p>
-                  </div>
-                </div>
-              )}
-
-              {mpesaStatus === 'success' && (
-                <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-center">
-                  <p className="text-2xl mb-1">✅</p>
-                  <p className="text-sm font-bold text-green-800">Payment Received!</p>
-                  <p className="text-xs text-green-700 mt-1">KES {total.toFixed(0)} from {mpesaPhone}</p>
-                </div>
-              )}
-
-              {mpesaStatus === 'failed' && (
-                <div className="space-y-2">
-                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-center">
-                    <p className="text-sm font-medium text-red-800">{mpesaMessage}</p>
-                  </div>
-                  <button
-                    onClick={() => { setMpesaStatus('idle'); setMpesaMessage(''); }}
-                    className="w-full py-2 border border-border rounded-xl text-sm font-medium hover:bg-secondary"
-                  >
-                    Try Again
-                  </button>
-                </div>
-              )}
+            <div className="space-y-2">
+              <input type="tel" placeholder="0712345678" value={mpesaPhone} onChange={(e) => setMpesaPhone(e.target.value)} className="w-full px-4 py-3 border border-border rounded-xl text-lg font-mono focus:ring-2 focus:ring-primary/50 outline-none text-center tracking-wider" autoFocus disabled={mpesaStatus === 'sending' || mpesaStatus === 'waiting'} />
+              {mpesaStatus === 'idle' && <button onClick={sendMpesaStkPush} disabled={!mpesaPhone} className="w-full py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 font-bold text-xs disabled:opacity-40">📱 Send STK Push — KES {total.toFixed(0)}</button>}
+              {mpesaStatus === 'sending' && <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center"><div className="animate-spin w-6 h-6 border-3 border-blue-200 border-t-blue-600 rounded-full mx-auto mb-1"></div><p className="text-xs text-blue-800">Sending...</p></div>}
+              {mpesaStatus === 'waiting' && <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-center animate-pulse"><p className="text-lg">📱</p><p className="text-xs font-bold text-yellow-800">Waiting for PIN...</p></div>}
+              {mpesaStatus === 'success' && <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-center"><p className="text-lg">✅</p><p className="text-xs font-bold text-green-800">Payment Received!</p></div>}
+              {mpesaStatus === 'failed' && <><div className="p-2 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800">{mpesaMessage}</div><button onClick={() => setMpesaStatus('idle')} className="w-full py-1.5 border border-border rounded-xl text-xs hover:bg-secondary">Retry</button></>}
             </div>
           )}
-
-          {/* ── Credit Payment ── */}
           {paymentMethod === 'Credit' && (
-            <div className="space-y-3 p-4 bg-amber-50 rounded-xl border border-amber-200">
-              <p className="text-sm font-bold text-amber-800">Credit Sale — Added to Debtors</p>
-              <input
-                type="text"
-                placeholder="Customer Name"
-                value={creditName}
-                onChange={(e) => setCreditName(e.target.value)}
-                className="w-full px-3 py-2.5 border border-amber-300 rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-white"
-              />
-              <input
-                type="tel"
-                placeholder="Customer Phone"
-                value={creditPhone}
-                onChange={(e) => setCreditPhone(e.target.value)}
-                className="w-full px-3 py-2.5 border border-amber-300 rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-white"
-              />
-              <p className="text-xs text-amber-700">This sale will be recorded as a debt and appear in the Debtors module.</p>
+            <div className="space-y-2 p-3 bg-amber-50 rounded-xl border border-amber-200">
+              <p className="text-xs font-bold text-amber-800">Credit Sale — Debtor Record</p>
+              <input type="text" placeholder="Customer Name" value={creditName} onChange={(e) => setCreditName(e.target.value)} className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-white" />
+              <input type="tel" placeholder="Phone" value={creditPhone} onChange={(e) => setCreditPhone(e.target.value)} className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-white" />
             </div>
           )}
+          <div className="flex gap-2 pt-2 border-t border-border">
+            <button onClick={() => setShowPayment(false)} className="flex-1 px-3 py-2.5 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Cancel</button>
+            <button onClick={handlePayment} disabled={(paymentMethod === 'Cash' && cashAmount < total) || (paymentMethod === 'Mpesa' && mpesaStatus !== 'success') || (paymentMethod === 'Credit' && !creditName && selectedCustomer.id === 'walk-in')} className="flex-1 px-3 py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-xs disabled:opacity-40">
+              {paymentMethod === 'Mpesa' && mpesaStatus === 'success' ? 'Confirm' : paymentMethod === 'Credit' ? 'Record Credit' : 'Complete Sale'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
-          {/* Action buttons */}
-          <div className="flex gap-3 pt-2 border-t border-border">
-            <button
-              onClick={() => setShowPayment(false)}
-              className="flex-1 px-4 py-3 border border-border rounded-xl hover:bg-secondary transition-colors font-medium text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handlePayment}
-              disabled={
-                (paymentMethod === 'Cash' && cashAmount < total) ||
-                (paymentMethod === 'Mpesa' && mpesaStatus !== 'success') ||
-                (paymentMethod === 'Credit' && !creditName && selectedCustomer.id === 'walk-in')
-              }
-              className="flex-1 px-4 py-3 bg-primary text-primary-foreground rounded-xl hover:opacity-90 transition-opacity font-bold text-sm disabled:opacity-40"
-            >
-              {paymentMethod === 'Mpesa' && mpesaStatus === 'success' ? 'Confirm Sale' :
-               paymentMethod === 'Credit' ? 'Record Credit Sale' :
-               'Complete Sale'}
-            </button>
+      {/* ── Receipt Modal ── */}
+      <Modal isOpen={showReceipt} onClose={() => setShowReceipt(false)} title="Sale Complete" size="sm">
+        <div className="space-y-3">
+          <div ref={receiptRef} className="bg-white p-4 rounded-lg border border-border text-xs font-mono">
+            <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+              <h2 style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>SNACKOH BAKERY</h2>
+              <p style={{ margin: '2px 0', fontSize: '10px' }}>Quality Baked Goods</p>
+              <p style={{ margin: '2px 0', fontSize: '10px' }}>Tel: +254 700 000 000</p>
+              <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
+              <p style={{ margin: '0', fontSize: '10px' }}>Receipt: {receiptData?.receiptNo}</p>
+              <p style={{ margin: '2px 0', fontSize: '10px' }}>{receiptData?.date}</p>
+              <p style={{ margin: '2px 0', fontSize: '10px' }}>Cashier: {receiptData?.cashier}</p>
+              <p style={{ margin: '2px 0', fontSize: '10px' }}>Customer: {receiptData?.customer}</p>
+            </div>
+            <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
+            <table style={{ width: '100%', fontSize: '10px' }}>
+              <thead><tr style={{ borderBottom: '1px solid #ccc' }}><th style={{ textAlign: 'left', padding: '2px 0' }}>Item</th><th style={{ textAlign: 'center' }}>Qty</th><th style={{ textAlign: 'right' }}>Price</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
+              <tbody>
+                {receiptData?.items.map((item, idx) => (
+                  <tr key={idx}><td style={{ padding: '2px 0' }}>{item.name}</td><td style={{ textAlign: 'center' }}>{item.quantity}</td><td style={{ textAlign: 'right' }}>{item.price}</td><td style={{ textAlign: 'right' }}>{(item.price * item.quantity).toLocaleString()}</td></tr>
+                ))}
+              </tbody>
+            </table>
+            <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
+            <div style={{ fontSize: '10px' }}>
+              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal:</span><span>KES {receiptData?.subtotal.toLocaleString()}</span></div>
+              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>VAT (16%):</span><span>KES {receiptData?.tax.toFixed(0)}</span></div>
+              <div className="row total" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}><span>TOTAL:</span><span>KES {receiptData?.total.toLocaleString()}</span></div>
+              <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
+              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Paid ({receiptData?.method}):</span><span>KES {receiptData?.paid.toLocaleString()}</span></div>
+              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Change:</span><span>KES {receiptData?.change.toFixed(0)}</span></div>
+            </div>
+            <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
+            <div style={{ textAlign: 'center', fontSize: '10px' }}>
+              <p style={{ margin: '2px 0' }}>Thank you for choosing Snackoh!</p>
+              <p style={{ margin: '2px 0' }}>Goods once sold are not returnable</p>
+              <p style={{ margin: '4px 0', fontWeight: 'bold' }}>*** SNACKOH BAKERY ***</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={printReceipt} className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-sm">🖨️ Print Receipt</button>
+            <button onClick={() => setShowReceipt(false)} className="flex-1 px-4 py-2.5 border border-border rounded-xl hover:bg-secondary text-sm font-medium">New Sale</button>
           </div>
         </div>
       </Modal>

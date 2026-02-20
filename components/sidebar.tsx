@@ -67,7 +67,7 @@ export function Sidebar() {
       collapsed ? 'w-16' : 'w-64'
     }`}>
       <div className="border-b border-border p-4 flex items-center justify-between">
-        {!collapsed && <h2 className="text-xl font-bold text-foreground">BAKERY</h2>}
+        {!collapsed && <h2 className="text-xl font-bold text-foreground">SNACKOH</h2>}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="rounded p-2 hover:bg-secondary text-foreground"
@@ -108,7 +108,7 @@ export function Sidebar() {
       <div className="border-t border-border p-3">
         {!collapsed && (
           <p className="text-xs text-muted-foreground text-center">
-            v2.0 | Bakery Management
+            v2.0 | Snackoh Bakery
           </p>
         )}
       </div>

@@ -244,13 +244,27 @@ export default function InventoryPage() {
                   onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
                   className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                 />
-                <input
-                  type="text"
-                  placeholder="Unit (kg, units, etc)"
+                <select
                   value={formData.unit}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                   className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                />
+                >
+                  <option value="kg">kg</option>
+                  <option value="g">g</option>
+                  <option value="L">L</option>
+                  <option value="ml">ml</option>
+                  <option value="pieces">pieces</option>
+                  <option value="dozen">dozen</option>
+                  <option value="boxes">boxes</option>
+                  <option value="rolls">rolls</option>
+                  <option value="packs">packs</option>
+                  <option value="bags">bags</option>
+                  <option value="bottles">bottles</option>
+                  <option value="tins">tins</option>
+                  <option value="units">units</option>
+                  <option value="sheets">sheets</option>
+                  <option value="trays">trays</option>
+                </select>
                 <input
                   type="number"
                   placeholder="Unit Cost"
