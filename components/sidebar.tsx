@@ -13,7 +13,7 @@ export function Sidebar() {
       title: 'CORE',
       items: [
         { label: 'Dashboard', href: '/' },
-        { label: 'Settings', href: '/settings' },
+        { label: 'POS System', href: '/pos' },
       ],
     },
     {
@@ -23,6 +23,7 @@ export function Sidebar() {
         { label: 'Recipes', href: '/recipes' },
         { label: 'Products', href: '/food-info' },
         { label: 'Production', href: '/production' },
+        { label: 'Settings', href: '/settings' },
       ],
     },
     {
