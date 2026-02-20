@@ -6,21 +6,21 @@
 :root {
   --background: #ffffff;
   --foreground: #000000;
-  --card: #ffffff;
+  --card: #f9f9f9;
   --card-foreground: #000000;
   --popover: #ffffff;
   --popover-foreground: #000000;
   --primary: #000000;
   --primary-foreground: #ffffff;
-  --secondary: #f0f0f0;
+  --secondary: #f5f5f5;
   --secondary-foreground: #000000;
-  --muted: #e5e5e5;
+  --muted: #e8e8e8;
   --muted-foreground: #666666;
-  --accent: #000000;
+  --accent: #1a1a1a;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #000000;
+  --border: #d0d0d0;
   --input: #ffffff;
   --ring: #000000;
   --chart-1: #000000;
@@ -28,14 +28,14 @@
   --chart-3: #666666;
   --chart-4: #999999;
   --chart-5: #cccccc;
-  --radius: 0px;
-  --sidebar: #ffffff;
+  --radius: 6px;
+  --sidebar: #f8f8f8;
   --sidebar-foreground: #000000;
   --sidebar-primary: #000000;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f0f0f0;
+  --sidebar-accent: #ffffff;
   --sidebar-accent-foreground: #000000;
-  --sidebar-border: #000000;
+  --sidebar-border: #d0d0d0;
   --sidebar-ring: #000000;
 }
 
@@ -66,10 +66,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -89,18 +89,26 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-bold tracking-tight text-foreground;
+    @apply font-semibold tracking-tight text-foreground;
   }
 
   h1 {
-    @apply text-4xl font-black;
+    @apply text-3xl;
   }
 
   h2 {
-    @apply text-3xl font-black;
+    @apply text-2xl;
   }
 
   h3 {
-    @apply text-2xl;
+    @apply text-lg;
+  }
+
+  input, textarea, select {
+    @apply rounded border border-border px-3 py-2 transition-colors focus:outline-none focus:ring-2 focus:ring-ring;
+  }
+
+  button {
+    @apply rounded transition-colors;
   }
 }
