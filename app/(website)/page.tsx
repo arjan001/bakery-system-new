@@ -4,22 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/lib/cart-context';
-import { products, getBestSellers, getOnOffer, CIRCLE_CATEGORIES } from '@/lib/products';
-import type { Offer } from '@/lib/products';
-import { supabase } from '@/lib/supabase';
-import { ShoppingBag, Star, ChevronRight, ChevronLeft, Truck, Clock, Shield } from 'lucide-react';
-
-// ─── Banner slide type (combines custom offers + product offers) ─────────────
-interface BannerSlide {
-  id: string;
-  title: string;
-  description: string;
-  image: string;
-  badge: string;
-  discountText?: string;
-  link: string;
-  type: 'custom' | 'product';
-}
+import { products, getBestSellers, CIRCLE_CATEGORIES } from '@/lib/products';
+import { ShoppingBag, Star, ChevronRight, Truck, Clock, Shield, Users, Store } from 'lucide-react';
 
 // ─── Product Card (mini, for home page) ───────────────────────────────────
 function HomeProductCard({ product }: { product: (typeof products)[0] }) {
@@ -191,16 +177,54 @@ function PromoBannerCarousel() {
         <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-gray-900/40" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-6 py-16 md:py-24 min-h-[420px] md:min-h-[500px] flex items-center">
-        <div className="max-w-xl">
-          {/* Badge */}
-          <div className="flex items-center gap-2 mb-3">
-            <span className="px-3 py-1 bg-orange-600 text-white text-[10px] font-black rounded-full tracking-widest uppercase">
-              {slide.badge}
-            </span>
-            {slide.type === 'product' && (
-              <span className="px-2 py-0.5 bg-white/20 text-white text-[10px] font-bold rounded-full">Product Offer</span>
-            )}
+      {/* ─── HERO ─────────────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 py-16 md:py-24 grid md:grid-cols-2 gap-12 items-center">
+          {/* Text */}
+          <div>
+            <p className="text-xs text-orange-600 font-bold tracking-widest uppercase mb-3">
+              FREE DELIVERY ON ORDERS OVER KES 2,000
+            </p>
+            <h1 className="text-5xl md:text-6xl font-black text-gray-900 leading-tight mb-5">
+              Award-Winning<br />
+              <span className="text-orange-600">Baked Goods</span><br />
+              Delivered Daily
+            </h1>
+            <p className="text-gray-500 text-base leading-relaxed mb-4 max-w-md">
+              We cater for both <strong className="text-gray-700">retail and wholesale</strong> customers.
+              From fresh breads, kaimati, cakes, pastries, donuts, and so much more —
+              handcrafted with love by our master bakers, fresh every morning.
+            </p>
+            <div className="flex items-center gap-4 mb-8">
+              <div className="flex items-center gap-2 text-xs bg-orange-50 text-orange-700 font-semibold px-3 py-1.5 rounded-full border border-orange-200">
+                <Store size={14} /> Retail Orders
+              </div>
+              <div className="flex items-center gap-2 text-xs bg-amber-50 text-amber-700 font-semibold px-3 py-1.5 rounded-full border border-amber-200">
+                <Users size={14} /> Wholesale Orders
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/shop"
+                className="px-8 py-3.5 bg-gray-900 text-white font-bold text-sm rounded-full hover:bg-orange-600 transition-colors inline-flex items-center gap-2">
+                SHOP NOW <ChevronRight size={15} />
+              </Link>
+              <Link href="/shop?category=Cake"
+                className="px-8 py-3.5 border-2 border-gray-200 text-gray-800 font-bold text-sm rounded-full hover:border-orange-400 transition-colors">
+                Custom Cakes
+              </Link>
+            </div>
+            {/* Trust badges */}
+            <div className="flex flex-wrap gap-5 mt-10">
+              {[
+                { icon: Truck, label: 'Same-Day Delivery' },
+                { icon: Clock, label: 'Baked Fresh Daily' },
+                { icon: Shield, label: 'Quality Guaranteed' },
+              ].map(b => (
+                <div key={b.label} className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+                  <b.icon size={14} className="text-orange-500" /> {b.label}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Title */}
@@ -311,6 +335,46 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ─── WHAT WE OFFER (RETAIL & WHOLESALE) ──────────────────────── */}
+      <section className="py-16">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-10">
+            <p className="text-xs text-orange-600 font-bold tracking-widest uppercase mb-1">Retail &amp; Wholesale</p>
+            <h2 className="text-3xl font-black text-gray-900">What We Offer</h2>
+            <p className="text-gray-500 mt-2 text-sm max-w-lg mx-auto">
+              Whether you&apos;re buying for your home or stocking your shop, we&apos;ve got you covered with fresh baked goods every day.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { name: 'Fresh Breads', desc: 'White, brown, whole wheat & more', image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80&fit=crop' },
+              { name: 'Kaimati', desc: 'Traditional Kenyan sweet dumplings', image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80&fit=crop' },
+              { name: 'Cakes & Pastries', desc: 'Custom cakes, croissants & tarts', image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&q=80&fit=crop' },
+              { name: 'Donuts & Cookies', desc: 'Glazed donuts, butter cookies & more', image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=400&q=80&fit=crop' },
+            ].map(item => (
+              <Link key={item.name} href="/shop" className="group relative rounded-2xl overflow-hidden aspect-square block">
+                <img src={item.image} alt={item.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                <div className="absolute bottom-4 left-4 right-4">
+                  <p className="text-white font-black text-sm">{item.name}</p>
+                  <p className="text-white/70 text-xs mt-0.5">{item.desc}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+          <div className="mt-8 text-center">
+            <p className="text-sm text-gray-500 mb-4">
+              Looking for <strong className="text-gray-700">wholesale pricing</strong>? We offer bulk orders for shops, restaurants, events, and corporate clients.
+            </p>
+            <Link href="/#contact"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors">
+              Contact Us for Wholesale <ChevronRight size={14} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ─── BEST SELLERS ─────────────────────────────────────────────────── */}
       <section className="py-16">
         <div className="max-w-7xl mx-auto px-6">
@@ -363,8 +427,8 @@ export default function HomePage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
-              { label: 'BIRTHDAYS', image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80&fit=crop', href: '/shop?category=Cake' },
-              { label: 'THANK YOU', image: 'https://images.unsplash.com/photo-1464500701-54b8b28ede7f?w=600&q=80&fit=crop', href: '/shop?category=Cookies' },
+              { label: 'BIRTHDAYS', image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', href: '/shop?category=Cake' },
+              { label: 'THANK YOU', image: 'https://images.unsplash.com/photo-1499638673689-79a0b0a1bcea?w=600&q=80&fit=crop', href: '/shop?category=Cookies' },
               { label: 'CELEBRATIONS', image: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=600&q=80&fit=crop', href: '/shop?category=Cake' },
             ].map(item => (
               <Link key={item.label} href={item.href}

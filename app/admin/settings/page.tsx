@@ -5,27 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'offers' | 'receipt' | 'security' | 'backup' | 'sessions';
-
-interface OfferForm {
-  id?: string;
-  title: string;
-  description: string;
-  image_url: string;
-  link_url: string;
-  badge_text: string;
-  discount_text: string;
-  product_id: string;
-  is_active: boolean;
-  start_date: string;
-  end_date: string;
-  sort_order: number;
-}
-
-const emptyOffer: OfferForm = {
-  title: '', description: '', image_url: '', link_url: '/shop', badge_text: 'Limited Time',
-  discount_text: '', product_id: '', is_active: true, start_date: '', end_date: '', sort_order: 0,
-};
+type SettingsTab = 'general' | 'receipt' | 'payment' | 'security' | 'backup' | 'sessions';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -34,7 +14,7 @@ export default function SettingsPage() {
 
   // ── General Settings ──
   const [general, setGeneral] = useState({
-    businessName: 'Snackoh Bakers',
+    businessName: 'SNACKOH BITES',
     tagline: 'Quality Baked Goods',
     phone: '+254 700 000 000',
     email: 'info@snackoh.com',
@@ -49,15 +29,29 @@ export default function SettingsPage() {
   // ── Receipt Settings ──
   const [receipt, setReceipt] = useState({
     showLogo: true,
-    headerText: 'SNACKOH BAKERS',
+    headerText: 'SNACKOH BITES',
     subHeaderText: 'Quality Baked Goods',
     footerText: 'Thank you for choosing Snackoh!',
     showTax: true,
     showCashier: true,
     showCustomer: true,
+    showPaymentDetails: true,
     disclaimer: 'Goods once sold are not returnable',
     paperWidth: '80mm',
     autoPrint: false,
+  });
+
+  // ── Payment Details Settings ──
+  const [paymentDetails, setPaymentDetails] = useState({
+    mpesaType: 'paybill' as 'paybill' | 'till',
+    paybillNumber: '',
+    accountNumber: '',
+    tillNumber: '',
+    mpesaName: 'SNACKOH BITES',
+    bankName: '',
+    bankAccount: '',
+    bankBranch: '',
+    showOnReceipt: true,
   });
 
   // ── Security Settings ──
@@ -217,6 +211,7 @@ export default function SettingsPage() {
         const parsed = JSON.parse(saved);
         if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
         if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
+        if (parsed.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...parsed.paymentDetails }));
         if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
         if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
       }
@@ -225,8 +220,7 @@ export default function SettingsPage() {
 
   const saveSettings = () => {
     setSaving(true);
-    localStorage.setItem('snackoh_settings', JSON.stringify({ general, receipt, security, backup }));
-    localStorage.setItem('snackoh_offer_rotation', JSON.stringify(offerRotation));
+    localStorage.setItem('snackoh_settings', JSON.stringify({ general, receipt, paymentDetails, security, backup }));
     setTimeout(() => { setSaving(false); setSavedMsg('Settings saved successfully!'); setTimeout(() => setSavedMsg(''), 3000); }, 500);
   };
 
@@ -244,6 +238,7 @@ export default function SettingsPage() {
     { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
+    { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
@@ -260,7 +255,7 @@ export default function SettingsPage() {
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="mb-2">System Settings</h1>
-          <p className="text-muted-foreground">Configure system preferences, offers, receipt printing, security & backups</p>
+          <p className="text-muted-foreground">Configure system preferences, receipt printing, payment details, security & backups</p>
         </div>
         <div className="flex items-center gap-3">
           {savedMsg && <span className="text-sm text-green-600 font-medium">{savedMsg}</span>}
@@ -469,7 +464,7 @@ export default function SettingsPage() {
             <div className="border border-border rounded-lg p-6 bg-card">
               <h3 className="font-semibold mb-4">Receipt Content</h3>
               <div className="space-y-3">
-                <div><label className={labelCls}>Header Text</label><input type="text" value={receipt.headerText} onChange={e => setReceipt({ ...receipt, headerText: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>Header Text (Business Name on Receipt)</label><input type="text" value={receipt.headerText} onChange={e => setReceipt({ ...receipt, headerText: e.target.value })} className={inputCls} /></div>
                 <div><label className={labelCls}>Sub-Header</label><input type="text" value={receipt.subHeaderText} onChange={e => setReceipt({ ...receipt, subHeaderText: e.target.value })} className={inputCls} /></div>
                 <div><label className={labelCls}>Footer Message</label><input type="text" value={receipt.footerText} onChange={e => setReceipt({ ...receipt, footerText: e.target.value })} className={inputCls} /></div>
                 <div><label className={labelCls}>Disclaimer</label><input type="text" value={receipt.disclaimer} onChange={e => setReceipt({ ...receipt, disclaimer: e.target.value })} className={inputCls} /></div>
@@ -483,6 +478,7 @@ export default function SettingsPage() {
                   { key: 'showTax', label: 'Show tax breakdown' },
                   { key: 'showCashier', label: 'Show cashier name' },
                   { key: 'showCustomer', label: 'Show customer name' },
+                  { key: 'showPaymentDetails', label: 'Show payment details (Paybill/Till)' },
                   { key: 'autoPrint', label: 'Auto-print after sale' },
                 ].map(opt => (
                   <label key={opt.key} className="flex items-center justify-between cursor-pointer">
@@ -505,6 +501,7 @@ export default function SettingsPage() {
                 <p className="text-sm font-black">{receipt.headerText}</p>
                 <p className="text-[10px]">{receipt.subHeaderText}</p>
                 <p className="text-[10px]">{general.phone}</p>
+                <p className="text-[10px]">{general.address}</p>
                 <hr className="border-dashed my-2" />
                 <p className="text-[10px]">Receipt: SNK-SAMPLE</p>
                 <p className="text-[10px]">{new Date().toLocaleString()}</p>
@@ -523,11 +520,128 @@ export default function SettingsPage() {
               <hr className="border-dashed my-2" />
               <div className="flex justify-between"><span>Cash:</span><span>1000</span></div>
               <div className="flex justify-between"><span>Change:</span><span>{1000 - 850 - Math.round(850 * general.taxRate / 100)}</span></div>
+
+              {/* Payment Details Preview */}
+              {receipt.showPaymentDetails && paymentDetails.showOnReceipt && (
+                <>
+                  <hr className="border-dashed my-2" />
+                  <div className="text-center text-[10px]">
+                    <p className="font-bold mb-0.5">Payment Info:</p>
+                    {paymentDetails.mpesaType === 'paybill' && paymentDetails.paybillNumber && (
+                      <>
+                        <p>M-Pesa Paybill: {paymentDetails.paybillNumber}</p>
+                        {paymentDetails.accountNumber && <p>Account: {paymentDetails.accountNumber}</p>}
+                      </>
+                    )}
+                    {paymentDetails.mpesaType === 'till' && paymentDetails.tillNumber && (
+                      <p>M-Pesa Till: {paymentDetails.tillNumber}</p>
+                    )}
+                    {paymentDetails.mpesaName && <p>Name: {paymentDetails.mpesaName}</p>}
+                  </div>
+                </>
+              )}
+
               <hr className="border-dashed my-2" />
               <div className="text-center text-[10px]">
                 <p>{receipt.footerText}</p>
                 <p>{receipt.disclaimer}</p>
                 <p className="font-bold mt-1">*** {receipt.headerText} ***</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PAYMENT DETAILS ── */}
+      {activeTab === 'payment' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">M-Pesa Payment Details</h3>
+            <p className="text-sm text-muted-foreground mb-4">Configure your M-Pesa payment details. These will appear on receipts so customers know where to pay.</p>
+            <div className="space-y-4">
+              <div>
+                <label className={labelCls}>M-Pesa Type</label>
+                <div className="flex gap-3">
+                  {(['paybill', 'till'] as const).map(type => (
+                    <button key={type} onClick={() => setPaymentDetails({ ...paymentDetails, mpesaType: type })} className={`flex-1 px-4 py-3 rounded-lg border-2 text-sm font-medium transition-all ${paymentDetails.mpesaType === type ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}>
+                      {type === 'paybill' ? 'Paybill Number' : 'Till Number (Buy Goods)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {paymentDetails.mpesaType === 'paybill' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Paybill Number</label>
+                    <input type="text" placeholder="e.g. 522533" value={paymentDetails.paybillNumber} onChange={e => setPaymentDetails({ ...paymentDetails, paybillNumber: e.target.value })} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Account Number</label>
+                    <input type="text" placeholder="e.g. SNK001" value={paymentDetails.accountNumber} onChange={e => setPaymentDetails({ ...paymentDetails, accountNumber: e.target.value })} className={inputCls} />
+                  </div>
+                </div>
+              )}
+
+              {paymentDetails.mpesaType === 'till' && (
+                <div>
+                  <label className={labelCls}>Till Number</label>
+                  <input type="text" placeholder="e.g. 5143433" value={paymentDetails.tillNumber} onChange={e => setPaymentDetails({ ...paymentDetails, tillNumber: e.target.value })} className={inputCls} />
+                </div>
+              )}
+
+              <div>
+                <label className={labelCls}>M-Pesa Registered Name</label>
+                <input type="text" placeholder="e.g. SNACKOH BITES" value={paymentDetails.mpesaName} onChange={e => setPaymentDetails({ ...paymentDetails, mpesaName: e.target.value })} className={inputCls} />
+              </div>
+
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium">Show on Receipt</p>
+                  <p className="text-xs text-muted-foreground">Display M-Pesa payment details on printed receipts</p>
+                </div>
+                <button type="button" onClick={() => setPaymentDetails({ ...paymentDetails, showOnReceipt: !paymentDetails.showOnReceipt })} className={`w-10 h-5 rounded-full transition-colors ${paymentDetails.showOnReceipt ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${paymentDetails.showOnReceipt ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Bank Details (Optional)</h3>
+            <p className="text-sm text-muted-foreground mb-4">For bank transfer payments.</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div><label className={labelCls}>Bank Name</label><input type="text" placeholder="e.g. Equity Bank" value={paymentDetails.bankName} onChange={e => setPaymentDetails({ ...paymentDetails, bankName: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Account Number</label><input type="text" placeholder="Account number" value={paymentDetails.bankAccount} onChange={e => setPaymentDetails({ ...paymentDetails, bankAccount: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Branch</label><input type="text" placeholder="Branch name" value={paymentDetails.bankBranch} onChange={e => setPaymentDetails({ ...paymentDetails, bankBranch: e.target.value })} className={inputCls} /></div>
+            </div>
+          </div>
+
+          {/* Preview of how it looks on receipt */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Receipt Payment Info Preview</h3>
+            <div className="bg-white border border-gray-200 rounded-lg p-4 max-w-[300px] mx-auto font-mono text-[11px] shadow-sm">
+              <div className="text-center">
+                <p className="font-bold mb-1">--- Payment Info ---</p>
+                {paymentDetails.mpesaType === 'paybill' && paymentDetails.paybillNumber ? (
+                  <>
+                    <p>M-Pesa Paybill: <strong>{paymentDetails.paybillNumber}</strong></p>
+                    {paymentDetails.accountNumber && <p>Account: <strong>{paymentDetails.accountNumber}</strong></p>}
+                  </>
+                ) : paymentDetails.mpesaType === 'till' && paymentDetails.tillNumber ? (
+                  <p>M-Pesa Till: <strong>{paymentDetails.tillNumber}</strong></p>
+                ) : (
+                  <p className="text-gray-400 italic">No M-Pesa details configured</p>
+                )}
+                {paymentDetails.mpesaName && <p>Name: {paymentDetails.mpesaName}</p>}
+                {paymentDetails.bankName && (
+                  <>
+                    <hr className="border-dashed my-1" />
+                    <p>Bank: {paymentDetails.bankName}</p>
+                    {paymentDetails.bankAccount && <p>A/C: {paymentDetails.bankAccount}</p>}
+                    {paymentDetails.bankBranch && <p>Branch: {paymentDetails.bankBranch}</p>}
+                  </>
+                )}
               </div>
             </div>
           </div>
