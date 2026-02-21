@@ -9,9 +9,9 @@ interface Product { id: string; name: string; sku: string; retailPrice: number; 
 interface Customer { id: string; name: string; phone: string; type: string; }
 interface HeldOrder { id: string; name: string; items: CartItem[]; customer: Customer; saleType: string; time: string; }
 interface ReceiptData { receiptNo: string; date: string; cashier: string; customer: string; items: CartItem[]; subtotal: number; tax: number; total: number; paid: number; change: number; method: string; mpesaRef?: string; }
-interface ReceiptSettings { headerText: string; subHeaderText: string; footerText: string; disclaimer: string; showTax: boolean; showCashier: boolean; showCustomer: boolean; showPaymentDetails: boolean; }
+interface ReceiptSettings { headerText: string; subHeaderText: string; footerText: string; disclaimer: string; showLogo: boolean; showTax: boolean; showCashier: boolean; showCustomer: boolean; showPaymentDetails: boolean; }
 interface PaymentDetailsSettings { mpesaType: 'paybill' | 'till'; paybillNumber: string; accountNumber: string; tillNumber: string; mpesaName: string; showOnReceipt: boolean; bankName: string; bankAccount: string; bankBranch: string; }
-interface GeneralSettings { businessName: string; phone: string; address: string; currency: string; taxRate: number; }
+interface GeneralSettings { businessName: string; phone: string; address: string; currency: string; taxRate: number; logoUrl: string; }
 
 type PaymentMethod = 'Cash' | 'Mpesa' | 'Credit';
 type MpesaStatus = 'idle' | 'sending' | 'waiting' | 'success' | 'failed';
@@ -31,29 +31,58 @@ export default function POSPage() {
   // ── Settings ──
   const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>({
     headerText: 'SNACKOH BITES', subHeaderText: 'Quality Baked Goods', footerText: 'Thank you for choosing Snackoh!',
-    disclaimer: 'Goods once sold are not returnable', showTax: true, showCashier: true, showCustomer: true, showPaymentDetails: true,
+    disclaimer: 'Goods once sold are not returnable', showLogo: true, showTax: true, showCashier: true, showCustomer: true, showPaymentDetails: true,
   });
   const [paymentDetailsSettings, setPaymentDetailsSettings] = useState<PaymentDetailsSettings>({
     mpesaType: 'paybill', paybillNumber: '', accountNumber: '', tillNumber: '', mpesaName: 'SNACKOH BITES', showOnReceipt: true,
     bankName: '', bankAccount: '', bankBranch: '',
   });
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings>({
-    businessName: 'SNACKOH BITES', phone: '+254 700 000 000', address: 'Nairobi, Kenya', currency: 'KES', taxRate: 16,
+    businessName: 'SNACKOH BITES', phone: '+254 700 000 000', address: 'Nairobi, Kenya', currency: 'KES', taxRate: 16, logoUrl: '',
   });
 
   useEffect(() => {
-    const s = loadSettings();
-    if (s) {
-      if (s.receipt) setReceiptSettings(prev => ({ ...prev, ...s.receipt }));
-      if (s.paymentDetails) setPaymentDetailsSettings(prev => ({ ...prev, ...s.paymentDetails }));
-      if (s.general) setGeneralSettings(prev => ({
-        businessName: s.general.businessName || prev.businessName,
-        phone: s.general.phone || prev.phone,
-        address: s.general.address || prev.address,
-        currency: s.general.currency || prev.currency,
-        taxRate: s.general.taxRate ?? prev.taxRate,
-      }));
+    async function loadSettingsFromDb() {
+      // Try loading from database first
+      try {
+        const { data, error } = await supabase.from('business_settings').select('key, value');
+        if (!error && data && data.length > 0) {
+          const dbSettings: Record<string, unknown> = {};
+          for (const row of data) dbSettings[row.key] = row.value;
+          if (dbSettings.receipt) setReceiptSettings(prev => ({ ...prev, ...(dbSettings.receipt as Record<string, unknown>) }));
+          if (dbSettings.paymentDetails) setPaymentDetailsSettings(prev => ({ ...prev, ...(dbSettings.paymentDetails as Record<string, unknown>) }));
+          if (dbSettings.general) {
+            const g = dbSettings.general as Record<string, unknown>;
+            setGeneralSettings(prev => ({
+              businessName: (g.businessName as string) || prev.businessName,
+              phone: (g.phone as string) || prev.phone,
+              address: (g.address as string) || prev.address,
+              currency: (g.currency as string) || prev.currency,
+              taxRate: (g.taxRate as number) ?? prev.taxRate,
+              logoUrl: (g.logoUrl as string) || prev.logoUrl,
+            }));
+          }
+          return;
+        }
+      } catch {
+        // Table may not exist yet
+      }
+      // Fallback to localStorage
+      const s = loadSettings();
+      if (s) {
+        if (s.receipt) setReceiptSettings(prev => ({ ...prev, ...s.receipt }));
+        if (s.paymentDetails) setPaymentDetailsSettings(prev => ({ ...prev, ...s.paymentDetails }));
+        if (s.general) setGeneralSettings(prev => ({
+          businessName: s.general.businessName || prev.businessName,
+          phone: s.general.phone || prev.phone,
+          address: s.general.address || prev.address,
+          currency: s.general.currency || prev.currency,
+          taxRate: s.general.taxRate ?? prev.taxRate,
+          logoUrl: s.general.logoUrl || prev.logoUrl,
+        }));
+      }
     }
+    loadSettingsFromDb();
   }, []);
 
   // ── Sales Totals ──
@@ -469,6 +498,9 @@ export default function POSPage() {
         <div className="space-y-3">
           <div ref={receiptRef} className="bg-white p-4 rounded-lg border border-border text-xs font-mono">
             <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+              {receiptSettings.showLogo !== false && generalSettings.logoUrl && (
+                <img src={generalSettings.logoUrl} alt="Logo" style={{ width: '60px', height: '60px', objectFit: 'contain', margin: '0 auto 4px', display: 'block' }} />
+              )}
               <h2 style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>{receiptSettings.headerText}</h2>
               <p style={{ margin: '2px 0', fontSize: '10px' }}>{receiptSettings.subHeaderText}</p>
               <p style={{ margin: '2px 0', fontSize: '10px' }}>Tel: {generalSettings.phone}</p>
@@ -499,7 +531,7 @@ export default function POSPage() {
               {receiptData?.mpesaRef && <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>M-Pesa Ref:</span><span>{receiptData.mpesaRef}</span></div>}
             </div>
             {/* Payment Details from Settings */}
-            {receiptSettings.showPaymentDetails && paymentDetailsSettings.showOnReceipt && (paymentDetailsSettings.paybillNumber || paymentDetailsSettings.tillNumber) && (
+            {receiptSettings.showPaymentDetails && paymentDetailsSettings.showOnReceipt && (paymentDetailsSettings.paybillNumber || paymentDetailsSettings.tillNumber || paymentDetailsSettings.bankName) && (
               <>
                 <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
                 <div style={{ textAlign: 'center', fontSize: '10px' }}>
@@ -514,6 +546,14 @@ export default function POSPage() {
                     <p style={{ margin: '2px 0' }}>M-Pesa Till: {paymentDetailsSettings.tillNumber}</p>
                   )}
                   {paymentDetailsSettings.mpesaName && <p style={{ margin: '2px 0' }}>Name: {paymentDetailsSettings.mpesaName}</p>}
+                  {paymentDetailsSettings.bankName && (
+                    <>
+                      <p style={{ margin: '4px 0 2px', fontWeight: 'bold' }}>Bank Transfer:</p>
+                      <p style={{ margin: '2px 0' }}>{paymentDetailsSettings.bankName}</p>
+                      {paymentDetailsSettings.bankAccount && <p style={{ margin: '2px 0' }}>A/C: {paymentDetailsSettings.bankAccount}</p>}
+                      {paymentDetailsSettings.bankBranch && <p style={{ margin: '2px 0' }}>Branch: {paymentDetailsSettings.bankBranch}</p>}
+                    </>
+                  )}
                 </div>
               </>
             )}

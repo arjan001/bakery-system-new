@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { CartProvider, useCart } from '@/lib/cart-context';
 import { products } from '@/lib/products';
+import { supabase } from '@/lib/supabase';
 import { ShoppingBag, Search, User, Heart, X, Plus, Minus, Menu, ChevronRight } from 'lucide-react';
 
 // ─── Announcement Bar ───────────────────────────────────────────────────────
@@ -23,12 +24,38 @@ function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [businessName, setBusinessName] = useState('SNACKOH');
   const router = useRouter();
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 10);
     window.addEventListener('scroll', handler);
     return () => window.removeEventListener('scroll', handler);
+  }, []);
+
+  // Load logo and business name from database/localStorage
+  useEffect(() => {
+    async function loadBranding() {
+      try {
+        const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'general').single();
+        if (!error && data?.value) {
+          const g = data.value as Record<string, string>;
+          if (g.logoUrl) setLogoUrl(g.logoUrl);
+          if (g.businessName) setBusinessName(g.businessName);
+          return;
+        }
+      } catch { /* table may not exist */ }
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.general?.logoUrl) setLogoUrl(parsed.general.logoUrl);
+          if (parsed.general?.businessName) setBusinessName(parsed.general.businessName);
+        }
+      } catch { /* ignore */ }
+    }
+    loadBranding();
   }, []);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -52,8 +79,14 @@ function Navbar() {
       <header className={`sticky top-0 z-40 bg-white transition-shadow ${scrolled ? 'shadow-md' : 'border-b border-gray-100'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="text-2xl font-black tracking-tight text-gray-900 hover:text-orange-600 transition-colors">
-            SNACKOH
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            {logoUrl ? (
+              <img src={logoUrl} alt={businessName} className="h-10 w-auto object-contain" />
+            ) : (
+              <span className="text-2xl font-black tracking-tight text-gray-900 hover:text-orange-600 transition-colors">
+                {businessName}
+              </span>
+            )}
           </Link>
 
           {/* Desktop Nav */}

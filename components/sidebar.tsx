@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -45,6 +46,32 @@ interface NavGroup {
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [logoUrl, setLogoUrl] = useState('');
+  const [businessName, setBusinessName] = useState('SNACKOH');
+
+  // Load logo from database/localStorage
+  useEffect(() => {
+    async function loadBranding() {
+      try {
+        const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'general').single();
+        if (!error && data?.value) {
+          const g = data.value as Record<string, string>;
+          if (g.logoUrl) setLogoUrl(g.logoUrl);
+          if (g.businessName) setBusinessName(g.businessName);
+          return;
+        }
+      } catch { /* table may not exist */ }
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.general?.logoUrl) setLogoUrl(parsed.general.logoUrl);
+          if (parsed.general?.businessName) setBusinessName(parsed.general.businessName);
+        }
+      } catch { /* ignore */ }
+    }
+    loadBranding();
+  }, []);
 
   const navGroups: NavGroup[] = [
     {
@@ -117,8 +144,17 @@ export function Sidebar() {
     <aside className={`flex flex-col border-r border-border bg-sidebar transition-all duration-300 ${collapsed ? 'w-[60px]' : 'w-64'}`}>
       <div className="border-b border-border p-4 flex items-center justify-between">
         {!collapsed && (
-          <Link href="/admin" className="text-lg font-black text-primary tracking-wide hover:opacity-80 transition-opacity">
-            SNACKOH
+          <Link href="/admin" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            {logoUrl ? (
+              <img src={logoUrl} alt={businessName} className="h-8 w-auto object-contain" />
+            ) : (
+              <span className="text-lg font-black text-primary tracking-wide">{businessName}</span>
+            )}
+          </Link>
+        )}
+        {collapsed && logoUrl && (
+          <Link href="/admin" className="mx-auto hover:opacity-80 transition-opacity">
+            <img src={logoUrl} alt={businessName} className="h-7 w-7 object-contain" />
           </Link>
         )}
         <button
