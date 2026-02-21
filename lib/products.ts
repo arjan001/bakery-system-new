@@ -13,6 +13,25 @@ export interface Product {
   isNew?: boolean;
   isSale?: boolean;
   isBestSeller?: boolean;
+  onOffer?: boolean;
+  offerBadge?: string;
+  offerDescription?: string;
+}
+
+export interface Offer {
+  id: string;
+  title: string;
+  description: string;
+  image_url: string;
+  link_url: string;
+  badge_text: string;
+  discount_text?: string;
+  product_id?: string;
+  is_active: boolean;
+  start_date: string;
+  end_date?: string;
+  sort_order: number;
+  created_at: string;
 }
 
 export const CIRCLE_CATEGORIES = [
@@ -179,5 +198,6 @@ export const products: Product[] = [
 
 export const getProduct = (id: string) => products.find(p => p.id === id);
 export const getBestSellers = () => products.filter(p => p.isBestSeller);
+export const getOnOffer = () => products.filter(p => p.isSale || p.onOffer);
 export const getRelated = (product: Product, count = 4) =>
   products.filter(p => p.id !== product.id && p.category === product.category).slice(0, count);
