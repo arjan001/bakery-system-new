@@ -36,6 +36,22 @@ export default function LoginPage() {
           .from('users')
           .update({ last_login: new Date().toISOString() })
           .eq('id', data.user.id);
+
+        // Check user role for redirect
+        const email = data.user.email || '';
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('login_role, system_access')
+          .eq('login_email', email)
+          .single();
+
+        if (emp && emp.system_access && emp.login_role !== 'Admin') {
+          // Non-admin users go to their account page first
+          router.push('/admin');
+        } else {
+          router.push('/admin');
+        }
+        return;
       }
 
       router.push('/admin');

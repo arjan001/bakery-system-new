@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useUserPermissions, getAllowedRoutes } from '@/lib/user-permissions';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -27,6 +28,7 @@ import {
   Shield,
   BarChart3,
   Settings,
+  User,
   LucideIcon,
 } from 'lucide-react';
 
@@ -48,6 +50,7 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
   const [businessName, setBusinessName] = useState('SNACKOH');
+  const { isAdmin, permissions, role, loading: permsLoading } = useUserPermissions();
 
   // Load logo from database/localStorage
   useEffect(() => {
@@ -73,7 +76,7 @@ export function Sidebar() {
     loadBranding();
   }, []);
 
-  const navGroups: NavGroup[] = [
+  const allNavGroups: NavGroup[] = [
     {
       title: 'CORE',
       color: 'border-l-blue-500',
@@ -138,7 +141,30 @@ export function Sidebar() {
         { label: 'Settings', href: '/admin/settings', tip: 'System config, receipt, theme & security', icon: Settings },
       ],
     },
+    {
+      title: 'MY ACCOUNT',
+      color: 'border-l-indigo-500',
+      items: [
+        { label: 'Account Settings', href: '/admin/account', tip: 'Your profile, password & certificates', icon: User },
+      ],
+    },
   ];
+
+  // Filter nav groups based on permissions
+  const navGroups = (() => {
+    if (permsLoading || isAdmin) return allNavGroups;
+
+    const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin);
+
+    return allNavGroups
+      .map(group => ({
+        ...group,
+        items: group.items.filter(item =>
+          allowedRoutes.some(route => item.href === route || item.href.startsWith(route + '/'))
+        ),
+      }))
+      .filter(group => group.items.length > 0);
+  })();
 
   return (
     <aside className={`flex flex-col border-r border-border bg-sidebar transition-all duration-300 ${collapsed ? 'w-[60px]' : 'w-64'}`}>

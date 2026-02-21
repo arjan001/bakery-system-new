@@ -152,9 +152,45 @@ export default function EmployeesPage() {
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
-    if (!error && data && data.length > 0) {
-      setEmployees(data.map(r => dbToEmployee(r as Record<string, unknown>)));
+    const empList = (!error && data && data.length > 0)
+      ? data.map(r => dbToEmployee(r as Record<string, unknown>))
+      : [];
+
+    // Also fetch Supabase Auth users who may not be in employees table (e.g. super admins)
+    try {
+      const { data: authUsersResponse } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+      if (authUsersResponse && authUsersResponse.length > 0) {
+        const existingEmails = new Set(empList.map(e => (e.loginEmail || e.email || '').toLowerCase()).filter(Boolean));
+        for (const authUser of authUsersResponse) {
+          const email = ((authUser.email || '') as string).toLowerCase();
+          if (email && !existingEmails.has(email)) {
+            const meta = (authUser.user_metadata || authUser.raw_user_meta_data || {}) as Record<string, unknown>;
+            const fullName = (meta.full_name || authUser.full_name || email.split('@')[0] || '') as string;
+            const nameParts = fullName.split(' ');
+            empList.push({
+              ...emptyForm,
+              id: authUser.id as string,
+              firstName: nameParts[0] || '',
+              lastName: nameParts.slice(1).join(' ') || '',
+              email: email,
+              role: (meta.role || authUser.role || 'Super Admin') as string,
+              category: 'Admin',
+              department: 'Administration',
+              status: 'Active',
+              systemAccess: true,
+              loginEmail: email,
+              loginRole: 'Admin',
+              permissions: [...ALL_PERMISSIONS],
+            });
+            existingEmails.add(email);
+          }
+        }
+      }
+    } catch {
+      // users table may not exist or not be accessible
     }
+
+    setEmployees(empList);
     setLoading(false);
   }, []);
 
@@ -247,6 +283,7 @@ export default function EmployeesPage() {
 
   const [formData, setFormData] = useState<Employee>(emptyForm);
   const [newCert, setNewCert] = useState({ name: '', number: '', issueDate: '', expiryDate: '' });
+  const [loginPassword, setLoginPassword] = useState('');
 
   const departments = ['Production', 'Sales', 'Delivery', 'Administration', 'Quality Control', 'Packaging', 'Cleaning'];
   const [categories, setCategories] = useState<string[]>(['Baker', 'Driver', 'Sales', 'Admin', 'Quality', 'Packer', 'Supervisor', 'Manager', 'Rider', 'Cleaner']);
@@ -273,6 +310,28 @@ export default function EmployeesPage() {
         const { error } = await supabase.from('employees').insert(dbRow);
         if (error) throw error;
       }
+
+      // Create Supabase Auth user if system access is enabled and password is provided
+      if (dataToSave.systemAccess && loginPassword && dataToSave.loginEmail) {
+        try {
+          const { error: signUpError } = await supabase.auth.signUp({
+            email: dataToSave.loginEmail,
+            password: loginPassword,
+            options: {
+              data: {
+                full_name: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
+                role: dataToSave.loginRole,
+              },
+            },
+          });
+          if (signUpError && !signUpError.message.includes('already registered')) {
+            console.error('Auth user creation error:', signUpError.message);
+          }
+        } catch (authErr) {
+          console.error('Auth creation failed:', authErr);
+        }
+      }
+
       await fetchEmployees();
     } catch (err) {
       console.error('Employee save error:', err);
@@ -283,6 +342,7 @@ export default function EmployeesPage() {
       }
     }
     setEditingId(null);
+    setLoginPassword('');
     resetForm();
     setShowForm(false);
   };
@@ -292,6 +352,7 @@ export default function EmployeesPage() {
     setNewCert({ name: '', number: '', issueDate: '', expiryDate: '' });
     setActiveFormTab('personal');
     setAutoGenerateId(true);
+    setLoginPassword('');
   };
 
   const handleEdit = (emp: Employee) => {
@@ -748,6 +809,23 @@ export default function EmployeesPage() {
                         >
                           {loginRoles.map(role => <option key={role} value={role}>{role}</option>)}
                         </select>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-muted-foreground mb-1">
+                          Password {!editingId && <span className="text-red-500">*</span>}
+                        </label>
+                        <input
+                          type="password"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                          placeholder={editingId ? 'Leave blank to keep current password' : 'Set login password (min 6 chars)'}
+                          minLength={6}
+                          required={!editingId}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {editingId ? 'Leave empty to keep current password. Enter a new value to reset it.' : 'This password will be used to create a system login for this employee.'}
+                        </p>
                       </div>
                     </div>
 
