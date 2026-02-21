@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/lib/cart-context';
 import { products, getBestSellers, CIRCLE_CATEGORIES } from '@/lib/products';
 import { ShoppingBag, Star, ChevronRight, Truck, Clock, Shield, Users, Store } from 'lucide-react';
@@ -52,11 +53,129 @@ function HomeProductCard({ product }: { product: (typeof products)[0] }) {
   );
 }
 
-export default function HomePage() {
-  const bestSellers = getBestSellers();
+// ─── Promotional Banner Carousel ──────────────────────────────────────────────
+function PromoBannerCarousel() {
+  const [slides, setSlides] = useState<BannerSlide[]>([]);
+  const [current, setCurrent] = useState(0);
+  const [rotationInterval, setRotationInterval] = useState(5);
+  const [autoRotate, setAutoRotate] = useState(true);
+
+  // Build slides from custom offers + product offers
+  useEffect(() => {
+    const buildSlides = async () => {
+      const allSlides: BannerSlide[] = [];
+
+      // 1. Load custom offers from Supabase (with localStorage fallback)
+      let customOffers: Offer[] = [];
+      try {
+        const { data, error } = await supabase.from('offers').select('*').eq('is_active', true).order('sort_order', { ascending: true });
+        if (!error && data) customOffers = data as Offer[];
+      } catch { /* table may not exist */ }
+
+      if (customOffers.length === 0) {
+        try {
+          const local = localStorage.getItem('snackoh_offers');
+          if (local) customOffers = (JSON.parse(local) as Offer[]).filter(o => o.is_active);
+        } catch { /* ignore */ }
+      }
+
+      // Filter by date range
+      const now = new Date();
+      customOffers = customOffers.filter(o => {
+        if (o.start_date && new Date(o.start_date) > now) return false;
+        if (o.end_date && new Date(o.end_date) < now) return false;
+        return true;
+      });
+
+      // Add custom offers as slides
+      for (const offer of customOffers) {
+        allSlides.push({
+          id: `offer-${offer.id}`,
+          title: offer.title,
+          description: offer.description || '',
+          image: offer.image_url || 'https://images.unsplash.com/photo-1535141192574-5d4897c12636?w=1200&q=80&fit=crop',
+          badge: offer.badge_text || 'Special Offer',
+          discountText: offer.discount_text || undefined,
+          link: offer.product_id ? `/shop/${offer.product_id}` : (offer.link_url || '/shop'),
+          type: 'custom',
+        });
+      }
+
+      // 2. Generate slides from products on sale
+      const saleProducts = getOnOffer();
+      for (const p of saleProducts) {
+        if (p.originalPrice && p.isSale) {
+          const discount = Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100);
+          allSlides.push({
+            id: `product-${p.id}`,
+            title: p.name,
+            description: p.description,
+            image: p.image,
+            badge: `${discount}% OFF`,
+            discountText: `Now KES ${p.price.toLocaleString()} — Save KES ${(p.originalPrice - p.price).toLocaleString()}`,
+            link: `/shop/${p.id}`,
+            type: 'product',
+          });
+        }
+      }
+
+      // Fallback: if no slides at all, show a default hero
+      if (allSlides.length === 0) {
+        allSlides.push({
+          id: 'default',
+          title: 'Award-Winning Baked Goods Delivered Daily',
+          description: 'From birthdays to anniversaries, we\'ve got the perfect bake for every occasion. Handcrafted with love by our master bakers — fresh every morning.',
+          image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=1200&q=80&fit=crop',
+          badge: 'FREE DELIVERY ON ORDERS OVER KES 2,000',
+          link: '/shop',
+          type: 'custom',
+        });
+      }
+
+      setSlides(allSlides);
+
+      // Load rotation settings
+      try {
+        const rot = localStorage.getItem('snackoh_offer_rotation');
+        if (rot) {
+          const parsed = JSON.parse(rot);
+          setAutoRotate(parsed.enabled !== false);
+          setRotationInterval(parsed.interval || 5);
+        }
+      } catch { /* ignore */ }
+    };
+
+    buildSlides();
+  }, []);
+
+  // Auto-rotate
+  useEffect(() => {
+    if (!autoRotate || slides.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrent(prev => (prev + 1) % slides.length);
+    }, rotationInterval * 1000);
+    return () => clearInterval(timer);
+  }, [autoRotate, rotationInterval, slides.length]);
+
+  const goTo = useCallback((idx: number) => {
+    setCurrent(idx < 0 ? slides.length - 1 : idx % slides.length);
+  }, [slides.length]);
+
+  if (slides.length === 0) return null;
+  const slide = slides[current];
 
   return (
-    <div className="bg-white">
+    <section className="relative overflow-hidden bg-gray-900">
+      {/* Background image with overlay */}
+      <div className="absolute inset-0">
+        <img
+          src={slide.image}
+          alt={slide.title}
+          className="w-full h-full object-cover transition-opacity duration-700"
+          key={slide.id}
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-gray-900/40" />
+      </div>
 
       {/* ─── HERO ─────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
@@ -108,31 +227,96 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Hero Image Grid */}
-          <div className="hidden md:grid grid-cols-2 gap-3 h-[480px]">
-            <div className="rounded-3xl overflow-hidden row-span-2">
-              <img
-                src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop"
-                alt="Chocolate Cake" className="w-full h-full object-cover" />
-            </div>
-            <div className="rounded-3xl overflow-hidden">
-              <img
-                src="https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&q=80&fit=crop"
-                alt="Croissant" className="w-full h-full object-cover" />
-            </div>
-            <div className="rounded-3xl overflow-hidden">
-              <img
-                src="https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80&fit=crop"
-                alt="Bread" className="w-full h-full object-cover" />
-            </div>
+          {/* Title */}
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-white leading-tight mb-4">
+            {slide.title.split(' ').map((word, i) => (
+              <span key={i}>
+                {i > 0 && ' '}
+                {i % 4 === 1 ? <span className="text-orange-400">{word}</span> : word}
+              </span>
+            ))}
+          </h1>
+
+          {/* Description */}
+          <p className="text-white/70 text-base leading-relaxed mb-3 max-w-md line-clamp-3">
+            {slide.description}
+          </p>
+
+          {/* Discount text */}
+          {slide.discountText && (
+            <p className="text-orange-400 font-bold text-sm mb-5">{slide.discountText}</p>
+          )}
+
+          {/* CTA */}
+          <div className="flex flex-wrap gap-3 mb-8">
+            <Link href={slide.link}
+              className="px-8 py-3.5 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors inline-flex items-center gap-2">
+              SHOP NOW <ChevronRight size={15} />
+            </Link>
+            <Link href="/shop"
+              className="px-8 py-3.5 border-2 border-white/30 text-white font-bold text-sm rounded-full hover:border-orange-400 hover:text-orange-400 transition-colors">
+              View All Products
+            </Link>
           </div>
-          {/* Mobile hero image */}
-          <div className="md:hidden rounded-3xl overflow-hidden aspect-video">
-            <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=800&q=80&fit=crop"
-              alt="Bakery" className="w-full h-full object-cover" />
+
+          {/* Trust badges */}
+          <div className="flex flex-wrap gap-5">
+            {[
+              { icon: Truck, label: 'Same-Day Delivery' },
+              { icon: Clock, label: 'Baked Fresh Daily' },
+              { icon: Shield, label: 'Quality Guaranteed' },
+            ].map(b => (
+              <div key={b.label} className="flex items-center gap-2 text-xs text-white/60 font-medium">
+                <b.icon size={14} className="text-orange-400" /> {b.label}
+              </div>
+            ))}
           </div>
         </div>
-      </section>
+      </div>
+
+      {/* Navigation arrows */}
+      {slides.length > 1 && (
+        <>
+          <button onClick={() => goTo(current - 1)}
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
+            <ChevronLeft size={20} />
+          </button>
+          <button onClick={() => goTo(current + 1)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
+            <ChevronRight size={20} />
+          </button>
+        </>
+      )}
+
+      {/* Dots */}
+      {slides.length > 1 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2">
+          {slides.map((s, i) => (
+            <button key={s.id} onClick={() => setCurrent(i)}
+              className={`h-2 rounded-full transition-all duration-300 ${i === current ? 'w-8 bg-orange-500' : 'w-2 bg-white/40 hover:bg-white/60'}`}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Slide counter */}
+      {slides.length > 1 && (
+        <div className="absolute top-4 right-4 z-20 px-3 py-1 bg-black/30 backdrop-blur-sm rounded-full text-white/70 text-xs font-medium">
+          {current + 1} / {slides.length}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export default function HomePage() {
+  const bestSellers = getBestSellers();
+
+  return (
+    <div className="bg-white">
+
+      {/* ─── PROMOTIONAL BANNER CAROUSEL ──────────────────────────────────── */}
+      <PromoBannerCarousel />
 
       {/* ─── SCROLLING CATEGORY CIRCLES ──────────────────────────────────── */}
       <section className="py-10 border-y border-gray-100 bg-gray-50/50">
@@ -282,7 +466,7 @@ export default function HomePage() {
       <section className="py-5 bg-orange-600">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div>
-            <p className="text-2xl font-black text-white">25% OFF CUSTOM CAKE ORDERS 🎂</p>
+            <p className="text-2xl font-black text-white">25% OFF CUSTOM CAKE ORDERS</p>
             <p className="text-orange-100 text-sm">Mix and match flavours, get 25% off. This week only.</p>
           </div>
           <Link href="/shop?category=Cake"

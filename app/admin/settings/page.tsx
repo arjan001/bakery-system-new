@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { products } from '@/lib/products';
+import type { Offer } from '@/lib/products';
 
 type SettingsTab = 'general' | 'receipt' | 'payment' | 'security' | 'backup' | 'sessions';
 
@@ -74,6 +76,133 @@ export default function SettingsPage() {
     backupLocation: 'supabase',
   });
 
+  // ── Offers ──
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [offerForm, setOfferForm] = useState<OfferForm>(emptyOffer);
+  const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
+  const [showOfferForm, setShowOfferForm] = useState(false);
+  const [offersLoading, setOffersLoading] = useState(false);
+  const [offerRotation, setOfferRotation] = useState({ enabled: true, interval: 5 });
+
+  const loadOffers = async () => {
+    setOffersLoading(true);
+    try {
+      const { data, error } = await supabase.from('offers').select('*').order('sort_order', { ascending: true });
+      if (!error && data) setOffers(data as Offer[]);
+    } catch { /* table may not exist yet */ }
+
+    // Load rotation settings from localStorage
+    try {
+      const rot = localStorage.getItem('snackoh_offer_rotation');
+      if (rot) setOfferRotation(JSON.parse(rot));
+    } catch { /* ignore */ }
+
+    // Also load from localStorage as fallback
+    try {
+      const local = localStorage.getItem('snackoh_offers');
+      if (local) {
+        const parsed = JSON.parse(local) as Offer[];
+        setOffers(prev => prev.length > 0 ? prev : parsed);
+      }
+    } catch { /* ignore */ }
+    setOffersLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'offers') loadOffers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const saveOffer = async () => {
+    const now = new Date().toISOString();
+    const offerData: Partial<Offer> = {
+      title: offerForm.title,
+      description: offerForm.description,
+      image_url: offerForm.image_url,
+      link_url: offerForm.link_url || '/shop',
+      badge_text: offerForm.badge_text || 'Limited Time',
+      discount_text: offerForm.discount_text || undefined,
+      product_id: offerForm.product_id || undefined,
+      is_active: offerForm.is_active,
+      start_date: offerForm.start_date || now,
+      end_date: offerForm.end_date || undefined,
+      sort_order: offerForm.sort_order,
+    };
+
+    try {
+      if (editingOfferId) {
+        const { error } = await supabase.from('offers').update(offerData).eq('id', editingOfferId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('offers').insert(offerData);
+        if (error) throw error;
+      }
+    } catch {
+      // Fallback to localStorage if Supabase table doesn't exist
+      const localOffers = [...offers];
+      if (editingOfferId) {
+        const idx = localOffers.findIndex(o => o.id === editingOfferId);
+        if (idx >= 0) localOffers[idx] = { ...localOffers[idx], ...offerData };
+      } else {
+        localOffers.push({ ...offerData, id: crypto.randomUUID(), created_at: now } as Offer);
+      }
+      localStorage.setItem('snackoh_offers', JSON.stringify(localOffers));
+    }
+
+    // Save rotation settings
+    localStorage.setItem('snackoh_offer_rotation', JSON.stringify(offerRotation));
+
+    setShowOfferForm(false);
+    setEditingOfferId(null);
+    setOfferForm(emptyOffer);
+    setSavedMsg(editingOfferId ? 'Offer updated!' : 'Offer created!');
+    setTimeout(() => setSavedMsg(''), 3000);
+    loadOffers();
+  };
+
+  const deleteOffer = async (id: string) => {
+    try {
+      const { error } = await supabase.from('offers').delete().eq('id', id);
+      if (error) throw error;
+    } catch {
+      const localOffers = offers.filter(o => o.id !== id);
+      localStorage.setItem('snackoh_offers', JSON.stringify(localOffers));
+    }
+    setSavedMsg('Offer deleted');
+    setTimeout(() => setSavedMsg(''), 3000);
+    loadOffers();
+  };
+
+  const toggleOfferActive = async (id: string, current: boolean) => {
+    try {
+      const { error } = await supabase.from('offers').update({ is_active: !current }).eq('id', id);
+      if (error) throw error;
+    } catch {
+      const localOffers = offers.map(o => o.id === id ? { ...o, is_active: !current } : o);
+      localStorage.setItem('snackoh_offers', JSON.stringify(localOffers));
+    }
+    loadOffers();
+  };
+
+  const editOffer = (offer: Offer) => {
+    setOfferForm({
+      id: offer.id,
+      title: offer.title,
+      description: offer.description || '',
+      image_url: offer.image_url || '',
+      link_url: offer.link_url || '/shop',
+      badge_text: offer.badge_text || 'Limited Time',
+      discount_text: offer.discount_text || '',
+      product_id: offer.product_id || '',
+      is_active: offer.is_active,
+      start_date: offer.start_date ? offer.start_date.slice(0, 16) : '',
+      end_date: offer.end_date ? offer.end_date.slice(0, 16) : '',
+      sort_order: offer.sort_order || 0,
+    });
+    setEditingOfferId(offer.id);
+    setShowOfferForm(true);
+  };
+
   // Load from localStorage on mount
   useEffect(() => {
     try {
@@ -107,6 +236,7 @@ export default function SettingsPage() {
 
   const tabs: { key: SettingsTab; label: string; icon: string; tip: string }[] = [
     { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
+    { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
@@ -116,6 +246,9 @@ export default function SettingsPage() {
 
   const inputCls = 'w-full px-3 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-background';
   const labelCls = 'block text-xs text-muted-foreground mb-1 font-medium';
+
+  // Products for the offer form dropdown
+  const saleProducts = products.filter(p => p.isSale || p.inStock);
 
   return (
     <div className="p-8">
@@ -174,6 +307,151 @@ export default function SettingsPage() {
                 <input type="text" placeholder="Logo URL (or upload to Supabase Storage)" value={general.logoUrl} onChange={e => setGeneral({ ...general, logoUrl: e.target.value })} className={`${inputCls} w-80`} />
                 <p className="text-xs text-muted-foreground mt-1">Paste a URL or upload to Supabase Storage bucket</p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── OFFERS ── */}
+      {activeTab === 'offers' && (
+        <div className="space-y-6">
+          {/* Rotation Settings */}
+          <div className="border border-border rounded-lg p-6 bg-card max-w-2xl">
+            <h3 className="font-semibold mb-4">Banner Rotation Settings</h3>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-3">
+                <span className="text-sm font-medium">Auto-rotate banners</span>
+                <button type="button" onClick={() => setOfferRotation({ ...offerRotation, enabled: !offerRotation.enabled })} className={`w-10 h-5 rounded-full transition-colors ${offerRotation.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${offerRotation.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+              <div className="flex items-center gap-2">
+                <label className={labelCls + ' mb-0'}>Interval (seconds)</label>
+                <input type="number" min={2} max={30} value={offerRotation.interval} onChange={e => setOfferRotation({ ...offerRotation, interval: parseInt(e.target.value) || 5 })} className={`${inputCls} w-20`} />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Active offers will rotate automatically in the hero banner on the customer website. Product offers (items on sale) are also included dynamically.</p>
+          </div>
+
+          {/* Offer List + Add */}
+          <div className="flex items-center justify-between max-w-4xl">
+            <div>
+              <h3 className="font-semibold">Promotional Offers</h3>
+              <p className="text-xs text-muted-foreground">Create custom banner offers for the customer website. Products currently on sale are automatically included.</p>
+            </div>
+            <button onClick={() => { setOfferForm(emptyOffer); setEditingOfferId(null); setShowOfferForm(true); }} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium text-sm">
+              + Add Offer
+            </button>
+          </div>
+
+          {/* Offer Form Modal */}
+          {showOfferForm && (
+            <div className="border border-primary/30 rounded-lg p-6 bg-primary/5 max-w-2xl space-y-4">
+              <h4 className="font-semibold text-sm">{editingOfferId ? 'Edit Offer' : 'New Offer'}</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2"><label className={labelCls}>Offer Title *</label><input type="text" value={offerForm.title} onChange={e => setOfferForm({ ...offerForm, title: e.target.value })} placeholder="e.g. 25% Off All Cakes" className={inputCls} /></div>
+                <div className="col-span-2"><label className={labelCls}>Description</label><textarea value={offerForm.description} onChange={e => setOfferForm({ ...offerForm, description: e.target.value })} placeholder="Brief description shown under the title" className={`${inputCls} h-20 resize-none`} /></div>
+                <div className="col-span-2"><label className={labelCls}>Banner Image URL</label><input type="text" value={offerForm.image_url} onChange={e => setOfferForm({ ...offerForm, image_url: e.target.value })} placeholder="https://images.unsplash.com/... or upload to storage" className={inputCls} /></div>
+                {offerForm.image_url && (
+                  <div className="col-span-2">
+                    <div className="rounded-lg overflow-hidden h-32 bg-gray-100">
+                      <img src={offerForm.image_url} alt="Preview" className="w-full h-full object-cover" />
+                    </div>
+                  </div>
+                )}
+                <div><label className={labelCls}>Badge Text</label><input type="text" value={offerForm.badge_text} onChange={e => setOfferForm({ ...offerForm, badge_text: e.target.value })} placeholder="e.g. Limited Time, Weekend Special" className={inputCls} /></div>
+                <div><label className={labelCls}>Discount Text</label><input type="text" value={offerForm.discount_text} onChange={e => setOfferForm({ ...offerForm, discount_text: e.target.value })} placeholder="e.g. 25% OFF, Buy 1 Get 1 Free" className={inputCls} /></div>
+                <div><label className={labelCls}>Link URL</label><input type="text" value={offerForm.link_url} onChange={e => setOfferForm({ ...offerForm, link_url: e.target.value })} placeholder="/shop or /shop?category=Cake" className={inputCls} /></div>
+                <div>
+                  <label className={labelCls}>Link to Product (optional)</label>
+                  <select value={offerForm.product_id} onChange={e => setOfferForm({ ...offerForm, product_id: e.target.value })} className={inputCls}>
+                    <option value="">-- No product link --</option>
+                    {saleProducts.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} ({p.category}) — KES {p.price}</option>
+                    ))}
+                  </select>
+                </div>
+                <div><label className={labelCls}>Start Date</label><input type="datetime-local" value={offerForm.start_date} onChange={e => setOfferForm({ ...offerForm, start_date: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>End Date</label><input type="datetime-local" value={offerForm.end_date} onChange={e => setOfferForm({ ...offerForm, end_date: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>Sort Order</label><input type="number" value={offerForm.sort_order} onChange={e => setOfferForm({ ...offerForm, sort_order: parseInt(e.target.value) || 0 })} className={inputCls} /></div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-3">
+                    <span className="text-sm font-medium">Active</span>
+                    <button type="button" onClick={() => setOfferForm({ ...offerForm, is_active: !offerForm.is_active })} className={`w-10 h-5 rounded-full transition-colors ${offerForm.is_active ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${offerForm.is_active ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={saveOffer} disabled={!offerForm.title} className="px-5 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium text-sm disabled:opacity-50">
+                  {editingOfferId ? 'Update Offer' : 'Create Offer'}
+                </button>
+                <button onClick={() => { setShowOfferForm(false); setEditingOfferId(null); setOfferForm(emptyOffer); }} className="px-5 py-2 border border-border rounded-lg hover:bg-secondary text-sm font-medium">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Existing Offers */}
+          <div className="max-w-4xl space-y-3">
+            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Custom Offers</h4>
+            {offersLoading ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Loading offers...</p>
+            ) : offers.length === 0 ? (
+              <div className="border border-dashed border-border rounded-lg p-8 text-center">
+                <p className="text-muted-foreground text-sm">No custom offers yet. Click &quot;+ Add Offer&quot; to create your first promotional banner.</p>
+              </div>
+            ) : (
+              offers.map(offer => (
+                <div key={offer.id} className={`border rounded-lg p-4 flex items-center gap-4 ${offer.is_active ? 'border-border bg-card' : 'border-border/50 bg-muted/30 opacity-70'}`}>
+                  {offer.image_url ? (
+                    <div className="w-24 h-16 rounded-lg overflow-hidden bg-gray-100 shrink-0">
+                      <img src={offer.image_url} alt={offer.title} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-24 h-16 rounded-lg bg-orange-100 flex items-center justify-center shrink-0 text-2xl">🏷️</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-sm truncate">{offer.title}</p>
+                      {offer.badge_text && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">{offer.badge_text}</span>}
+                      {offer.is_active ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">Active</span> : <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-bold">Inactive</span>}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{offer.description || 'No description'}</p>
+                    {offer.discount_text && <p className="text-xs font-bold text-orange-600 mt-0.5">{offer.discount_text}</p>}
+                    {offer.product_id && <p className="text-[10px] text-muted-foreground mt-0.5">Linked product: {products.find(p => p.id === offer.product_id)?.name || offer.product_id}</p>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => toggleOfferActive(offer.id, offer.is_active)} className={`px-3 py-1.5 rounded text-xs font-medium ${offer.is_active ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-green-100 hover:bg-green-200 text-green-700'}`}>
+                      {offer.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button onClick={() => editOffer(offer)} className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-xs font-medium">Edit</button>
+                    <button onClick={() => deleteOffer(offer.id)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-xs font-medium">Delete</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Auto-generated Product Offers Preview */}
+          <div className="max-w-4xl space-y-3">
+            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Auto-Generated Product Banners</h4>
+            <p className="text-xs text-muted-foreground">These banners are automatically generated from products that have sale prices. They rotate alongside your custom offers.</p>
+            <div className="space-y-2">
+              {products.filter(p => p.isSale && p.originalPrice).map(p => (
+                <div key={p.id} className="border border-border rounded-lg p-3 flex items-center gap-3 bg-card">
+                  <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">
+                    <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{p.name}</p>
+                    <p className="text-xs text-muted-foreground">{p.category} — <span className="text-orange-600 font-bold">KES {p.price}</span> <span className="line-through text-gray-400">KES {p.originalPrice}</span> — Save {Math.round(((p.originalPrice! - p.price) / p.originalPrice!) * 100)}%</p>
+                  </div>
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold shrink-0">Auto</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>

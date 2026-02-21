@@ -541,7 +541,28 @@ CREATE TABLE IF NOT EXISTS revenue_entries (
 );
 
 -- =============================================
--- 22. SETTINGS
+-- 22. OFFERS / PROMOTIONS
+-- =============================================
+CREATE TABLE IF NOT EXISTS offers (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  image_url TEXT,
+  link_url TEXT DEFAULT '/shop',
+  badge_text TEXT DEFAULT 'Limited Time',
+  discount_text TEXT,
+  product_id TEXT,
+  is_active BOOLEAN DEFAULT true,
+  start_date TIMESTAMPTZ DEFAULT NOW(),
+  end_date TIMESTAMPTZ,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_offers_active ON offers(is_active, start_date, end_date);
+
+-- =============================================
+-- 24. SETTINGS
 -- =============================================
 CREATE TABLE IF NOT EXISTS settings_categories (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -568,7 +589,7 @@ CREATE TABLE IF NOT EXISTS settings_menu_items (
 );
 
 -- =============================================
--- 23. AUDIT LOG
+-- 25. AUDIT LOG
 -- =============================================
 CREATE TABLE IF NOT EXISTS audit_log (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
