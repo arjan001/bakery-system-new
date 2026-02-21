@@ -340,6 +340,14 @@ function Footer() {
             ))}
           </div>
         </div>
+        <div className="max-w-7xl mx-auto px-6 pb-5 flex items-center justify-center">
+          <p className="text-xs text-gray-600">
+            Developed by{' '}
+            <a href="http://oneplusafrica.com/" target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:text-orange-300 font-semibold transition-colors">
+              OnePlusAfrica Tech Solutions
+            </a>
+          </p>
+        </div>
       </div>
     </footer>
   );
