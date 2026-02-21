@@ -28,6 +28,14 @@ export default function POSPage() {
   // ── Auth (login disabled — anyone can use POS) ──
   const [loggedCashier] = useState('Cashier');
 
+  // ── Opening / Closing Balance ──
+  const [showOpeningBalance, setShowOpeningBalance] = useState(true);
+  const [showClosingBalance, setShowClosingBalance] = useState(false);
+  const [openingBalance, setOpeningBalance] = useState(0);
+  const [openingBalanceInput, setOpeningBalanceInput] = useState('');
+  const [closingNotes, setClosingNotes] = useState('');
+  const [shiftStarted, setShiftStarted] = useState(false);
+
   // ── Settings ──
   const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>({
     headerText: 'SNACKOH BITES', subHeaderText: 'Quality Baked Goods', footerText: 'Thank you for choosing Snackoh!',
@@ -132,15 +140,6 @@ export default function POSPage() {
         retailPrice: (r.retail_price || 0) as number, wholesalePrice: (r.wholesale_price || 0) as number,
         stock: 999, category: 'Products',
       })));
-    } else {
-      setProducts([
-        { id: '1', name: 'White Bread', sku: 'WB001', retailPrice: 200, wholesalePrice: 150, stock: 50, category: 'Bread' },
-        { id: '2', name: 'Croissant', sku: 'CR001', retailPrice: 150, wholesalePrice: 100, stock: 30, category: 'Pastry' },
-        { id: '3', name: 'Chocolate Cake', sku: 'CC001', retailPrice: 500, wholesalePrice: 400, stock: 20, category: 'Cake' },
-        { id: '4', name: 'Donut', sku: 'DN001', retailPrice: 50, wholesalePrice: 35, stock: 100, category: 'Pastry' },
-        { id: '5', name: 'Bagel', sku: 'BG001', retailPrice: 100, wholesalePrice: 75, stock: 40, category: 'Bread' },
-        { id: '6', name: 'Muffin', sku: 'MF001', retailPrice: 120, wholesalePrice: 90, stock: 25, category: 'Cake' },
-      ]);
     }
   }, []);
 
@@ -349,6 +348,7 @@ export default function POSPage() {
         <div className="flex items-center gap-3">
           <span className="font-bold text-primary">SNACKOH POS</span>
           <span className="text-xs text-muted-foreground">Cashier: <strong>{loggedCashier}</strong></span>
+          <span className="text-xs text-muted-foreground">Opening: {cur} {openingBalance.toLocaleString()}</span>
           <span className="text-xs text-muted-foreground">Sales: {totalSalesCount} | {cur} {totalSalesAmount.toLocaleString()}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -364,7 +364,7 @@ export default function POSPage() {
           <button onClick={() => setShowHeld(true)} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium relative">
             Recall {heldOrders.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 text-white rounded-full text-[10px] flex items-center justify-center">{heldOrders.length}</span>}
           </button>
-          <button onClick={() => { if (confirm('End shift and clear cart?')) { setCartItems([]); setTotalSalesCount(0); setTotalSalesAmount(0); } }} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium">End Shift</button>
+          <button onClick={() => setShowClosingBalance(true)} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium">End Shift</button>
         </div>
       </div>
 
@@ -567,6 +567,117 @@ export default function POSPage() {
           <div className="flex gap-2">
             <button onClick={printReceipt} className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-sm">🖨️ Print Receipt</button>
             <button onClick={() => setShowReceipt(false)} className="flex-1 px-4 py-2.5 border border-border rounded-xl hover:bg-secondary text-sm font-medium">New Sale</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Opening Balance Modal ── */}
+      <Modal isOpen={showOpeningBalance && !shiftStarted} onClose={() => {}} title="Start Shift — Opening Balance" size="sm">
+        <div className="space-y-4">
+          <div className="text-center py-3 bg-blue-50 rounded-xl border border-blue-200">
+            <p className="text-xs text-blue-600 uppercase tracking-wider font-medium">Cashier Desk</p>
+            <p className="text-sm text-blue-800 mt-1">Enter the opening cash balance to begin your shift</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Opening Cash Balance ({cur})</label>
+            <input
+              type="number"
+              step="0.01"
+              value={openingBalanceInput}
+              onChange={(e) => setOpeningBalanceInput(e.target.value)}
+              className="w-full px-4 py-3 border border-border rounded-xl text-lg font-bold focus:ring-2 focus:ring-primary/50 outline-none text-center"
+              placeholder="0.00"
+              autoFocus
+            />
+          </div>
+          <button
+            onClick={() => {
+              const bal = parseFloat(openingBalanceInput) || 0;
+              setOpeningBalance(bal);
+              setShiftStarted(true);
+              setShowOpeningBalance(false);
+            }}
+            className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-sm"
+          >
+            Start Shift
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── Closing Balance Modal ── */}
+      <Modal isOpen={showClosingBalance} onClose={() => setShowClosingBalance(false)} title="End Shift — Closing Balance" size="md">
+        <div className="space-y-4">
+          <div className="text-center py-3 bg-red-50 rounded-xl border border-red-200">
+            <p className="text-xs text-red-600 uppercase tracking-wider font-medium">Shift Summary</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="p-3 bg-secondary rounded-lg">
+              <p className="text-xs text-muted-foreground">Opening Balance</p>
+              <p className="text-lg font-bold">{cur} {openingBalance.toLocaleString()}</p>
+            </div>
+            <div className="p-3 bg-secondary rounded-lg">
+              <p className="text-xs text-muted-foreground">Total Sales</p>
+              <p className="text-lg font-bold text-green-600">{cur} {totalSalesAmount.toLocaleString()}</p>
+            </div>
+            <div className="p-3 bg-secondary rounded-lg">
+              <p className="text-xs text-muted-foreground">Sales Count</p>
+              <p className="text-lg font-bold">{totalSalesCount}</p>
+            </div>
+            <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
+              <p className="text-xs text-muted-foreground">Expected Closing</p>
+              <p className="text-lg font-bold text-primary">{cur} {(openingBalance + totalSalesAmount).toLocaleString()}</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Notes (optional)</label>
+            <textarea
+              value={closingNotes}
+              onChange={(e) => setClosingNotes(e.target.value)}
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              rows={2}
+              placeholder="Any discrepancies or notes..."
+            />
+          </div>
+          <div className="flex gap-2 pt-2 border-t border-border">
+            <button onClick={() => setShowClosingBalance(false)} className="flex-1 px-3 py-2.5 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Cancel</button>
+            <button
+              onClick={async () => {
+                try {
+                  await supabase.from('pos_sales').insert({
+                    receipt_number: `SHIFT-${Date.now().toString(36).toUpperCase()}`,
+                    customer_name: 'SHIFT CLOSE',
+                    sale_type: 'Shift',
+                    payment_method: 'N/A',
+                    subtotal: 0,
+                    tax: 0,
+                    total: 0,
+                    amount_paid: 0,
+                    change_amount: 0,
+                    cashier_name: loggedCashier,
+                    status: 'Shift Close',
+                    mpesa_reference: JSON.stringify({
+                      openingBalance,
+                      totalSales: totalSalesAmount,
+                      salesCount: totalSalesCount,
+                      expectedClosing: openingBalance + totalSalesAmount,
+                      notes: closingNotes,
+                    }),
+                  });
+                } catch { /* continue */ }
+                setCartItems([]);
+                setTotalSalesCount(0);
+                setTotalSalesAmount(0);
+                setShowClosingBalance(false);
+                setShiftStarted(false);
+                setShowOpeningBalance(true);
+                setOpeningBalanceInput('');
+                setOpeningBalance(0);
+                setClosingNotes('');
+              }}
+              className="flex-1 px-3 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 font-bold text-xs"
+            >
+              Confirm &amp; End Shift
+            </button>
           </div>
         </div>
       </Modal>

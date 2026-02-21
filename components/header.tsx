@@ -259,11 +259,11 @@ export function Header() {
               </div>
 
               <div className="py-1">
-                <a href="/admin/settings" onClick={() => setShowDropdown(false)}
+                <a href="/admin/account" onClick={() => setShowDropdown(false)}
                   className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors">
-                  <span className="text-base">⚙️</span><span>Settings</span>
+                  <span className="text-base">⚙️</span><span>Account Settings</span>
                 </a>
-                <a href="/admin/employees" onClick={() => setShowDropdown(false)}
+                <a href="/admin/account" onClick={() => setShowDropdown(false)}
                   className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors">
                   <span className="text-base">👤</span><span>My Profile</span>
                 </a>
