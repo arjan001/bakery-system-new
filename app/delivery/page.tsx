@@ -4,114 +4,940 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 
+interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  location: string;
+  address: string;
+  gpsLat: number;
+  gpsLng: number;
+}
+
+interface Driver {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  status: string;
+}
+
+interface Vehicle {
+  id: string;
+  name: string;
+  category: string;
+  serialNumber: string;
+  status: string;
+}
+
+interface DeliveryItem {
+  name: string;
+  quantity: number;
+  unit: string;
+}
+
 interface Delivery {
   id: string;
   trackingNumber: string;
-  destination: string;
-  driver: string;
-  vehicle: string;
-  status: 'Pending' | 'In Transit' | 'Delivered' | 'Failed';
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  customerLocation: string;
+  customerAddress: string;
+  customerGpsLat: number;
+  customerGpsLng: number;
+  driverId: string;
+  driverName: string;
+  vehicleId: string;
+  vehicleName: string;
+  status: 'Pending' | 'Assigned' | 'In Transit' | 'Delivered' | 'Failed';
   scheduledDate: string;
-  items: number;
+  timeSlot: string;
+  items: DeliveryItem[];
+  notes: string;
+  specialInstructions: string;
+  createdAt: string;
+}
+
+const TIME_SLOTS = [
+  '06:00 - 08:00',
+  '08:00 - 10:00',
+  '10:00 - 12:00',
+  '12:00 - 14:00',
+  '14:00 - 16:00',
+  '16:00 - 18:00',
+  '18:00 - 20:00',
+];
+
+const STATUSES: Delivery['status'][] = ['Pending', 'Assigned', 'In Transit', 'Delivered', 'Failed'];
+
+const emptyItem: DeliveryItem = { name: '', quantity: 1, unit: 'pcs' };
+
+function generateTrackingNumber(): string {
+  const prefix = 'DEL';
+  const date = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}-${date}-${rand}`;
+}
+
+function dbToDelivery(r: Record<string, unknown>): Delivery {
+  let items: DeliveryItem[] = [];
+  try {
+    if (r.items && typeof r.items === 'string') items = JSON.parse(r.items);
+    else if (Array.isArray(r.items)) items = r.items as DeliveryItem[];
+  } catch { /* empty */ }
+  return {
+    id: r.id as string,
+    trackingNumber: (r.tracking_number || '') as string,
+    customerId: (r.customer_id || '') as string,
+    customerName: (r.customer_name || '') as string,
+    customerPhone: (r.customer_phone || '') as string,
+    customerLocation: (r.customer_location || r.destination || '') as string,
+    customerAddress: (r.customer_address || '') as string,
+    customerGpsLat: (r.customer_gps_lat || 0) as number,
+    customerGpsLng: (r.customer_gps_lng || 0) as number,
+    driverId: (r.driver_id || '') as string,
+    driverName: (r.driver || r.driver_name || '') as string,
+    vehicleId: (r.vehicle_id || '') as string,
+    vehicleName: (r.vehicle || r.vehicle_name || '') as string,
+    status: (r.status || 'Pending') as Delivery['status'],
+    scheduledDate: (r.scheduled_date || '') as string,
+    timeSlot: (r.time_slot || '') as string,
+    items,
+    notes: (r.notes || '') as string,
+    specialInstructions: (r.special_instructions || '') as string,
+    createdAt: (r.created_at || '') as string,
+  };
 }
 
 export default function DeliveryPage() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ trackingNumber: '', destination: '', driver: '', vehicle: '', status: 'Pending' as Delivery['status'], scheduledDate: '', items: 0 });
 
-  const fetchData = useCallback(async () => {
+  // Modal states
+  const [showForm, setShowForm] = useState(false);
+  const [showDetail, setShowDetail] = useState<Delivery | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    trackingNumber: '',
+    customerId: '',
+    driverId: '',
+    vehicleId: '',
+    status: 'Pending' as Delivery['status'],
+    scheduledDate: '',
+    timeSlot: '',
+    items: [{ ...emptyItem }] as DeliveryItem[],
+    notes: '',
+    specialInstructions: '',
+  });
+
+  // Search and filter
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('All');
+  const [customerSearch, setCustomerSearch] = useState('');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const perPage = 10;
+
+  // Fetch deliveries
+  const fetchDeliveries = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('deliveries').select('*').order('created_at', { ascending: false });
-    if (data && data.length > 0) {
-      setDeliveries(data.map((r: Record<string, unknown>) => ({
-        id: r.id as string, trackingNumber: (r.tracking_number || '') as string, destination: (r.destination || '') as string,
-        driver: (r.driver || '') as string, vehicle: (r.vehicle || '') as string,
-        status: (r.status || 'Pending') as Delivery['status'], scheduledDate: (r.scheduled_date || '') as string, items: (r.items_count || 0) as number,
-      })));
+    if (data) {
+      setDeliveries(data.map((r: Record<string, unknown>) => dbToDelivery(r)));
     }
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Fetch customers
+  const fetchCustomers = useCallback(async () => {
+    const { data } = await supabase.from('customers').select('*').order('name', { ascending: true });
+    if (data) {
+      setCustomers(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        name: (r.name || '') as string,
+        phone: (r.phone || '') as string,
+        email: (r.email || '') as string,
+        location: (r.location || '') as string,
+        address: (r.address || '') as string,
+        gpsLat: (r.gps_lat || 0) as number,
+        gpsLng: (r.gps_lng || 0) as number,
+      })));
+    }
+  }, []);
 
+  // Fetch drivers (employees where category = 'Driver')
+  const fetchDrivers = useCallback(async () => {
+    const { data } = await supabase.from('employees').select('*').eq('category', 'Driver').order('first_name', { ascending: true });
+    if (data) {
+      setDrivers(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        firstName: (r.first_name || '') as string,
+        lastName: (r.last_name || '') as string,
+        phone: (r.phone || '') as string,
+        status: (r.status || 'Active') as string,
+      })));
+    }
+  }, []);
+
+  // Fetch vehicles (assets where category contains 'Vehicle')
+  const fetchVehicles = useCallback(async () => {
+    const { data } = await supabase.from('assets').select('*').ilike('category', '%Vehicle%').order('name', { ascending: true });
+    if (data) {
+      setVehicles(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        name: (r.name || '') as string,
+        category: (r.category || '') as string,
+        serialNumber: (r.serial_number || '') as string,
+        status: (r.status || 'Active') as string,
+      })));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDeliveries();
+    fetchCustomers();
+    fetchDrivers();
+    fetchVehicles();
+  }, [fetchDeliveries, fetchCustomers, fetchDrivers, fetchVehicles]);
+
+  // Get selected customer details
+  const selectedCustomer = customers.find(c => c.id === formData.customerId);
+  const selectedDriver = drivers.find(d => d.id === formData.driverId);
+  const selectedVehicle = vehicles.find(v => v.id === formData.vehicleId);
+
+  // Filter customers by search
+  const filteredCustomers = customerSearch
+    ? customers.filter(c =>
+        `${c.name} ${c.phone} ${c.location}`.toLowerCase().includes(customerSearch.toLowerCase())
+      )
+    : customers;
+
+  // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const row = { tracking_number: formData.trackingNumber, destination: formData.destination, driver: formData.driver, vehicle: formData.vehicle, status: formData.status, scheduled_date: formData.scheduledDate || null, items_count: formData.items };
+    const customer = customers.find(c => c.id === formData.customerId);
+    const driver = drivers.find(d => d.id === formData.driverId);
+    const vehicle = vehicles.find(v => v.id === formData.vehicleId);
+
+    const row: Record<string, unknown> = {
+      tracking_number: formData.trackingNumber,
+      customer_id: formData.customerId || null,
+      customer_name: customer?.name || '',
+      customer_phone: customer?.phone || '',
+      customer_location: customer?.location || '',
+      customer_address: customer?.address || '',
+      customer_gps_lat: customer?.gpsLat || null,
+      customer_gps_lng: customer?.gpsLng || null,
+      destination: customer?.location || '',
+      driver_id: formData.driverId || null,
+      driver: driver ? `${driver.firstName} ${driver.lastName}` : '',
+      driver_name: driver ? `${driver.firstName} ${driver.lastName}` : '',
+      vehicle_id: formData.vehicleId || null,
+      vehicle: vehicle?.name || '',
+      vehicle_name: vehicle?.name || '',
+      status: formData.status,
+      scheduled_date: formData.scheduledDate || null,
+      time_slot: formData.timeSlot || null,
+      items: JSON.stringify(formData.items.filter(i => i.name.trim())),
+      items_count: formData.items.filter(i => i.name.trim()).length,
+      notes: formData.notes,
+      special_instructions: formData.specialInstructions,
+    };
+
     try {
-      if (editingId) { await supabase.from('deliveries').update(row).eq('id', editingId); }
-      else { await supabase.from('deliveries').insert(row); }
-      await fetchData();
-    } catch { /* fallback */ }
-    setEditingId(null);
-    setFormData({ trackingNumber: '', destination: '', driver: '', vehicle: '', status: 'Pending', scheduledDate: '', items: 0 });
+      if (editingId) {
+        await supabase.from('deliveries').update(row).eq('id', editingId);
+      } else {
+        await supabase.from('deliveries').insert(row);
+      }
+      await fetchDeliveries();
+    } catch {
+      // fallback: update local state
+    }
+    resetForm();
     setShowForm(false);
   };
 
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({
+      trackingNumber: '',
+      customerId: '',
+      driverId: '',
+      vehicleId: '',
+      status: 'Pending',
+      scheduledDate: '',
+      timeSlot: '',
+      items: [{ ...emptyItem }],
+      notes: '',
+      specialInstructions: '',
+    });
+    setCustomerSearch('');
+  };
+
+  const openNewForm = () => {
+    resetForm();
+    setFormData(prev => ({ ...prev, trackingNumber: generateTrackingNumber() }));
+    setShowForm(true);
+  };
+
   const handleEdit = (d: Delivery) => {
-    setFormData({ trackingNumber: d.trackingNumber, destination: d.destination, driver: d.driver, vehicle: d.vehicle, status: d.status, scheduledDate: d.scheduledDate, items: d.items });
-    setEditingId(d.id); setShowForm(true);
+    setFormData({
+      trackingNumber: d.trackingNumber,
+      customerId: d.customerId,
+      driverId: d.driverId,
+      vehicleId: d.vehicleId,
+      status: d.status,
+      scheduledDate: d.scheduledDate,
+      timeSlot: d.timeSlot,
+      items: d.items.length > 0 ? d.items : [{ ...emptyItem }],
+      notes: d.notes,
+      specialInstructions: d.specialInstructions,
+    });
+    setEditingId(d.id);
+    setShowForm(true);
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this delivery?')) { await supabase.from('deliveries').delete().eq('id', id); setDeliveries(deliveries.filter(d => d.id !== id)); }
+    if (confirm('Delete this delivery?')) {
+      await supabase.from('deliveries').delete().eq('id', id);
+      setDeliveries(deliveries.filter(d => d.id !== id));
+    }
   };
 
-  const getStatusColor = (s: Delivery['status']) => {
-    switch (s) { case 'Pending': return 'bg-yellow-100 text-yellow-800'; case 'In Transit': return 'bg-blue-100 text-blue-800'; case 'Delivered': return 'bg-green-100 text-green-800'; case 'Failed': return 'bg-red-100 text-red-800'; }
+  const handleStatusChange = async (id: string, newStatus: Delivery['status']) => {
+    await supabase.from('deliveries').update({ status: newStatus }).eq('id', id);
+    setDeliveries(deliveries.map(d => d.id === id ? { ...d, status: newStatus } : d));
   };
+
+  // Items management
+  const addItem = () => {
+    setFormData({ ...formData, items: [...formData.items, { ...emptyItem }] });
+  };
+
+  const removeItem = (idx: number) => {
+    if (formData.items.length <= 1) return;
+    setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) });
+  };
+
+  const updateItem = (idx: number, field: keyof DeliveryItem, value: string | number) => {
+    const updated = formData.items.map((item, i) => i === idx ? { ...item, [field]: value } : item);
+    setFormData({ ...formData, items: updated });
+  };
+
+  // Status color helper
+  const getStatusColor = (s: Delivery['status']) => {
+    switch (s) {
+      case 'Pending': return 'bg-yellow-100 text-yellow-800';
+      case 'Assigned': return 'bg-purple-100 text-purple-800';
+      case 'In Transit': return 'bg-blue-100 text-blue-800';
+      case 'Delivered': return 'bg-green-100 text-green-800';
+      case 'Failed': return 'bg-red-100 text-red-800';
+    }
+  };
+
+  // Map helpers
+  const getMapUrl = (lat: number, lng: number) =>
+    `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.01},${lat - 0.01},${lng + 0.01},${lat + 0.01}&layer=mapnik&marker=${lat},${lng}`;
+  const getMapLinkUrl = (lat: number, lng: number) =>
+    `https://www.google.com/maps?q=${lat},${lng}`;
+
+  // Filter and paginate
+  const filtered = deliveries.filter(d => {
+    const matchSearch = `${d.trackingNumber} ${d.customerName} ${d.driverName} ${d.customerLocation}`.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchStatus = filterStatus === 'All' || d.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  // Reset page when filters change
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus]);
+
+  // Stats
+  const today = new Date().toISOString().split('T')[0];
+  const totalDeliveries = deliveries.length;
+  const pendingCount = deliveries.filter(d => d.status === 'Pending' || d.status === 'Assigned').length;
+  const inTransitCount = deliveries.filter(d => d.status === 'In Transit').length;
+  const deliveredTodayCount = deliveries.filter(d => d.status === 'Delivered' && d.scheduledDate === today).length;
 
   return (
     <div className="p-8">
-      <div className="mb-8"><h1 className="mb-2">Delivery Management</h1><p className="text-muted-foreground">Track deliveries and rider assignments</p></div>
-      <div className="mb-6 flex justify-end">
-        <button onClick={() => { setEditingId(null); setFormData({ trackingNumber: '', destination: '', driver: '', vehicle: '', status: 'Pending', scheduledDate: '', items: 0 }); setShowForm(true); }} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">+ Schedule Delivery</button>
+      <div className="mb-8">
+        <h1 className="mb-2">Delivery Management</h1>
+        <p className="text-muted-foreground">Schedule deliveries, assign drivers, and track shipments in real time</p>
       </div>
-      <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditingId(null); }} title={editingId ? 'Edit Delivery' : 'Schedule Delivery'} size="md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="text" placeholder="Tracking Number" value={formData.trackingNumber} onChange={(e) => setFormData({ ...formData, trackingNumber: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required />
-          <input type="text" placeholder="Destination" value={formData.destination} onChange={(e) => setFormData({ ...formData, destination: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required />
-          <div className="grid grid-cols-2 gap-4">
-            <input type="text" placeholder="Driver Name" value={formData.driver} onChange={(e) => setFormData({ ...formData, driver: e.target.value })} className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required />
-            <input type="text" placeholder="Vehicle ID" value={formData.vehicle} onChange={(e) => setFormData({ ...formData, vehicle: e.target.value })} className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <input type="date" value={formData.scheduledDate} onChange={(e) => setFormData({ ...formData, scheduledDate: e.target.value })} className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required />
-            <input type="number" placeholder="Items Count" value={formData.items} onChange={(e) => setFormData({ ...formData, items: parseInt(e.target.value) || 0 })} className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
-          </div>
-          <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value as Delivery['status'] })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none">
-            <option>Pending</option><option>In Transit</option><option>Delivered</option><option>Failed</option>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Total Deliveries</p>
+          <p className="text-2xl font-bold">{totalDeliveries}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Pending</p>
+          <p className="text-2xl font-bold text-yellow-600">{pendingCount}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">In Transit</p>
+          <p className="text-2xl font-bold text-blue-600">{inTransitCount}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Delivered Today</p>
+          <p className="text-2xl font-bold text-green-600">{deliveredTodayCount}</p>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="mb-6 flex justify-between items-center gap-4">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Search deliveries..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none w-64"
+          />
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+          >
+            <option value="All">All Status</option>
+            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+        </div>
+        <button
+          onClick={openNewForm}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+        >
+          + Schedule Delivery
+        </button>
+      </div>
+
+      {/* ── Schedule / Edit Delivery Modal ── */}
+      <Modal
+        isOpen={showForm}
+        onClose={() => { setShowForm(false); resetForm(); }}
+        title={editingId ? 'Edit Delivery' : 'Schedule New Delivery'}
+        size="3xl"
+      >
+        <form onSubmit={handleSubmit} className="space-y-5 max-h-[75vh] overflow-y-auto pr-1">
+
+          {/* Section: Delivery Info */}
+          <div className="border border-border rounded-lg p-4 bg-secondary/30">
+            <p className="text-sm font-semibold mb-3">Delivery Information</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Tracking Number</label>
+                <input
+                  type="text"
+                  value={formData.trackingNumber}
+                  onChange={(e) => setFormData({ ...formData, trackingNumber: e.target.value })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background font-mono text-sm"
+                  readOnly={!editingId}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Scheduled Date *</label>
+                <input
+                  type="date"
+                  value={formData.scheduledDate}
+                  onChange={(e) => setFormData({ ...formData, scheduledDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Time Slot *</label>
+                <select
+                  value={formData.timeSlot}
+                  onChange={(e) => setFormData({ ...formData, timeSlot: e.target.value })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                  required
+                >
+                  <option value="">Select time slot</option>
+                  {TIME_SLOTS.map(slot => <option key={slot} value={slot}>{slot}</option>)}
+                </select>
+              </div>
+            </div>
+            {editingId && (
+              <div className="mt-3">
+                <label className="block text-xs text-muted-foreground mb-1">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as Delivery['status'] })}
+                  className="w-full max-w-xs px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                >
+                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Customer Selection */}
+          <div className="border border-border rounded-lg p-4 bg-secondary/30">
+            <p className="text-sm font-semibold mb-3">Customer</p>
+            <div className="mb-3">
+              <input
+                type="text"
+                placeholder="Search customer by name, phone, or location..."
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+              />
+            </div>
+            <select
+              value={formData.customerId}
+              onChange={(e) => {
+                setFormData({ ...formData, customerId: e.target.value });
+                setCustomerSearch('');
+              }}
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+              required
+            >
+              <option value="">Select a customer</option>
+              {filteredCustomers.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} — {c.phone} {c.location ? `(${c.location})` : ''}
+                </option>
+              ))}
+            </select>
+            {selectedCustomer && (
+              <div className="mt-3 p-3 bg-background border border-border rounded-lg text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><span className="text-muted-foreground">Name:</span> <strong>{selectedCustomer.name}</strong></div>
+                  <div><span className="text-muted-foreground">Phone:</span> <strong>{selectedCustomer.phone}</strong></div>
+                  <div><span className="text-muted-foreground">Location:</span> <strong>{selectedCustomer.location || '—'}</strong></div>
+                  <div><span className="text-muted-foreground">Address:</span> <strong>{selectedCustomer.address || '—'}</strong></div>
+                </div>
+                {selectedCustomer.gpsLat !== 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">GPS: {selectedCustomer.gpsLat.toFixed(6)}, {selectedCustomer.gpsLng.toFixed(6)}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Section: Driver & Vehicle Assignment */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border border-border rounded-lg p-4 bg-secondary/30">
+              <p className="text-sm font-semibold mb-3">Driver Assignment</p>
+              <select
+                value={formData.driverId}
+                onChange={(e) => setFormData({ ...formData, driverId: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+              >
+                <option value="">Select a driver</option>
+                {drivers.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.firstName} {d.lastName} {d.status !== 'Active' ? `(${d.status})` : ''}
+                  </option>
+                ))}
+              </select>
+              {selectedDriver && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Phone: {selectedDriver.phone || '—'} | Status: <span className={selectedDriver.status === 'Active' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>{selectedDriver.status}</span>
+                </div>
+              )}
+              {drivers.length === 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">No drivers found. Add employees with category &quot;Driver&quot; in Employee Management.</p>
+              )}
+            </div>
+
+            <div className="border border-border rounded-lg p-4 bg-secondary/30">
+              <p className="text-sm font-semibold mb-3">Vehicle Assignment</p>
+              <select
+                value={formData.vehicleId}
+                onChange={(e) => setFormData({ ...formData, vehicleId: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+              >
+                <option value="">Select a vehicle</option>
+                {vehicles.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} {v.serialNumber ? `(${v.serialNumber})` : ''} {v.status !== 'Active' ? `[${v.status}]` : ''}
+                  </option>
+                ))}
+              </select>
+              {selectedVehicle && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Category: {selectedVehicle.category} | Status: <span className={selectedVehicle.status === 'Active' ? 'text-green-600 font-medium' : 'text-orange-600 font-medium'}>{selectedVehicle.status}</span>
+                </div>
+              )}
+              {vehicles.length === 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">No vehicles found. Add assets with category containing &quot;Vehicle&quot; in Asset Management.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Section: Items List */}
+          <div className="border border-border rounded-lg p-4 bg-secondary/30">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold">Delivery Items</p>
+              <button
+                type="button"
+                onClick={addItem}
+                className="text-xs text-primary hover:text-primary/80 font-medium"
+              >
+                + Add Item
+              </button>
+            </div>
+            <div className="space-y-2">
+              {formData.items.map((item, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-6">
+                    {idx === 0 && <label className="block text-xs text-muted-foreground mb-1">Item Name</label>}
+                    <input
+                      type="text"
+                      placeholder="e.g. White Bread Loaves"
+                      value={item.name}
+                      onChange={(e) => updateItem(idx, 'name', e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    {idx === 0 && <label className="block text-xs text-muted-foreground mb-1">Qty</label>}
+                    <input
+                      type="number"
+                      min={1}
+                      value={item.quantity}
+                      onChange={(e) => updateItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    {idx === 0 && <label className="block text-xs text-muted-foreground mb-1">Unit</label>}
+                    <select
+                      value={item.unit}
+                      onChange={(e) => updateItem(idx, 'unit', e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                    >
+                      <option value="pcs">Pieces</option>
+                      <option value="trays">Trays</option>
+                      <option value="boxes">Boxes</option>
+                      <option value="kg">Kilograms</option>
+                      <option value="crates">Crates</option>
+                      <option value="packets">Packets</option>
+                    </select>
+                  </div>
+                  <div className="col-span-1 flex justify-center">
+                    {formData.items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(idx)}
+                        className="px-2 py-2 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                        title="Remove item"
+                      >
+                        X
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Section: Notes & Special Instructions */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Delivery Notes</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                rows={3}
+                placeholder="General delivery notes..."
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Special Instructions</label>
+              <textarea
+                value={formData.specialInstructions}
+                onChange={(e) => setFormData({ ...formData, specialInstructions: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                rows={3}
+                placeholder="e.g. Call before delivery, gate code, fragile items..."
+              />
+            </div>
+          </div>
+
+          {/* Form actions */}
           <div className="flex gap-2 justify-end pt-4 border-t border-border">
-            <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">{editingId ? 'Update' : 'Schedule'}</button>
+            <button
+              type="button"
+              onClick={() => { setShowForm(false); resetForm(); }}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+            >
+              {editingId ? 'Update Delivery' : 'Schedule Delivery'}
+            </button>
           </div>
         </form>
       </Modal>
-      {loading && <p className="text-center py-4 text-muted-foreground text-sm">Loading...</p>}
+
+      {/* ── Detail View Modal ── */}
+      <Modal
+        isOpen={!!showDetail}
+        onClose={() => setShowDetail(null)}
+        title={showDetail ? `Delivery ${showDetail.trackingNumber}` : ''}
+        size="3xl"
+      >
+        {showDetail && (
+          <div className="space-y-5 max-h-[75vh] overflow-y-auto pr-1">
+
+            {/* Status bar */}
+            <div className="flex items-center justify-between">
+              <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${getStatusColor(showDetail.status)}`}>
+                {showDetail.status}
+              </span>
+              <div className="flex gap-2">
+                {showDetail.status !== 'Delivered' && showDetail.status !== 'Failed' && (
+                  <select
+                    value={showDetail.status}
+                    onChange={(e) => {
+                      const newStatus = e.target.value as Delivery['status'];
+                      handleStatusChange(showDetail.id, newStatus);
+                      setShowDetail({ ...showDetail, status: newStatus });
+                    }}
+                    className="px-3 py-1.5 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                  >
+                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Status progress */}
+            <div className="flex items-center gap-1">
+              {STATUSES.map((s, idx) => {
+                const currentIdx = STATUSES.indexOf(showDetail.status);
+                const isActive = idx <= currentIdx;
+                const isFailed = showDetail.status === 'Failed';
+                return (
+                  <div key={s} className="flex-1">
+                    <div className={`h-2 rounded-full ${isFailed && idx === currentIdx ? 'bg-red-500' : isActive ? 'bg-green-500' : 'bg-gray-200'}`} />
+                    <p className={`text-xs mt-1 text-center ${isActive ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{s}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Delivery info grid */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm border border-border rounded-lg p-4">
+              <div><span className="text-muted-foreground">Tracking #:</span> <span className="font-mono font-medium ml-2">{showDetail.trackingNumber}</span></div>
+              <div><span className="text-muted-foreground">Scheduled:</span> <span className="font-medium ml-2">{showDetail.scheduledDate || '—'}</span></div>
+              <div><span className="text-muted-foreground">Time Slot:</span> <span className="font-medium ml-2">{showDetail.timeSlot || '—'}</span></div>
+              <div><span className="text-muted-foreground">Driver:</span> <span className="font-medium ml-2">{showDetail.driverName || '—'}</span></div>
+              <div><span className="text-muted-foreground">Vehicle:</span> <span className="font-medium ml-2">{showDetail.vehicleName || '—'}</span></div>
+              <div><span className="text-muted-foreground">Items:</span> <span className="font-medium ml-2">{showDetail.items.length} item(s)</span></div>
+            </div>
+
+            {/* Customer details */}
+            <div className="border border-border rounded-lg p-4">
+              <p className="text-sm font-semibold mb-3">Customer Details</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div><span className="text-muted-foreground">Name:</span> <strong className="ml-2">{showDetail.customerName || '—'}</strong></div>
+                <div><span className="text-muted-foreground">Phone:</span> <strong className="ml-2">{showDetail.customerPhone || '—'}</strong></div>
+                <div><span className="text-muted-foreground">Location:</span> <strong className="ml-2">{showDetail.customerLocation || '—'}</strong></div>
+                <div className="col-span-2"><span className="text-muted-foreground">Address:</span> <strong className="ml-2">{showDetail.customerAddress || '—'}</strong></div>
+              </div>
+              {showDetail.customerGpsLat !== 0 && showDetail.customerGpsLng !== 0 && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-muted-foreground">GPS: {showDetail.customerGpsLat.toFixed(6)}, {showDetail.customerGpsLng.toFixed(6)}</p>
+                    <a
+                      href={getMapLinkUrl(showDetail.customerGpsLat, showDetail.customerGpsLng)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline font-medium"
+                    >
+                      Open in Google Maps
+                    </a>
+                  </div>
+                  <iframe
+                    src={getMapUrl(showDetail.customerGpsLat, showDetail.customerGpsLng)}
+                    width="100%"
+                    height="200"
+                    className="rounded-lg border border-border"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Items */}
+            {showDetail.items.length > 0 && (
+              <div className="border border-border rounded-lg p-4">
+                <p className="text-sm font-semibold mb-3">Delivery Items</p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 text-muted-foreground font-medium">#</th>
+                      <th className="text-left py-2 text-muted-foreground font-medium">Item</th>
+                      <th className="text-right py-2 text-muted-foreground font-medium">Quantity</th>
+                      <th className="text-left py-2 pl-4 text-muted-foreground font-medium">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {showDetail.items.map((item, idx) => (
+                      <tr key={idx} className="border-b border-border/50">
+                        <td className="py-2 text-muted-foreground">{idx + 1}</td>
+                        <td className="py-2 font-medium">{item.name}</td>
+                        <td className="py-2 text-right">{item.quantity}</td>
+                        <td className="py-2 pl-4 text-muted-foreground">{item.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Notes */}
+            {(showDetail.notes || showDetail.specialInstructions) && (
+              <div className="grid grid-cols-2 gap-4">
+                {showDetail.notes && (
+                  <div className="border border-border rounded-lg p-4">
+                    <p className="text-sm font-semibold mb-2">Delivery Notes</p>
+                    <p className="text-sm text-muted-foreground">{showDetail.notes}</p>
+                  </div>
+                )}
+                {showDetail.specialInstructions && (
+                  <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-4">
+                    <p className="text-sm font-semibold text-yellow-800 mb-2">Special Instructions</p>
+                    <p className="text-sm text-yellow-700">{showDetail.specialInstructions}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 justify-end pt-4 border-t border-border">
+              <button
+                onClick={() => { setShowDetail(null); handleEdit(showDetail); }}
+                className="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 font-medium text-sm"
+              >
+                Edit Delivery
+              </button>
+              <button
+                onClick={() => setShowDetail(null)}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Loading */}
+      {loading && <p className="text-center py-4 text-muted-foreground text-sm">Loading deliveries...</p>}
+
+      {/* Table */}
       <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-secondary border-b border-border">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold">Tracking #</th><th className="px-4 py-3 text-left font-semibold">Destination</th><th className="px-4 py-3 text-left font-semibold">Driver</th><th className="px-4 py-3 text-left font-semibold">Vehicle</th><th className="px-4 py-3 text-left font-semibold">Items</th><th className="px-4 py-3 text-center font-semibold">Status</th><th className="px-4 py-3 text-left font-semibold">Date</th><th className="px-4 py-3 text-left font-semibold">Actions</th>
+              <th className="px-4 py-3 text-left font-semibold">Tracking #</th>
+              <th className="px-4 py-3 text-left font-semibold">Customer</th>
+              <th className="px-4 py-3 text-left font-semibold">Location</th>
+              <th className="px-4 py-3 text-left font-semibold">Driver</th>
+              <th className="px-4 py-3 text-left font-semibold">Vehicle</th>
+              <th className="px-4 py-3 text-left font-semibold">Date / Slot</th>
+              <th className="px-4 py-3 text-center font-semibold">Items</th>
+              <th className="px-4 py-3 text-center font-semibold">Status</th>
+              <th className="px-4 py-3 text-left font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {deliveries.length === 0 && !loading ? (<tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No deliveries found</td></tr>) : (
-              deliveries.map((d) => (
-                <tr key={d.id} className="border-b border-border hover:bg-secondary/50">
-                  <td className="px-4 py-3 font-medium">{d.trackingNumber}</td><td className="px-4 py-3">{d.destination}</td><td className="px-4 py-3">{d.driver}</td><td className="px-4 py-3">{d.vehicle}</td><td className="px-4 py-3">{d.items}</td>
-                  <td className="px-4 py-3 text-center"><span className={`px-2 py-1 text-xs rounded font-semibold ${getStatusColor(d.status)}`}>{d.status}</span></td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{d.scheduledDate}</td>
-                  <td className="px-4 py-3"><div className="flex gap-2"><button onClick={() => handleEdit(d)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button><button onClick={() => handleDelete(d.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button></div></td>
+            {paginated.length === 0 && !loading ? (
+              <tr>
+                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">No deliveries found</td>
+              </tr>
+            ) : (
+              paginated.map((d) => (
+                <tr key={d.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                  <td className="px-4 py-3 font-mono text-xs font-medium">{d.trackingNumber}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{d.customerName || '—'}</div>
+                    <div className="text-xs text-muted-foreground">{d.customerPhone}</div>
+                  </td>
+                  <td className="px-4 py-3 text-sm">{d.customerLocation || '—'}</td>
+                  <td className="px-4 py-3 text-sm">{d.driverName || '—'}</td>
+                  <td className="px-4 py-3 text-sm">{d.vehicleName || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="text-xs">{d.scheduledDate || '—'}</div>
+                    <div className="text-xs text-muted-foreground">{d.timeSlot}</div>
+                  </td>
+                  <td className="px-4 py-3 text-center">{d.items.length}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`px-2 py-1 text-xs rounded font-semibold ${getStatusColor(d.status)}`}>{d.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1">
+                      <button onClick={() => setShowDetail(d)} className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium">View</button>
+                      <button onClick={() => handleEdit(d)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button>
+                      <button onClick={() => handleDelete(d.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {filtered.length > perPage && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, filtered.length)} of {filtered.length} deliveries
+          </p>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 border border-border rounded-lg text-sm hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`px-3 py-1.5 border rounded-lg text-sm font-medium ${
+                  page === currentPage
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border hover:bg-secondary'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 border border-border rounded-lg text-sm hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
