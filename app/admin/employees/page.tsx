@@ -23,7 +23,7 @@ interface Employee {
   phone: string;
   department: string;
   role: string;
-  category: 'Baker' | 'Driver' | 'Sales' | 'Admin' | 'Quality' | 'Packer' | 'Supervisor' | 'Manager';
+  category: 'Baker' | 'Driver' | 'Sales' | 'Admin' | 'Quality' | 'Packer' | 'Supervisor' | 'Manager' | 'Rider' | 'Cleaner' | string;
   hireDate: string;
   status: 'Active' | 'Inactive' | 'Leave' | 'Probation';
   nextOfKin: string;
@@ -160,6 +160,43 @@ export default function EmployeesPage() {
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
+  // Fetch employee categories from database
+  useEffect(() => {
+    async function fetchCategories() {
+      try {
+        const { data, error } = await supabase.from('employee_categories').select('name').order('name');
+        if (!error && data && data.length > 0) {
+          const dbCategories = data.map((c: { name: string }) => c.name);
+          setCategories(prev => {
+            const merged = new Set([...prev, ...dbCategories]);
+            return Array.from(merged).sort();
+          });
+        }
+      } catch {
+        // employee_categories table may not exist yet, use defaults
+      }
+    }
+    fetchCategories();
+  }, []);
+
+  const handleAddCategory = async () => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    if (categories.includes(trimmed)) {
+      setNewCategoryName('');
+      return;
+    }
+    // Save to database
+    try {
+      await supabase.from('employee_categories').insert({ name: trimmed });
+    } catch {
+      // Table may not exist, just add locally
+    }
+    setCategories(prev => [...prev, trimmed].sort());
+    setNewCategoryName('');
+    setShowCategoryModal(false);
+  };
+
   const [showForm, setShowForm] = useState(false);
   const [showDetail, setShowDetail] = useState<Employee | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -211,8 +248,10 @@ export default function EmployeesPage() {
   const [formData, setFormData] = useState<Employee>(emptyForm);
   const [newCert, setNewCert] = useState({ name: '', number: '', issueDate: '', expiryDate: '' });
 
-  const departments = ['Production', 'Sales', 'Delivery', 'Administration', 'Quality Control', 'Packaging'];
-  const categories: Employee['category'][] = ['Baker', 'Driver', 'Sales', 'Admin', 'Quality', 'Packer', 'Supervisor', 'Manager'];
+  const departments = ['Production', 'Sales', 'Delivery', 'Administration', 'Quality Control', 'Packaging', 'Cleaning'];
+  const [categories, setCategories] = useState<string[]>(['Baker', 'Driver', 'Sales', 'Admin', 'Quality', 'Packer', 'Supervisor', 'Manager', 'Rider', 'Cleaner']);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const designations: Employee['designation'][] = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof'];
   const loginRoles: Employee['loginRole'][] = ['Admin', 'Baker', 'Driver', 'Sales', 'Viewer'];
 
@@ -389,16 +428,24 @@ export default function EmployeesPage() {
             {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
           </select>
         </div>
-        <button
-          onClick={() => {
-            setShowForm(true);
-            setEditingId(null);
-            resetForm();
-          }}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium whitespace-nowrap"
-        >
-          + Add Employee
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowCategoryModal(true)}
+            className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary/10 font-medium whitespace-nowrap"
+          >
+            + Add Category
+          </button>
+          <button
+            onClick={() => {
+              setShowForm(true);
+              setEditingId(null);
+              resetForm();
+            }}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium whitespace-nowrap"
+          >
+            + Add Employee
+          </button>
+        </div>
       </div>
 
       {/* Employee Form Modal */}
@@ -750,6 +797,49 @@ export default function EmployeesPage() {
         </form>
       </Modal>
 
+      {/* Add Category Modal */}
+      <Modal isOpen={showCategoryModal} onClose={() => { setShowCategoryModal(false); setNewCategoryName(''); }} title="Add Employee Category" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Add a new employee category for classification.</p>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Category Name</label>
+            <input
+              type="text"
+              value={newCategoryName}
+              onChange={e => setNewCategoryName(e.target.value)}
+              placeholder="e.g. Rider, Cleaner, Cashier..."
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCategory(); } }}
+            />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-2">Current categories:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {categories.map(cat => (
+                <span key={cat} className="px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-xs font-medium">{cat}</span>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end pt-2 border-t border-border">
+            <button
+              type="button"
+              onClick={() => { setShowCategoryModal(false); setNewCategoryName(''); }}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleAddCategory}
+              disabled={!newCategoryName.trim()}
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
+            >
+              Add Category
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Detail View Modal */}
       <Modal isOpen={!!showDetail} onClose={() => setShowDetail(null)} title={showDetail ? `${showDetail.designation} ${showDetail.firstName} ${showDetail.lastName}` : ''} size="3xl">
         {showDetail && (
@@ -803,6 +893,8 @@ export default function EmployeesPage() {
                     showDetail.category === 'Baker' ? 'bg-amber-100 text-amber-800' :
                     showDetail.category === 'Driver' ? 'bg-blue-100 text-blue-800' :
                     showDetail.category === 'Sales' ? 'bg-purple-100 text-purple-800' :
+                    showDetail.category === 'Rider' ? 'bg-cyan-100 text-cyan-800' :
+                    showDetail.category === 'Cleaner' ? 'bg-lime-100 text-lime-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>{showDetail.category}</span>
                 </span></div>
@@ -1000,6 +1092,8 @@ export default function EmployeesPage() {
                       emp.category === 'Driver' ? 'bg-blue-100 text-blue-800' :
                       emp.category === 'Sales' ? 'bg-purple-100 text-purple-800' :
                       emp.category === 'Admin' ? 'bg-teal-100 text-teal-800' :
+                      emp.category === 'Rider' ? 'bg-cyan-100 text-cyan-800' :
+                      emp.category === 'Cleaner' ? 'bg-lime-100 text-lime-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>{emp.category}</span>
                   </td>

@@ -230,7 +230,3 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
     </div>
   );
 }
-
-export async function generateStaticParams() {
-  return products.map(p => ({ id: p.id }));
-}
