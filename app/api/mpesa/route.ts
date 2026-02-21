@@ -56,6 +56,11 @@ export async function POST(request: NextRequest) {
       return handleStkQuery(body.checkoutRequestId);
     }
 
+    // Match latest completed payment by amount (no STK)
+    if (body.action === 'match') {
+      return handleMpesaMatch(body.amount, body.phone);
+    }
+
     // Handle STK push
     const { phone, amount, accountReference, description } = body;
 
@@ -139,6 +144,62 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function handleMpesaMatch(amount: number, phone?: string) {
+  if (!amount) {
+    return NextResponse.json(
+      { success: false, status: 'invalid', message: 'Amount is required' },
+      { status: 400 }
+    );
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json(
+      { success: false, status: 'unavailable', message: 'Payment verification not available' },
+      { status: 503 }
+    );
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const amountRounded = Math.ceil(amount);
+  const windowMinutes = Number(process.env.MPESA_MATCH_WINDOW_MINUTES || 10);
+  const since = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
+
+  let query = supabase
+    .from('mpesa_transactions')
+    .select('*')
+    .in('status', ['completed', 'Completed', 'COMPLETED'])
+    .eq('amount', amountRounded)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (phone) {
+    query = query.eq('phone', formatPhone(phone));
+  }
+
+  const { data } = await query;
+  const txn = Array.isArray(data) ? data[0] : null;
+
+  if (txn) {
+    return NextResponse.json({
+      success: true,
+      status: 'matched',
+      amount: txn.amount,
+      phone: txn.phone,
+      checkoutRequestId: txn.checkout_request_id,
+      mpesaRef: txn.mpesa_receipt_number || txn.mpesa_receipt || txn.mpesaRef || null,
+    });
+  }
+
+  return NextResponse.json({
+    success: false,
+    status: 'not_found',
+    message: 'No matching payment found',
+  });
 }
 
 async function handleStkQuery(checkoutRequestId: string) {
