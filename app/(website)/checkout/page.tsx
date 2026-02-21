@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
 import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 
 type PaymentMethod = 'card' | 'mpesa';
 type FulfillmentType = 'ship' | 'pickup';

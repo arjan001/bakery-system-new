@@ -5,7 +5,36 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'receipt' | 'payment' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'security' | 'backup' | 'sessions';
+
+interface OfferForm {
+  id?: string;
+  title: string;
+  description: string;
+  image_url: string;
+  link_url: string;
+  badge_text: string;
+  discount_text: string;
+  product_id: string;
+  is_active: boolean;
+  start_date: string;
+  end_date: string;
+  sort_order: number;
+}
+
+const emptyOffer: OfferForm = {
+  title: '',
+  description: '',
+  image_url: '',
+  link_url: '/shop',
+  badge_text: 'Limited Time',
+  discount_text: '',
+  product_id: '',
+  is_active: true,
+  start_date: '',
+  end_date: '',
+  sort_order: 0,
+};
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -203,25 +232,62 @@ export default function SettingsPage() {
     setShowOfferForm(true);
   };
 
-  // Load from localStorage on mount
+  // Load from database first, then localStorage fallback
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('snackoh_settings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
-        if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
-        if (parsed.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...parsed.paymentDetails }));
-        if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
-        if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
+    async function loadFromDb() {
+      try {
+        const { data, error } = await supabase.from('business_settings').select('key, value');
+        if (!error && data && data.length > 0) {
+          const settings: Record<string, unknown> = {};
+          for (const row of data) settings[row.key] = row.value;
+          if (settings.general) setGeneral(prev => ({ ...prev, ...(settings.general as Record<string, unknown>) }));
+          if (settings.receipt) setReceipt(prev => ({ ...prev, ...(settings.receipt as Record<string, unknown>) }));
+          if (settings.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...(settings.paymentDetails as Record<string, unknown>) }));
+          if (settings.security) setSecurity(prev => ({ ...prev, ...(settings.security as Record<string, unknown>) }));
+          if (settings.backup) setBackup(prev => ({ ...prev, ...(settings.backup as Record<string, unknown>) }));
+          return;
+        }
+      } catch {
+        // Table may not exist yet
       }
-    } catch { /* ignore */ }
+      // Fallback to localStorage
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
+          if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
+          if (parsed.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...parsed.paymentDetails }));
+          if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
+          if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
+        }
+      } catch { /* ignore */ }
+    }
+    loadFromDb();
   }, []);
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     setSaving(true);
-    localStorage.setItem('snackoh_settings', JSON.stringify({ general, receipt, paymentDetails, security, backup }));
-    setTimeout(() => { setSaving(false); setSavedMsg('Settings saved successfully!'); setTimeout(() => setSavedMsg(''), 3000); }, 500);
+    const settingsData = { general, receipt, paymentDetails, security, backup };
+
+    // Save to localStorage as fallback
+    localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
+
+    // Save to database
+    try {
+      for (const [key, value] of Object.entries(settingsData)) {
+        await supabase.from('business_settings').upsert(
+          { key, value, updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        );
+      }
+    } catch {
+      // Table may not exist yet, localStorage is the fallback
+    }
+
+    setSaving(false);
+    setSavedMsg('Settings saved successfully!');
+    setTimeout(() => setSavedMsg(''), 3000);
   };
 
   // ── Active Sessions (from Supabase) ──
@@ -299,13 +365,47 @@ export default function SettingsPage() {
 
           <div className="border border-border rounded-lg p-6 bg-card">
             <h3 className="font-semibold mb-4">Logo</h3>
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 bg-secondary rounded-lg flex items-center justify-center text-2xl font-black text-primary border-2 border-dashed border-border">
-                {general.logoUrl ? <img src={general.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-lg" /> : 'S'}
+            <p className="text-sm text-muted-foreground mb-4">Upload your company logo. It will be displayed on the admin panel, customer website, and receipts.</p>
+            <div className="flex items-start gap-6">
+              <div className="w-24 h-24 bg-secondary rounded-lg flex items-center justify-center text-2xl font-black text-primary border-2 border-dashed border-border overflow-hidden flex-shrink-0">
+                {general.logoUrl ? <img src={general.logoUrl} alt="Logo" className="w-full h-full object-contain rounded-lg" /> : 'S'}
               </div>
-              <div>
-                <input type="text" placeholder="Logo URL (or upload to Supabase Storage)" value={general.logoUrl} onChange={e => setGeneral({ ...general, logoUrl: e.target.value })} className={`${inputCls} w-80`} />
-                <p className="text-xs text-muted-foreground mt-1">Paste a URL or upload to Supabase Storage bucket</p>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <label className={labelCls}>Logo URL</label>
+                  <input type="text" placeholder="Logo URL (auto-filled on upload)" value={general.logoUrl} onChange={e => setGeneral({ ...general, logoUrl: e.target.value })} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Or Upload Logo File</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:opacity-90 file:cursor-pointer"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setSaving(true);
+                      setSavedMsg('Uploading logo...');
+                      try {
+                        const ext = file.name.split('.').pop() || 'png';
+                        const fileName = `company-logo-${Date.now()}.${ext}`;
+                        const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file, { upsert: true });
+                        if (uploadError) throw uploadError;
+                        const { data: urlData } = supabase.storage.from('logos').getPublicUrl(fileName);
+                        if (urlData?.publicUrl) {
+                          setGeneral(prev => ({ ...prev, logoUrl: urlData.publicUrl }));
+                          setSavedMsg('Logo uploaded! Click "Save All Settings" to apply.');
+                        }
+                      } catch (err) {
+                        console.error('Logo upload error:', err);
+                        setSavedMsg('Upload failed. You can paste a URL instead.');
+                      }
+                      setSaving(false);
+                      setTimeout(() => setSavedMsg(''), 4000);
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Recommended: PNG or SVG, at least 200x200px. The logo is stored in Supabase Storage and referenced across all pages.</p>
+                </div>
               </div>
             </div>
           </div>
@@ -498,6 +598,9 @@ export default function SettingsPage() {
             <h3 className="font-semibold mb-4">Receipt Preview</h3>
             <div className="bg-white border border-gray-200 rounded-lg p-4 max-w-[300px] mx-auto font-mono text-[11px] shadow-sm">
               <div className="text-center mb-2">
+                {receipt.showLogo && general.logoUrl && (
+                  <img src={general.logoUrl} alt="Logo" className="w-14 h-14 object-contain mx-auto mb-1" />
+                )}
                 <p className="text-sm font-black">{receipt.headerText}</p>
                 <p className="text-[10px]">{receipt.subHeaderText}</p>
                 <p className="text-[10px]">{general.phone}</p>
@@ -537,6 +640,14 @@ export default function SettingsPage() {
                       <p>M-Pesa Till: {paymentDetails.tillNumber}</p>
                     )}
                     {paymentDetails.mpesaName && <p>Name: {paymentDetails.mpesaName}</p>}
+                    {paymentDetails.bankName && (
+                      <>
+                        <p className="font-bold mt-1">Bank Transfer:</p>
+                        <p>{paymentDetails.bankName}</p>
+                        {paymentDetails.bankAccount && <p>A/C: {paymentDetails.bankAccount}</p>}
+                        {paymentDetails.bankBranch && <p>Branch: {paymentDetails.bankBranch}</p>}
+                      </>
+                    )}
                   </div>
                 </>
               )}

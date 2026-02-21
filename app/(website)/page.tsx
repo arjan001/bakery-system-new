@@ -5,7 +5,20 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/lib/cart-context';
 import { products, getBestSellers, CIRCLE_CATEGORIES } from '@/lib/products';
-import { ShoppingBag, Star, ChevronRight, Truck, Clock, Shield, Users, Store } from 'lucide-react';
+import { ShoppingBag, Star, ChevronRight, ChevronLeft, Truck, Clock, Shield, Users, Store } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { Offer, getOnOffer } from '@/lib/products';
+
+type BannerSlide = {
+  id: string;
+  title: string;
+  description: string;
+  image: string;
+  badge: string;
+  discountText?: string;
+  link: string;
+  type: 'custom' | 'product';
+};
 
 // ─── Product Card (mini, for home page) ───────────────────────────────────
 function HomeProductCard({ product }: { product: (typeof products)[0] }) {
@@ -177,57 +190,14 @@ function PromoBannerCarousel() {
         <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-gray-900/40" />
       </div>
 
-      {/* ─── HERO ─────────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden">
-        <div className="max-w-7xl mx-auto px-6 py-16 md:py-24 grid md:grid-cols-2 gap-12 items-center">
-          {/* Text */}
-          <div>
-            <p className="text-xs text-orange-600 font-bold tracking-widest uppercase mb-3">
-              FREE DELIVERY ON ORDERS OVER KES 2,000
-            </p>
-            <h1 className="text-5xl md:text-6xl font-black text-gray-900 leading-tight mb-5">
-              Award-Winning<br />
-              <span className="text-orange-600">Baked Goods</span><br />
-              Delivered Daily
-            </h1>
-            <p className="text-gray-500 text-base leading-relaxed mb-4 max-w-md">
-              We cater for both <strong className="text-gray-700">retail and wholesale</strong> customers.
-              From fresh breads, kaimati, cakes, pastries, donuts, and so much more —
-              handcrafted with love by our master bakers, fresh every morning.
-            </p>
-            <div className="flex items-center gap-4 mb-8">
-              <div className="flex items-center gap-2 text-xs bg-orange-50 text-orange-700 font-semibold px-3 py-1.5 rounded-full border border-orange-200">
-                <Store size={14} /> Retail Orders
-              </div>
-              <div className="flex items-center gap-2 text-xs bg-amber-50 text-amber-700 font-semibold px-3 py-1.5 rounded-full border border-amber-200">
-                <Users size={14} /> Wholesale Orders
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/shop"
-                className="px-8 py-3.5 bg-gray-900 text-white font-bold text-sm rounded-full hover:bg-orange-600 transition-colors inline-flex items-center gap-2">
-                SHOP NOW <ChevronRight size={15} />
-              </Link>
-              <Link href="/shop?category=Cake"
-                className="px-8 py-3.5 border-2 border-gray-200 text-gray-800 font-bold text-sm rounded-full hover:border-orange-400 transition-colors">
-                Custom Cakes
-              </Link>
-            </div>
-            {/* Trust badges */}
-            <div className="flex flex-wrap gap-5 mt-10">
-              {[
-                { icon: Truck, label: 'Same-Day Delivery' },
-                { icon: Clock, label: 'Baked Fresh Daily' },
-                { icon: Shield, label: 'Quality Guaranteed' },
-              ].map(b => (
-                <div key={b.label} className="flex items-center gap-2 text-xs text-gray-500 font-medium">
-                  <b.icon size={14} className="text-orange-500" /> {b.label}
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Slide content */}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 md:py-32">
+        {/* Badge */}
+        <div className="inline-block bg-orange-500/20 text-orange-400 text-xs font-bold px-4 py-1.5 rounded-full mb-6 backdrop-blur-sm border border-orange-500/30">
+          {slide.badge}
+        </div>
 
-          {/* Title */}
+        {/* Title */}
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-white leading-tight mb-4">
             {slide.title.split(' ').map((word, i) => (
               <span key={i}>
@@ -271,7 +241,6 @@ function PromoBannerCarousel() {
               </div>
             ))}
           </div>
-        </div>
       </div>
 
       {/* Navigation arrows */}
