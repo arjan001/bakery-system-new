@@ -1,20 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
 import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 type PaymentMethod = 'card' | 'mpesa';
 type FulfillmentType = 'ship' | 'pickup';
-type MpesaState = 'idle' | 'sending' | 'waiting' | 'done';
+type MpesaState = 'idle' | 'sending' | 'waiting' | 'done' | 'failed';
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCart();
 
   const [fulfillment, setFulfillment] = useState<FulfillmentType>('ship');
-  const [payment, setPayment] = useState<PaymentMethod>('card');
+  const [payment, setPayment] = useState<PaymentMethod>('mpesa');
   const [step, setStep] = useState<'form' | 'success'>('form');
 
   // Contact
@@ -34,19 +35,79 @@ export default function CheckoutPage() {
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [mpesaState, setMpesaState] = useState<MpesaState>('idle');
   const [mpesaMsg, setMpesaMsg] = useState('');
+  const [mpesaCheckoutId, setMpesaCheckoutId] = useState('');
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const delivery = total >= 2000 ? 0 : 200;
   const orderTotal = total + delivery;
 
-  const handleMpesaPush = () => {
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
+  }, []);
+
+  const pollMpesaStatus = useCallback((checkoutId: string) => {
+    let attempts = 0;
+    const maxAttempts = 30;
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+
+    pollTimerRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setMpesaState('failed');
+        setMpesaMsg('Payment timed out. Please try again.');
+        return;
+      }
+      try {
+        const res = await fetch('/api/mpesa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'query', checkoutRequestId: checkoutId }),
+        });
+        const data = await res.json();
+        if (data.status === 'completed') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setMpesaState('done');
+          setMpesaMsg('Payment confirmed!');
+        } else if (data.status === 'cancelled' || data.status === 'failed') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setMpesaState('failed');
+          setMpesaMsg(data.message || 'Payment was cancelled or failed');
+        }
+      } catch { /* continue polling */ }
+    }, 3000);
+  }, []);
+
+  const handleMpesaPush = async () => {
     if (!mpesaPhone) { setMpesaMsg('Enter your M-Pesa phone number'); return; }
     setMpesaState('sending');
-    setMpesaMsg('Sending STK push…');
-    setTimeout(() => {
-      setMpesaState('waiting');
-      setMpesaMsg(`Check your phone (${mpesaPhone}) — enter your M-Pesa PIN to complete payment`);
-      setTimeout(() => { setMpesaState('done'); setMpesaMsg('Payment received! ✅'); }, 8000);
-    }, 2000);
+    setMpesaMsg('Sending STK push...');
+    try {
+      const res = await fetch('/api/mpesa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: mpesaPhone,
+          amount: Math.ceil(orderTotal),
+          accountReference: `SNACKOH-${Date.now()}`,
+          description: `Snackoh Online Order - ${email || form.firstName}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMpesaCheckoutId(data.checkoutRequestId);
+        setMpesaState('waiting');
+        setMpesaMsg(`Check your phone (${mpesaPhone}) — enter your M-Pesa PIN to complete payment`);
+        pollMpesaStatus(data.checkoutRequestId);
+      } else {
+        setMpesaState('failed');
+        setMpesaMsg(data.message || 'Failed to send STK push');
+      }
+    } catch {
+      setMpesaState('failed');
+      setMpesaMsg('Network error — please check your connection');
+    }
   };
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
@@ -71,6 +132,7 @@ export default function CheckoutPage() {
     }
 
     clearCart();
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setStep('success');
   };
 
@@ -79,7 +141,7 @@ export default function CheckoutPage() {
       <div className="min-h-screen bg-white flex items-center justify-center px-6">
         <div className="text-center max-w-md">
           <CheckCircle size={64} className="text-green-500 mx-auto mb-4" />
-          <h1 className="text-3xl font-black text-gray-900 mb-2">Order Confirmed! 🎉</h1>
+          <h1 className="text-3xl font-black text-gray-900 mb-2">Order Confirmed!</h1>
           <p className="text-gray-600 mb-2">Thank you for your order. We&apos;ll bake it fresh and{fulfillment === 'ship' ? ' deliver it to you' : ' have it ready for pickup'}.</p>
           <p className="text-sm text-gray-400 mb-6">A confirmation will be sent to <strong>{email}</strong></p>
           <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700">
@@ -179,7 +241,6 @@ export default function CheckoutPage() {
                   <input placeholder="Address" value={form.address}
                     onChange={e => setForm({ ...form, address: e.target.value })} required
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none pr-10" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                 </div>
                 <input placeholder="Apartment, suite, etc. (optional)" value={form.apartment}
                   onChange={e => setForm({ ...form, apartment: e.target.value })}
@@ -216,7 +277,10 @@ export default function CheckoutPage() {
                         <span className="text-sm font-bold text-green-600">FREE</span>
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-500 text-center">Enter your shipping address to view available shipping methods.</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Standard Delivery</span>
+                        <span className="text-sm font-bold">KES {delivery}</span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -226,8 +290,8 @@ export default function CheckoutPage() {
             {fulfillment === 'pickup' && (
               <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-sm text-orange-800">
                 <p className="font-bold mb-1">Pickup Location</p>
-                <p>📍 Snackoh Bakery, Nairobi CBD</p>
-                <p className="text-xs text-orange-600 mt-1">Mon–Sat: 6:00 AM – 7:00 PM &nbsp;|&nbsp; Sun: 7:00 AM – 4:00 PM</p>
+                <p>Snackoh Bites, Nairobi CBD</p>
+                <p className="text-xs text-orange-600 mt-1">Mon-Sat: 6:00 AM - 7:00 PM | Sun: 7:00 AM - 4:00 PM</p>
               </div>
             )}
 
@@ -241,18 +305,18 @@ export default function CheckoutPage() {
               {/* Payment tabs */}
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 {[
-                  { id: 'card', label: 'Credit / Debit Card', icon: CreditCard },
                   { id: 'mpesa', label: 'M-Pesa', icon: Smartphone },
+                  { id: 'card', label: 'Credit / Debit Card', icon: CreditCard },
                 ].map((opt, i) => (
                   <div key={opt.id}>
-                    <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? 'bg-blue-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                    <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? 'bg-green-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
                       <input type="radio" name="payment" value={opt.id} checked={payment === opt.id}
-                        onChange={() => setPayment(opt.id as PaymentMethod)} className="accent-orange-600" />
+                        onChange={() => { setPayment(opt.id as PaymentMethod); setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="accent-orange-600" />
                       <opt.icon size={16} className="text-gray-500" />
                       <span className="text-sm font-semibold text-gray-800 flex-1">{opt.label}</span>
                       {opt.id === 'card' && (
                         <div className="flex gap-1">
-                          {['VISA', 'MC', 'AMEX'].map(b => (
+                          {['VISA', 'MC'].map(b => (
                             <span key={b} className="text-[9px] font-black px-1.5 py-0.5 bg-gray-800 text-white rounded">{b}</span>
                           ))}
                         </div>
@@ -279,7 +343,6 @@ export default function CheckoutPage() {
                             <input placeholder="Security code" value={card.cvv} maxLength={4}
                               onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/,'') })}
                               className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">?</span>
                           </div>
                         </div>
                         <input placeholder="Name on card" value={card.name}
@@ -299,18 +362,25 @@ export default function CheckoutPage() {
                         <div className="bg-green-50 rounded-lg p-3 text-xs text-green-800">
                           <p className="font-bold mb-0.5">How M-Pesa works:</p>
                           <p>1. Enter your M-Pesa phone number below</p>
-                          <p>2. Click &quot;Place Order&quot; to receive a payment prompt on your phone</p>
+                          <p>2. Click &quot;Send M-Pesa Request&quot; to receive a payment prompt</p>
                           <p>3. Enter your M-Pesa PIN to complete the payment</p>
                         </div>
                         <input type="tel" placeholder="M-Pesa phone number (e.g. 0712 345 678)"
                           value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value)}
+                          disabled={mpesaState === 'sending' || mpesaState === 'waiting'}
                           className="w-full px-4 py-3 border border-green-200 rounded-xl text-sm focus:ring-2 focus:ring-green-400 outline-none bg-white" />
                         {mpesaState !== 'idle' && (
-                          <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : 'bg-blue-50 text-blue-800'}`}>
-                            {mpesaState === 'sending' && '⏳ Sending STK push…'}
+                          <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : mpesaState === 'failed' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
+                            {mpesaState === 'sending' && 'Sending STK push...'}
                             {mpesaState === 'waiting' && `📱 ${mpesaMsg}`}
-                            {mpesaState === 'done' && '✅ Payment confirmed!'}
+                            {mpesaState === 'done' && 'Payment confirmed!'}
+                            {mpesaState === 'failed' && mpesaMsg}
                           </div>
+                        )}
+                        {mpesaState === 'failed' && (
+                          <button type="button" onClick={() => { setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-medium hover:bg-gray-50">
+                            Try Again
+                          </button>
                         )}
                       </div>
                     )}
@@ -321,11 +391,13 @@ export default function CheckoutPage() {
 
             {/* Place order button */}
             <button type="submit"
-              className="w-full py-4 bg-blue-700 text-white font-black text-base rounded-xl hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
+              disabled={payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting')}
+              className="w-full py-4 bg-green-600 text-white font-black text-base rounded-xl hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
               <Lock size={16} />
-              {payment === 'mpesa' && mpesaState === 'idle' ? 'Send M-Pesa Request' :
+              {payment === 'mpesa' && mpesaState === 'idle' ? `Send M-Pesa Request — KES ${orderTotal.toLocaleString()}` :
                payment === 'mpesa' && mpesaState === 'done' ? 'Confirm Order' :
-               'Pay now'}
+               payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting') ? 'Waiting for payment...' :
+               `Pay KES ${orderTotal.toLocaleString()}`}
             </button>
 
             {/* Footer links */}
@@ -361,12 +433,6 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {/* Gift card */}
-            <div className="flex gap-2 mb-4">
-              <input placeholder="Gift card" className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-orange-400 outline-none bg-white" />
-              <button className="px-3 py-2 border border-gray-200 rounded-lg text-xs font-semibold hover:bg-gray-100">Apply</button>
-            </div>
-
             {/* Price breakdown */}
             <div className="space-y-2 border-t border-gray-100 pt-3">
               <div className="flex justify-between text-sm text-gray-600">
@@ -377,7 +443,6 @@ export default function CheckoutPage() {
                 <span>Shipping</span>
                 <span className="flex items-center gap-1">
                   {delivery === 0 ? <span className="text-green-600 font-semibold">FREE</span> : `KES ${delivery}`}
-                  <span className="text-gray-400 text-xs">{delivery > 0 ? '(Enter shipping address)' : ''}</span>
                 </span>
               </div>
               <div className="flex justify-between font-black text-gray-900 pt-2 border-t border-gray-100 text-base">

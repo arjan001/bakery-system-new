@@ -9,13 +9,52 @@ interface Product { id: string; name: string; sku: string; retailPrice: number; 
 interface Customer { id: string; name: string; phone: string; type: string; }
 interface HeldOrder { id: string; name: string; items: CartItem[]; customer: Customer; saleType: string; time: string; }
 interface ReceiptData { receiptNo: string; date: string; cashier: string; customer: string; items: CartItem[]; subtotal: number; tax: number; total: number; paid: number; change: number; method: string; mpesaRef?: string; }
+interface ReceiptSettings { headerText: string; subHeaderText: string; footerText: string; disclaimer: string; showTax: boolean; showCashier: boolean; showCustomer: boolean; showPaymentDetails: boolean; }
+interface PaymentDetailsSettings { mpesaType: 'paybill' | 'till'; paybillNumber: string; accountNumber: string; tillNumber: string; mpesaName: string; showOnReceipt: boolean; bankName: string; bankAccount: string; bankBranch: string; }
+interface GeneralSettings { businessName: string; phone: string; address: string; currency: string; taxRate: number; }
 
 type PaymentMethod = 'Cash' | 'Mpesa' | 'Credit';
 type MpesaStatus = 'idle' | 'sending' | 'waiting' | 'success' | 'failed';
 
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem('snackoh_settings');
+    if (saved) return JSON.parse(saved);
+  } catch { /* ignore */ }
+  return null;
+}
+
 export default function POSPage() {
   // ── Auth (login disabled — anyone can use POS) ──
   const [loggedCashier] = useState('Cashier');
+
+  // ── Settings ──
+  const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>({
+    headerText: 'SNACKOH BITES', subHeaderText: 'Quality Baked Goods', footerText: 'Thank you for choosing Snackoh!',
+    disclaimer: 'Goods once sold are not returnable', showTax: true, showCashier: true, showCustomer: true, showPaymentDetails: true,
+  });
+  const [paymentDetailsSettings, setPaymentDetailsSettings] = useState<PaymentDetailsSettings>({
+    mpesaType: 'paybill', paybillNumber: '', accountNumber: '', tillNumber: '', mpesaName: 'SNACKOH BITES', showOnReceipt: true,
+    bankName: '', bankAccount: '', bankBranch: '',
+  });
+  const [generalSettings, setGeneralSettings] = useState<GeneralSettings>({
+    businessName: 'SNACKOH BITES', phone: '+254 700 000 000', address: 'Nairobi, Kenya', currency: 'KES', taxRate: 16,
+  });
+
+  useEffect(() => {
+    const s = loadSettings();
+    if (s) {
+      if (s.receipt) setReceiptSettings(prev => ({ ...prev, ...s.receipt }));
+      if (s.paymentDetails) setPaymentDetailsSettings(prev => ({ ...prev, ...s.paymentDetails }));
+      if (s.general) setGeneralSettings(prev => ({
+        businessName: s.general.businessName || prev.businessName,
+        phone: s.general.phone || prev.phone,
+        address: s.general.address || prev.address,
+        currency: s.general.currency || prev.currency,
+        taxRate: s.general.taxRate ?? prev.taxRate,
+      }));
+    }
+  }, []);
 
   // ── Sales Totals ──
   const [totalSalesCount, setTotalSalesCount] = useState(0);
@@ -45,8 +84,10 @@ export default function POSPage() {
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [mpesaStatus, setMpesaStatus] = useState<MpesaStatus>('idle');
   const [mpesaMessage, setMpesaMessage] = useState('');
+  const [mpesaCheckoutId, setMpesaCheckoutId] = useState('');
   const [creditName, setCreditName] = useState('');
   const [creditPhone, setCreditPhone] = useState('');
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Receipt ──
   const [showReceipt, setShowReceipt] = useState(false);
@@ -63,7 +104,6 @@ export default function POSPage() {
         stock: 999, category: 'Products',
       })));
     } else {
-      // Fallback defaults
       setProducts([
         { id: '1', name: 'White Bread', sku: 'WB001', retailPrice: 200, wholesalePrice: 150, stock: 50, category: 'Bread' },
         { id: '2', name: 'Croissant', sku: 'CR001', retailPrice: 150, wholesalePrice: 100, stock: 30, category: 'Pastry' },
@@ -85,9 +125,15 @@ export default function POSPage() {
 
   useEffect(() => { fetchProducts(); fetchCustomers(); }, [fetchProducts, fetchCustomers]);
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
+  }, []);
+
   // Totals
+  const taxRate = generalSettings.taxRate / 100;
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const tax = subtotal * 0.16;
+  const tax = subtotal * taxRate;
   const total = subtotal + tax;
   const categories = [...new Set(products.map(p => p.category))];
   const filteredProducts = products.filter(p => {
@@ -137,16 +183,67 @@ export default function POSPage() {
   };
 
   // ── M-Pesa ──
+  const pollMpesaStatus = useCallback((checkoutId: string) => {
+    let attempts = 0;
+    const maxAttempts = 30; // 30 * 3s = 90s max
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+
+    pollTimerRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setMpesaStatus('failed');
+        setMpesaMessage('Payment timed out. Please try again.');
+        return;
+      }
+      try {
+        const res = await fetch('/api/mpesa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'query', checkoutRequestId: checkoutId }),
+        });
+        const data = await res.json();
+        if (data.status === 'completed') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setMpesaStatus('success');
+          setMpesaMessage(`KES ${total.toFixed(0)} received via M-Pesa`);
+        } else if (data.status === 'cancelled' || data.status === 'failed') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setMpesaStatus('failed');
+          setMpesaMessage(data.message || 'Payment was cancelled or failed');
+        }
+      } catch { /* continue polling */ }
+    }, 3000);
+  }, [total]);
+
   const sendMpesaStkPush = async () => {
     if (!mpesaPhone) { setMpesaMessage('Enter M-Pesa phone number'); return; }
     setMpesaStatus('sending');
     setMpesaMessage('Sending STK push to ' + mpesaPhone + '...');
     try {
-      const res = await fetch('/api/mpesa', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: mpesaPhone, amount: Math.ceil(total), accountReference: `SNACKOH-${Date.now()}`, description: `Snackoh POS - ${selectedCustomer.name}` }) });
+      const res = await fetch('/api/mpesa', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: mpesaPhone,
+          amount: Math.ceil(total),
+          accountReference: `SNACKOH-${Date.now()}`,
+          description: `Snackoh POS - ${selectedCustomer.name}`,
+        }),
+      });
       const data = await res.json();
-      if (data.success) { setMpesaStatus('waiting'); setMpesaMessage('STK sent! Waiting for PIN...'); setTimeout(() => { setMpesaStatus('success'); setMpesaMessage(`KES ${total.toFixed(0)} received via M-Pesa`); }, 8000); }
-      else { setMpesaStatus('failed'); setMpesaMessage(data.message || 'STK push failed'); }
-    } catch { setMpesaStatus('failed'); setMpesaMessage('Network error'); }
+      if (data.success) {
+        setMpesaCheckoutId(data.checkoutRequestId);
+        setMpesaStatus('waiting');
+        setMpesaMessage('STK sent! Enter your M-Pesa PIN on your phone...');
+        pollMpesaStatus(data.checkoutRequestId);
+      } else {
+        setMpesaStatus('failed');
+        setMpesaMessage(data.message || 'STK push failed');
+      }
+    } catch {
+      setMpesaStatus('failed');
+      setMpesaMessage('Network error — check your connection');
+    }
   };
 
   // ── Generate receipt number ──
@@ -156,7 +253,6 @@ export default function POSPage() {
   const completeSale = async (method: string, paid: number, change: number, mpesaRef?: string) => {
     const rNo = genReceiptNo();
     const receipt: ReceiptData = { receiptNo: rNo, date: new Date().toLocaleString(), cashier: loggedCashier, customer: selectedCustomer.name, items: [...cartItems], subtotal, tax, total, paid, change, method, mpesaRef };
-    // Save to Supabase
     try {
       await supabase.from('pos_sales').insert({
         receipt_number: rNo, customer_name: selectedCustomer.name, sale_type: saleType,
@@ -164,7 +260,6 @@ export default function POSPage() {
         subtotal, tax, total, amount_paid: paid, change_amount: change, cashier_name: loggedCashier, status: 'Completed',
       });
     } catch { /* continue */ }
-    // Update stock locally
     setProducts(products.map(p => { const ci = cartItems.find(i => i.id === p.id); return ci ? { ...p, stock: Math.max(0, p.stock - ci.quantity) } : p; }));
     setTotalSalesCount(prev => prev + 1);
     setTotalSalesAmount(prev => prev + total);
@@ -175,6 +270,8 @@ export default function POSPage() {
     setCashAmount(0);
     setMpesaPhone('');
     setMpesaStatus('idle');
+    setMpesaCheckoutId('');
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setPaymentMethod('Cash');
   };
 
@@ -184,7 +281,7 @@ export default function POSPage() {
       if (cashAmount < total) return;
       completeSale('Cash', cashAmount, cashAmount - total);
     } else if (paymentMethod === 'Mpesa') {
-      if (mpesaStatus === 'success') completeSale('M-Pesa', total, 0, 'MPesa-Auto');
+      if (mpesaStatus === 'success') completeSale('M-Pesa', total, 0, mpesaCheckoutId || 'MPesa-Auto');
     } else if (paymentMethod === 'Credit') {
       const name = creditName || selectedCustomer.name;
       if (!name || name === 'Walk-in Customer') { alert('Select or enter customer for credit'); return; }
@@ -213,6 +310,8 @@ export default function POSPage() {
 
   const quickCash = [100, 200, 500, 1000, 2000, 5000];
 
+  const cur = generalSettings.currency;
+
   // ── POS VIEW ──
   return (
     <div className="flex flex-col h-[calc(100vh-65px)] bg-background">
@@ -221,7 +320,7 @@ export default function POSPage() {
         <div className="flex items-center gap-3">
           <span className="font-bold text-primary">SNACKOH POS</span>
           <span className="text-xs text-muted-foreground">Cashier: <strong>{loggedCashier}</strong></span>
-          <span className="text-xs text-muted-foreground">Sales: {totalSalesCount} | KES {totalSalesAmount.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">Sales: {totalSalesCount} | {cur} {totalSalesAmount.toLocaleString()}</span>
         </div>
         <div className="flex items-center gap-2">
           <select value={selectedCustomer.id} onChange={(e) => handleCustomerChange(e.target.value)} className="px-3 py-1.5 border border-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary/50 outline-none bg-background min-w-[160px]">
@@ -260,7 +359,7 @@ export default function POSPage() {
                     <p className="font-semibold text-xs mb-0.5 truncate">{p.name}</p>
                     <p className="text-[10px] text-muted-foreground">{p.sku}</p>
                     <div className="flex justify-between items-end mt-1">
-                      <span className="text-sm font-bold text-primary">KES {price}</span>
+                      <span className="text-sm font-bold text-primary">{cur} {price}</span>
                       <span className="text-[10px] text-muted-foreground">{p.stock} left</span>
                     </div>
                   </button>
@@ -281,23 +380,23 @@ export default function POSPage() {
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground"><p className="text-2xl mb-1">🛒</p><p className="text-xs">Tap products to add</p></div>
             ) : cartItems.map(item => (
               <div key={item.id} className="flex items-center gap-2 bg-secondary/50 p-2 rounded-lg">
-                <div className="flex-1 min-w-0"><p className="font-medium text-xs truncate">{item.name}</p><p className="text-[10px] text-muted-foreground">KES {item.price} x {item.quantity}</p></div>
+                <div className="flex-1 min-w-0"><p className="font-medium text-xs truncate">{item.name}</p><p className="text-[10px] text-muted-foreground">{cur} {item.price} x {item.quantity}</p></div>
                 <div className="flex items-center gap-0.5">
                   <button onClick={() => updateQty(item.id, item.quantity - 1)} className="w-6 h-6 rounded bg-background border border-border text-xs font-bold hover:bg-red-50">-</button>
                   <span className="w-6 text-center text-xs font-bold">{item.quantity}</span>
                   <button onClick={() => updateQty(item.id, item.quantity + 1)} className="w-6 h-6 rounded bg-background border border-border text-xs font-bold hover:bg-green-50">+</button>
                 </div>
                 <div className="text-right min-w-[50px]">
-                  <p className="text-xs font-bold">KES {(item.price * item.quantity).toLocaleString()}</p>
+                  <p className="text-xs font-bold">{cur} {(item.price * item.quantity).toLocaleString()}</p>
                   <button onClick={() => removeItem(item.id)} className="text-[10px] text-red-500 hover:text-red-700">Remove</button>
                 </div>
               </div>
             ))}
           </div>
           <div className="p-3 border-t border-border space-y-1.5">
-            <div className="flex justify-between text-xs"><span className="text-muted-foreground">Subtotal</span><span>KES {subtotal.toLocaleString()}</span></div>
-            <div className="flex justify-between text-xs"><span className="text-muted-foreground">VAT (16%)</span><span>KES {tax.toFixed(0)}</span></div>
-            <div className="flex justify-between text-base font-bold border-t border-border pt-1.5"><span>Total</span><span className="text-primary">KES {total.toLocaleString()}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-muted-foreground">Subtotal</span><span>{cur} {subtotal.toLocaleString()}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-muted-foreground">VAT ({generalSettings.taxRate}%)</span><span>{cur} {tax.toFixed(0)}</span></div>
+            <div className="flex justify-between text-base font-bold border-t border-border pt-1.5"><span>Total</span><span className="text-primary">{cur} {total.toLocaleString()}</span></div>
             <div className="grid grid-cols-2 gap-2 pt-2">
               <button onClick={clearCart} className="px-3 py-2 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Clear</button>
               <button onClick={openCheckout} disabled={cartItems.length === 0} className="px-3 py-2 bg-primary text-primary-foreground rounded-xl hover:opacity-90 disabled:opacity-40 font-bold text-xs">Checkout</button>
@@ -319,16 +418,16 @@ export default function POSPage() {
       </Modal>
 
       {/* ── Payment Modal ── */}
-      <Modal isOpen={showPayment} onClose={() => setShowPayment(false)} title="Complete Payment" size="md">
+      <Modal isOpen={showPayment} onClose={() => { setShowPayment(false); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} title="Complete Payment" size="md">
         <div className="space-y-4">
           <div className="text-center py-3 bg-secondary rounded-xl">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-            <p className="text-3xl font-black text-primary">KES {total.toLocaleString()}</p>
+            <p className="text-3xl font-black text-primary">{cur} {total.toLocaleString()}</p>
             <p className="text-[10px] text-muted-foreground">{selectedCustomer.name} &bull; {cartItems.reduce((s, i) => s + i.quantity, 0)} items &bull; {loggedCashier}</p>
           </div>
           <div className="grid grid-cols-3 gap-2">
             {([{ v: 'Cash' as const, l: 'Cash', i: '💵' }, { v: 'Mpesa' as const, l: 'M-Pesa', i: '📱' }, { v: 'Credit' as const, l: 'Credit', i: '📝' }]).map(b => (
-              <button key={b.v} onClick={() => { setPaymentMethod(b.v); setMpesaStatus('idle'); }} className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 text-xs font-medium transition-all ${paymentMethod === b.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}><span className="text-lg">{b.i}</span>{b.l}</button>
+              <button key={b.v} onClick={() => { setPaymentMethod(b.v); setMpesaStatus('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 text-xs font-medium transition-all ${paymentMethod === b.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}><span className="text-lg">{b.i}</span>{b.l}</button>
             ))}
           </div>
           {paymentMethod === 'Cash' && (
@@ -336,17 +435,17 @@ export default function POSPage() {
               <input type="number" placeholder="Amount received" value={cashAmount || ''} onChange={(e) => setCashAmount(parseFloat(e.target.value) || 0)} className="w-full px-4 py-3 border border-border rounded-xl text-lg font-bold focus:ring-2 focus:ring-primary/50 outline-none text-center" autoFocus />
               <div className="grid grid-cols-3 gap-1.5">{quickCash.map(a => (<button key={a} onClick={() => setCashAmount(a)} className={`py-1.5 rounded-lg border text-xs font-medium ${cashAmount === a ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-secondary'}`}>{a.toLocaleString()}</button>))}</div>
               <button onClick={() => setCashAmount(Math.ceil(total))} className="w-full py-1.5 rounded-lg border border-primary/30 text-primary text-xs font-medium hover:bg-primary/5">Exact ({Math.ceil(total).toLocaleString()})</button>
-              {cashAmount > 0 && <div className={`p-2 rounded-xl text-center font-bold text-sm ${cashAmount >= total ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>{cashAmount >= total ? `Change: KES ${(cashAmount - total).toFixed(0)}` : `Short: KES ${(total - cashAmount).toFixed(0)}`}</div>}
+              {cashAmount > 0 && <div className={`p-2 rounded-xl text-center font-bold text-sm ${cashAmount >= total ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>{cashAmount >= total ? `Change: ${cur} ${(cashAmount - total).toFixed(0)}` : `Short: ${cur} ${(total - cashAmount).toFixed(0)}`}</div>}
             </div>
           )}
           {paymentMethod === 'Mpesa' && (
             <div className="space-y-2">
               <input type="tel" placeholder="0712345678" value={mpesaPhone} onChange={(e) => setMpesaPhone(e.target.value)} className="w-full px-4 py-3 border border-border rounded-xl text-lg font-mono focus:ring-2 focus:ring-primary/50 outline-none text-center tracking-wider" autoFocus disabled={mpesaStatus === 'sending' || mpesaStatus === 'waiting'} />
-              {mpesaStatus === 'idle' && <button onClick={sendMpesaStkPush} disabled={!mpesaPhone} className="w-full py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 font-bold text-xs disabled:opacity-40">📱 Send STK Push — KES {total.toFixed(0)}</button>}
+              {mpesaStatus === 'idle' && <button onClick={sendMpesaStkPush} disabled={!mpesaPhone} className="w-full py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 font-bold text-xs disabled:opacity-40">📱 Send STK Push — {cur} {total.toFixed(0)}</button>}
               {mpesaStatus === 'sending' && <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center"><div className="animate-spin w-6 h-6 border-3 border-blue-200 border-t-blue-600 rounded-full mx-auto mb-1"></div><p className="text-xs text-blue-800">Sending...</p></div>}
-              {mpesaStatus === 'waiting' && <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-center animate-pulse"><p className="text-lg">📱</p><p className="text-xs font-bold text-yellow-800">Waiting for PIN...</p></div>}
+              {mpesaStatus === 'waiting' && <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-center animate-pulse"><p className="text-lg">📱</p><p className="text-xs font-bold text-yellow-800">{mpesaMessage}</p></div>}
               {mpesaStatus === 'success' && <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-center"><p className="text-lg">✅</p><p className="text-xs font-bold text-green-800">Payment Received!</p></div>}
-              {mpesaStatus === 'failed' && <><div className="p-2 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800">{mpesaMessage}</div><button onClick={() => setMpesaStatus('idle')} className="w-full py-1.5 border border-border rounded-xl text-xs hover:bg-secondary">Retry</button></>}
+              {mpesaStatus === 'failed' && <><div className="p-2 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800">{mpesaMessage}</div><button onClick={() => { setMpesaStatus('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="w-full py-1.5 border border-border rounded-xl text-xs hover:bg-secondary">Retry</button></>}
             </div>
           )}
           {paymentMethod === 'Credit' && (
@@ -357,7 +456,7 @@ export default function POSPage() {
             </div>
           )}
           <div className="flex gap-2 pt-2 border-t border-border">
-            <button onClick={() => setShowPayment(false)} className="flex-1 px-3 py-2.5 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Cancel</button>
+            <button onClick={() => { setShowPayment(false); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="flex-1 px-3 py-2.5 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Cancel</button>
             <button onClick={handlePayment} disabled={(paymentMethod === 'Cash' && cashAmount < total) || (paymentMethod === 'Mpesa' && mpesaStatus !== 'success') || (paymentMethod === 'Credit' && !creditName && selectedCustomer.id === 'walk-in')} className="flex-1 px-3 py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-xs disabled:opacity-40">
               {paymentMethod === 'Mpesa' && mpesaStatus === 'success' ? 'Confirm' : paymentMethod === 'Credit' ? 'Record Credit' : 'Complete Sale'}
             </button>
@@ -365,19 +464,20 @@ export default function POSPage() {
         </div>
       </Modal>
 
-      {/* ── Receipt Modal ── */}
+      {/* ── Receipt Modal (Dynamic from Settings) ── */}
       <Modal isOpen={showReceipt} onClose={() => setShowReceipt(false)} title="Sale Complete" size="sm">
         <div className="space-y-3">
           <div ref={receiptRef} className="bg-white p-4 rounded-lg border border-border text-xs font-mono">
             <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-              <h2 style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>SNACKOH BAKERY</h2>
-              <p style={{ margin: '2px 0', fontSize: '10px' }}>Quality Baked Goods</p>
-              <p style={{ margin: '2px 0', fontSize: '10px' }}>Tel: +254 700 000 000</p>
+              <h2 style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>{receiptSettings.headerText}</h2>
+              <p style={{ margin: '2px 0', fontSize: '10px' }}>{receiptSettings.subHeaderText}</p>
+              <p style={{ margin: '2px 0', fontSize: '10px' }}>Tel: {generalSettings.phone}</p>
+              {generalSettings.address && <p style={{ margin: '2px 0', fontSize: '10px' }}>{generalSettings.address}</p>}
               <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
               <p style={{ margin: '0', fontSize: '10px' }}>Receipt: {receiptData?.receiptNo}</p>
               <p style={{ margin: '2px 0', fontSize: '10px' }}>{receiptData?.date}</p>
-              <p style={{ margin: '2px 0', fontSize: '10px' }}>Cashier: {receiptData?.cashier}</p>
-              <p style={{ margin: '2px 0', fontSize: '10px' }}>Customer: {receiptData?.customer}</p>
+              {receiptSettings.showCashier && <p style={{ margin: '2px 0', fontSize: '10px' }}>Cashier: {receiptData?.cashier}</p>}
+              {receiptSettings.showCustomer && <p style={{ margin: '2px 0', fontSize: '10px' }}>Customer: {receiptData?.customer}</p>}
             </div>
             <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
             <table style={{ width: '100%', fontSize: '10px' }}>
@@ -390,18 +490,38 @@ export default function POSPage() {
             </table>
             <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
             <div style={{ fontSize: '10px' }}>
-              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal:</span><span>KES {receiptData?.subtotal.toLocaleString()}</span></div>
-              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>VAT (16%):</span><span>KES {receiptData?.tax.toFixed(0)}</span></div>
-              <div className="row total" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}><span>TOTAL:</span><span>KES {receiptData?.total.toLocaleString()}</span></div>
+              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal:</span><span>{cur} {receiptData?.subtotal.toLocaleString()}</span></div>
+              {receiptSettings.showTax && <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>VAT ({generalSettings.taxRate}%):</span><span>{cur} {receiptData?.tax.toFixed(0)}</span></div>}
+              <div className="row total" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}><span>TOTAL:</span><span>{cur} {receiptData?.total.toLocaleString()}</span></div>
               <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
-              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Paid ({receiptData?.method}):</span><span>KES {receiptData?.paid.toLocaleString()}</span></div>
-              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Change:</span><span>KES {receiptData?.change.toFixed(0)}</span></div>
+              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Paid ({receiptData?.method}):</span><span>{cur} {receiptData?.paid.toLocaleString()}</span></div>
+              <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Change:</span><span>{cur} {receiptData?.change.toFixed(0)}</span></div>
+              {receiptData?.mpesaRef && <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>M-Pesa Ref:</span><span>{receiptData.mpesaRef}</span></div>}
             </div>
+            {/* Payment Details from Settings */}
+            {receiptSettings.showPaymentDetails && paymentDetailsSettings.showOnReceipt && (paymentDetailsSettings.paybillNumber || paymentDetailsSettings.tillNumber) && (
+              <>
+                <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
+                <div style={{ textAlign: 'center', fontSize: '10px' }}>
+                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Payment Info:</p>
+                  {paymentDetailsSettings.mpesaType === 'paybill' && paymentDetailsSettings.paybillNumber && (
+                    <>
+                      <p style={{ margin: '2px 0' }}>M-Pesa Paybill: {paymentDetailsSettings.paybillNumber}</p>
+                      {paymentDetailsSettings.accountNumber && <p style={{ margin: '2px 0' }}>Account: {paymentDetailsSettings.accountNumber}</p>}
+                    </>
+                  )}
+                  {paymentDetailsSettings.mpesaType === 'till' && paymentDetailsSettings.tillNumber && (
+                    <p style={{ margin: '2px 0' }}>M-Pesa Till: {paymentDetailsSettings.tillNumber}</p>
+                  )}
+                  {paymentDetailsSettings.mpesaName && <p style={{ margin: '2px 0' }}>Name: {paymentDetailsSettings.mpesaName}</p>}
+                </div>
+              </>
+            )}
             <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
             <div style={{ textAlign: 'center', fontSize: '10px' }}>
-              <p style={{ margin: '2px 0' }}>Thank you for choosing Snackoh!</p>
-              <p style={{ margin: '2px 0' }}>Goods once sold are not returnable</p>
-              <p style={{ margin: '4px 0', fontWeight: 'bold' }}>*** SNACKOH BAKERY ***</p>
+              <p style={{ margin: '2px 0' }}>{receiptSettings.footerText}</p>
+              <p style={{ margin: '2px 0' }}>{receiptSettings.disclaimer}</p>
+              <p style={{ margin: '4px 0', fontWeight: 'bold' }}>*** {receiptSettings.headerText} ***</p>
             </div>
           </div>
           <div className="flex gap-2">
