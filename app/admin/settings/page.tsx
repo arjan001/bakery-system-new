@@ -114,6 +114,7 @@ export default function SettingsPage() {
   const [showOfferForm, setShowOfferForm] = useState(false);
   const [offersLoading, setOffersLoading] = useState(false);
   const [offerRotation, setOfferRotation] = useState({ enabled: true, interval: 5 });
+  const [offerUploading, setOfferUploading] = useState(false);
 
   const loadOffers = async () => {
     setOffersLoading(true);
@@ -455,6 +456,40 @@ export default function SettingsPage() {
                 <div className="col-span-2"><label className={labelCls}>Offer Title *</label><input type="text" value={offerForm.title} onChange={e => setOfferForm({ ...offerForm, title: e.target.value })} placeholder="e.g. 25% Off All Cakes" className={inputCls} /></div>
                 <div className="col-span-2"><label className={labelCls}>Description</label><textarea value={offerForm.description} onChange={e => setOfferForm({ ...offerForm, description: e.target.value })} placeholder="Brief description shown under the title" className={`${inputCls} h-20 resize-none`} /></div>
                 <div className="col-span-2"><label className={labelCls}>Banner Image URL</label><input type="text" value={offerForm.image_url} onChange={e => setOfferForm({ ...offerForm, image_url: e.target.value })} placeholder="https://images.unsplash.com/... or upload to storage" className={inputCls} /></div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Or Upload Banner Image</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={offerUploading}
+                    className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:opacity-90 file:cursor-pointer disabled:opacity-60"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setOfferUploading(true);
+                      setSavedMsg('Uploading offer image...');
+                      try {
+                        const ext = file.name.split('.').pop() || 'jpg';
+                        const baseName = file.name.replace(/\.[^.]+$/, '');
+                        const safeName = baseName.replace(/[^a-zA-Z0-9._-]/g, '-');
+                        const fileName = `offer-${Date.now()}-${safeName}.${ext}`;
+                        const { error: uploadError } = await supabase.storage.from('offers').upload(fileName, file, { upsert: true });
+                        if (uploadError) throw uploadError;
+                        const { data: urlData } = supabase.storage.from('offers').getPublicUrl(fileName);
+                        if (urlData?.publicUrl) {
+                          setOfferForm(prev => ({ ...prev, image_url: urlData.publicUrl }));
+                          setSavedMsg('Offer image uploaded.');
+                        }
+                      } catch (err) {
+                        console.error('Offer image upload error:', err);
+                        setSavedMsg('Upload failed. You can paste a URL instead.');
+                      }
+                      setOfferUploading(false);
+                      setTimeout(() => setSavedMsg(''), 4000);
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Images are stored in the Supabase Storage `offers` bucket.</p>
+                </div>
                 {offerForm.image_url && (
                   <div className="col-span-2">
                     <div className="rounded-lg overflow-hidden h-32 bg-gray-100">

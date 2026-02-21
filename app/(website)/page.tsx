@@ -178,27 +178,15 @@ function PromoBannerCarousel() {
   const slide = slides[current];
 
   return (
-    <section className="relative overflow-hidden bg-gray-900">
-      {/* Background image with overlay */}
-      <div className="absolute inset-0">
-        <img
-          src={slide.image}
-          alt={slide.title}
-          className="w-full h-full object-cover transition-opacity duration-700"
-          key={slide.id}
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-gray-900/40" />
-      </div>
+    <section className="bg-gray-950 text-white">
+      <div className="max-w-7xl mx-auto px-6 py-16 md:py-24 grid lg:grid-cols-[1.1fr,0.9fr] gap-10 items-center">
+        {/* Left: Text details */}
+        <div>
+          <div className="inline-flex items-center gap-2 bg-orange-500/15 text-orange-300 text-xs font-bold px-4 py-1.5 rounded-full mb-6 border border-orange-500/30">
+            {slide.badge}
+          </div>
 
-      {/* Slide content */}
-      <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 md:py-32">
-        {/* Badge */}
-        <div className="inline-block bg-orange-500/20 text-orange-400 text-xs font-bold px-4 py-1.5 rounded-full mb-6 backdrop-blur-sm border border-orange-500/30">
-          {slide.badge}
-        </div>
-
-        {/* Title */}
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-white leading-tight mb-4">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-4">
             {slide.title.split(' ').map((word, i) => (
               <span key={i}>
                 {i > 0 && ' '}
@@ -207,17 +195,14 @@ function PromoBannerCarousel() {
             ))}
           </h1>
 
-          {/* Description */}
-          <p className="text-white/70 text-base leading-relaxed mb-3 max-w-md line-clamp-3">
+          <p className="text-white/70 text-base leading-relaxed mb-4 max-w-lg line-clamp-4">
             {slide.description}
           </p>
 
-          {/* Discount text */}
           {slide.discountText && (
-            <p className="text-orange-400 font-bold text-sm mb-5">{slide.discountText}</p>
+            <p className="text-orange-300 font-bold text-sm mb-6">{slide.discountText}</p>
           )}
 
-          {/* CTA */}
           <div className="flex flex-wrap gap-3 mb-8">
             <Link href={slide.link}
               className="px-8 py-3.5 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors inline-flex items-center gap-2">
@@ -229,7 +214,6 @@ function PromoBannerCarousel() {
             </Link>
           </div>
 
-          {/* Trust badges */}
           <div className="flex flex-wrap gap-5">
             {[
               { icon: Truck, label: 'Same-Day Delivery' },
@@ -241,39 +225,55 @@ function PromoBannerCarousel() {
               </div>
             ))}
           </div>
-      </div>
+        </div>
 
-      {/* Navigation arrows */}
-      {slides.length > 1 && (
-        <>
-          <button onClick={() => goTo(current - 1)}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
-            <ChevronLeft size={20} />
-          </button>
-          <button onClick={() => goTo(current + 1)}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
-            <ChevronRight size={20} />
-          </button>
-        </>
-      )}
-
-      {/* Dots */}
-      {slides.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2">
-          {slides.map((s, i) => (
-            <button key={s.id} onClick={() => setCurrent(i)}
-              className={`h-2 rounded-full transition-all duration-300 ${i === current ? 'w-8 bg-orange-500' : 'w-2 bg-white/40 hover:bg-white/60'}`}
+        {/* Right: Offer image */}
+        <div className="relative">
+          <div className="relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-gray-900">
+            <img
+              src={slide.image}
+              alt={slide.title}
+              className="w-full h-[320px] sm:h-[380px] lg:h-[440px] object-cover transition-opacity duration-700"
+              key={slide.id}
             />
-          ))}
-        </div>
-      )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+            <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-center justify-between gap-2">
+              <span className="px-3 py-1 bg-black/60 text-white text-xs font-bold rounded-full">{slide.badge}</span>
+              {slide.discountText && (
+                <span className="px-3 py-1 bg-orange-600 text-white text-xs font-bold rounded-full">{slide.discountText}</span>
+              )}
+            </div>
+          </div>
 
-      {/* Slide counter */}
-      {slides.length > 1 && (
-        <div className="absolute top-4 right-4 z-20 px-3 py-1 bg-black/30 backdrop-blur-sm rounded-full text-white/70 text-xs font-medium">
-          {current + 1} / {slides.length}
+          {slides.length > 1 && (
+            <>
+              <button onClick={() => goTo(current - 1)}
+                className="absolute -left-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
+                <ChevronLeft size={20} />
+              </button>
+              <button onClick={() => goTo(current + 1)}
+                className="absolute -right-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
+                <ChevronRight size={20} />
+              </button>
+            </>
+          )}
+
+          {slides.length > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <div className="flex gap-2">
+                {slides.map((s, i) => (
+                  <button key={s.id} onClick={() => setCurrent(i)}
+                    className={`h-2 rounded-full transition-all duration-300 ${i === current ? 'w-8 bg-orange-500' : 'w-2 bg-white/40 hover:bg-white/60'}`}
+                  />
+                ))}
+              </div>
+              <div className="px-3 py-1 bg-white/10 rounded-full text-white/70 text-xs font-medium">
+                {current + 1} / {slides.length}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </section>
   );
 }
