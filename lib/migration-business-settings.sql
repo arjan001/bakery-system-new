@@ -29,6 +29,7 @@ INSERT INTO business_settings (key, value) VALUES
     "tagline": "Quality Baked Goods",
     "phone": "+254 700 000 000",
     "email": "info@snackoh.com",
+    "shopNumber": "",
     "address": "Nairobi, Kenya",
     "currency": "KES",
     "taxRate": 16,
@@ -47,7 +48,8 @@ INSERT INTO business_settings (key, value) VALUES
     "showPaymentDetails": true,
     "disclaimer": "Goods once sold are not returnable",
     "paperWidth": "80mm",
-    "autoPrint": false
+    "autoPrint": false,
+    "softwareProvidedBy": ""
   }'::jsonb),
   ('paymentDetails', '{
     "mpesaType": "paybill",

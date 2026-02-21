@@ -47,6 +47,7 @@ export default function SettingsPage() {
     tagline: 'Quality Baked Goods',
     phone: '+254 700 000 000',
     email: 'info@snackoh.com',
+    shopNumber: '',
     address: 'Nairobi, Kenya',
     currency: 'KES',
     taxRate: 16,
@@ -68,6 +69,7 @@ export default function SettingsPage() {
     disclaimer: 'Goods once sold are not returnable',
     paperWidth: '80mm',
     autoPrint: false,
+    softwareProvidedBy: '',
   });
 
   // ── Payment Details Settings ──
@@ -350,6 +352,7 @@ export default function SettingsPage() {
               <div><label className={labelCls}>Tagline</label><input type="text" value={general.tagline} onChange={e => setGeneral({ ...general, tagline: e.target.value })} className={inputCls} /></div>
               <div><label className={labelCls}>Phone</label><input type="tel" value={general.phone} onChange={e => setGeneral({ ...general, phone: e.target.value })} className={inputCls} /></div>
               <div><label className={labelCls}>Email</label><input type="email" value={general.email} onChange={e => setGeneral({ ...general, email: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Shop Number / Branch</label><input type="text" value={general.shopNumber} onChange={e => setGeneral({ ...general, shopNumber: e.target.value })} className={inputCls} /></div>
               <div className="col-span-2"><label className={labelCls}>Address</label><input type="text" value={general.address} onChange={e => setGeneral({ ...general, address: e.target.value })} className={inputCls} /></div>
             </div>
           </div>
@@ -568,6 +571,7 @@ export default function SettingsPage() {
                 <div><label className={labelCls}>Sub-Header</label><input type="text" value={receipt.subHeaderText} onChange={e => setReceipt({ ...receipt, subHeaderText: e.target.value })} className={inputCls} /></div>
                 <div><label className={labelCls}>Footer Message</label><input type="text" value={receipt.footerText} onChange={e => setReceipt({ ...receipt, footerText: e.target.value })} className={inputCls} /></div>
                 <div><label className={labelCls}>Disclaimer</label><input type="text" value={receipt.disclaimer} onChange={e => setReceipt({ ...receipt, disclaimer: e.target.value })} className={inputCls} /></div>
+                <div><label className={labelCls}>Software Provided By</label><input type="text" value={receipt.softwareProvidedBy} onChange={e => setReceipt({ ...receipt, softwareProvidedBy: e.target.value })} className={inputCls} /></div>
               </div>
             </div>
             <div className="border border-border rounded-lg p-6 bg-card">
@@ -604,6 +608,8 @@ export default function SettingsPage() {
                 <p className="text-sm font-black">{receipt.headerText}</p>
                 <p className="text-[10px]">{receipt.subHeaderText}</p>
                 <p className="text-[10px]">{general.phone}</p>
+                {general.email && <p className="text-[10px]">{general.email}</p>}
+                {general.shopNumber && <p className="text-[10px]">Shop No: {general.shopNumber}</p>}
                 <p className="text-[10px]">{general.address}</p>
                 <hr className="border-dashed my-2" />
                 <p className="text-[10px]">Receipt: SNK-SAMPLE</p>
@@ -656,6 +662,7 @@ export default function SettingsPage() {
               <div className="text-center text-[10px]">
                 <p>{receipt.footerText}</p>
                 <p>{receipt.disclaimer}</p>
+                {receipt.softwareProvidedBy && <p>Software provided by {receipt.softwareProvidedBy}</p>}
                 <p className="font-bold mt-1">*** {receipt.headerText} ***</p>
               </div>
             </div>

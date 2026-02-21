@@ -9,12 +9,12 @@ interface Product { id: string; name: string; sku: string; retailPrice: number; 
 interface Customer { id: string; name: string; phone: string; type: string; }
 interface HeldOrder { id: string; name: string; items: CartItem[]; customer: Customer; saleType: string; time: string; }
 interface ReceiptData { receiptNo: string; date: string; cashier: string; customer: string; items: CartItem[]; subtotal: number; tax: number; total: number; paid: number; change: number; method: string; mpesaRef?: string; }
-interface ReceiptSettings { headerText: string; subHeaderText: string; footerText: string; disclaimer: string; showLogo: boolean; showTax: boolean; showCashier: boolean; showCustomer: boolean; showPaymentDetails: boolean; }
+interface ReceiptSettings { headerText: string; subHeaderText: string; footerText: string; disclaimer: string; showLogo: boolean; showTax: boolean; showCashier: boolean; showCustomer: boolean; showPaymentDetails: boolean; autoPrint: boolean; softwareProvidedBy: string; paperWidth?: string; }
 interface PaymentDetailsSettings { mpesaType: 'paybill' | 'till'; paybillNumber: string; accountNumber: string; tillNumber: string; mpesaName: string; showOnReceipt: boolean; bankName: string; bankAccount: string; bankBranch: string; }
-interface GeneralSettings { businessName: string; phone: string; address: string; currency: string; taxRate: number; logoUrl: string; }
+interface GeneralSettings { businessName: string; phone: string; email: string; shopNumber: string; address: string; currency: string; taxRate: number; logoUrl: string; }
 
 type PaymentMethod = 'Cash' | 'Mpesa' | 'Credit';
-type MpesaStatus = 'idle' | 'sending' | 'waiting' | 'success' | 'failed';
+type MpesaStatus = 'idle' | 'sending' | 'waiting' | 'checking' | 'success' | 'failed';
 
 function loadSettings() {
   try {
@@ -40,13 +40,14 @@ export default function POSPage() {
   const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>({
     headerText: 'SNACKOH BITES', subHeaderText: 'Quality Baked Goods', footerText: 'Thank you for choosing Snackoh!',
     disclaimer: 'Goods once sold are not returnable', showLogo: true, showTax: true, showCashier: true, showCustomer: true, showPaymentDetails: true,
+    autoPrint: false, softwareProvidedBy: '', paperWidth: '80mm',
   });
   const [paymentDetailsSettings, setPaymentDetailsSettings] = useState<PaymentDetailsSettings>({
     mpesaType: 'paybill', paybillNumber: '', accountNumber: '', tillNumber: '', mpesaName: 'SNACKOH BITES', showOnReceipt: true,
     bankName: '', bankAccount: '', bankBranch: '',
   });
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings>({
-    businessName: 'SNACKOH BITES', phone: '+254 700 000 000', address: 'Nairobi, Kenya', currency: 'KES', taxRate: 16, logoUrl: '',
+    businessName: 'SNACKOH BITES', phone: '+254 700 000 000', email: 'info@snackoh.com', shopNumber: '', address: 'Nairobi, Kenya', currency: 'KES', taxRate: 16, logoUrl: '',
   });
 
   useEffect(() => {
@@ -64,6 +65,8 @@ export default function POSPage() {
             setGeneralSettings(prev => ({
               businessName: (g.businessName as string) || prev.businessName,
               phone: (g.phone as string) || prev.phone,
+              email: (g.email as string) || prev.email,
+              shopNumber: (g.shopNumber as string) || prev.shopNumber,
               address: (g.address as string) || prev.address,
               currency: (g.currency as string) || prev.currency,
               taxRate: (g.taxRate as number) ?? prev.taxRate,
@@ -83,6 +86,8 @@ export default function POSPage() {
         if (s.general) setGeneralSettings(prev => ({
           businessName: s.general.businessName || prev.businessName,
           phone: s.general.phone || prev.phone,
+          email: s.general.email || prev.email,
+          shopNumber: s.general.shopNumber || prev.shopNumber,
           address: s.general.address || prev.address,
           currency: s.general.currency || prev.currency,
           taxRate: s.general.taxRate ?? prev.taxRate,
@@ -130,6 +135,7 @@ export default function POSPage() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const lastPrintedReceiptRef = useRef<string | null>(null);
 
   // ── Fetch products from inventory / pricing ──
   const fetchProducts = useCallback(async () => {
@@ -274,6 +280,38 @@ export default function POSPage() {
     }
   };
 
+  const pollMpesaMatch = useCallback((amount: number, phone: string) => {
+    let attempts = 0;
+    const maxAttempts = 20;
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    setMpesaStatus('checking');
+    setMpesaMessage('Checking for payment...');
+
+    pollTimerRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setMpesaStatus('failed');
+        setMpesaMessage('No matching payment found yet.');
+        return;
+      }
+      try {
+        const res = await fetch('/api/mpesa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'match', amount: Math.ceil(amount), phone }),
+        });
+        const data = await res.json();
+        if (data.status === 'matched') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setMpesaStatus('success');
+          setMpesaMessage(`Payment matched: ${data.amount || Math.ceil(amount)} received`);
+          setMpesaCheckoutId(data.mpesaRef || data.checkoutRequestId || 'MPesa-Matched');
+        }
+      } catch { /* continue polling */ }
+    }, 3000);
+  }, []);
+
   // ── Generate receipt number ──
   const genReceiptNo = () => `SNK-${Date.now().toString(36).toUpperCase()}`;
 
@@ -336,6 +374,13 @@ export default function POSPage() {
     win.print();
   };
 
+  useEffect(() => {
+    if (!showReceipt || !receiptSettings.autoPrint || !receiptData?.receiptNo) return;
+    if (lastPrintedReceiptRef.current === receiptData.receiptNo) return;
+    lastPrintedReceiptRef.current = receiptData.receiptNo;
+    setTimeout(() => printReceipt(), 300);
+  }, [showReceipt, receiptSettings.autoPrint, receiptData?.receiptNo]);
+
   const quickCash = [100, 200, 500, 1000, 2000, 5000];
 
   const cur = generalSettings.currency;
@@ -350,6 +395,7 @@ export default function POSPage() {
           <span className="text-xs text-muted-foreground">Cashier: <strong>{loggedCashier}</strong></span>
           <span className="text-xs text-muted-foreground">Opening: {cur} {openingBalance.toLocaleString()}</span>
           <span className="text-xs text-muted-foreground">Sales: {totalSalesCount} | {cur} {totalSalesAmount.toLocaleString()}</span>
+          {shiftStarted && <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">Shift active — remember to End Shift</span>}
         </div>
         <div className="flex items-center gap-2">
           <select value={selectedCustomer.id} onChange={(e) => handleCustomerChange(e.target.value)} className="px-3 py-1.5 border border-border rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary/50 outline-none bg-background min-w-[160px]">
@@ -469,12 +515,20 @@ export default function POSPage() {
           )}
           {paymentMethod === 'Mpesa' && (
             <div className="space-y-2">
-              <input type="tel" placeholder="0712345678" value={mpesaPhone} onChange={(e) => setMpesaPhone(e.target.value)} className="w-full px-4 py-3 border border-border rounded-xl text-lg font-mono focus:ring-2 focus:ring-primary/50 outline-none text-center tracking-wider" autoFocus disabled={mpesaStatus === 'sending' || mpesaStatus === 'waiting'} />
+              <input type="tel" placeholder="0712345678" value={mpesaPhone} onChange={(e) => setMpesaPhone(e.target.value)} className="w-full px-4 py-3 border border-border rounded-xl text-lg font-mono focus:ring-2 focus:ring-primary/50 outline-none text-center tracking-wider" autoFocus disabled={mpesaStatus === 'sending' || mpesaStatus === 'waiting' || mpesaStatus === 'checking'} />
               {mpesaStatus === 'idle' && <button onClick={sendMpesaStkPush} disabled={!mpesaPhone} className="w-full py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 font-bold text-xs disabled:opacity-40">📱 Send STK Push — {cur} {total.toFixed(0)}</button>}
               {mpesaStatus === 'sending' && <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center"><div className="animate-spin w-6 h-6 border-3 border-blue-200 border-t-blue-600 rounded-full mx-auto mb-1"></div><p className="text-xs text-blue-800">Sending...</p></div>}
               {mpesaStatus === 'waiting' && <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-center animate-pulse"><p className="text-lg">📱</p><p className="text-xs font-bold text-yellow-800">{mpesaMessage}</p></div>}
+              {mpesaStatus === 'checking' && <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center animate-pulse"><p className="text-lg">🔎</p><p className="text-xs font-bold text-blue-800">{mpesaMessage}</p></div>}
               {mpesaStatus === 'success' && <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-center"><p className="text-lg">✅</p><p className="text-xs font-bold text-green-800">Payment Received!</p></div>}
               {mpesaStatus === 'failed' && <><div className="p-2 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800">{mpesaMessage}</div><button onClick={() => { setMpesaStatus('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="w-full py-1.5 border border-border rounded-xl text-xs hover:bg-secondary">Retry</button></>}
+              <div className="rounded-xl border border-border bg-secondary/50 p-3 text-[11px]">
+                <p className="font-semibold mb-1">Already paid without STK?</p>
+                <p className="text-muted-foreground mb-2">Pay the exact amount and verify the latest M-Pesa payment.</p>
+                <button onClick={() => pollMpesaMatch(total, mpesaPhone)} disabled={!mpesaPhone || mpesaStatus === 'checking' || mpesaStatus === 'waiting' || mpesaStatus === 'sending'} className="w-full py-2 border border-border rounded-xl text-xs font-semibold hover:bg-secondary disabled:opacity-40">
+                  Verify Payment — {cur} {total.toFixed(0)}
+                </button>
+              </div>
             </div>
           )}
           {paymentMethod === 'Credit' && (
@@ -504,6 +558,8 @@ export default function POSPage() {
               <h2 style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>{receiptSettings.headerText}</h2>
               <p style={{ margin: '2px 0', fontSize: '10px' }}>{receiptSettings.subHeaderText}</p>
               <p style={{ margin: '2px 0', fontSize: '10px' }}>Tel: {generalSettings.phone}</p>
+              {generalSettings.email && <p style={{ margin: '2px 0', fontSize: '10px' }}>{generalSettings.email}</p>}
+              {generalSettings.shopNumber && <p style={{ margin: '2px 0', fontSize: '10px' }}>Shop No: {generalSettings.shopNumber}</p>}
               {generalSettings.address && <p style={{ margin: '2px 0', fontSize: '10px' }}>{generalSettings.address}</p>}
               <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
               <p style={{ margin: '0', fontSize: '10px' }}>Receipt: {receiptData?.receiptNo}</p>
@@ -561,6 +617,7 @@ export default function POSPage() {
             <div style={{ textAlign: 'center', fontSize: '10px' }}>
               <p style={{ margin: '2px 0' }}>{receiptSettings.footerText}</p>
               <p style={{ margin: '2px 0' }}>{receiptSettings.disclaimer}</p>
+              {receiptSettings.softwareProvidedBy && <p style={{ margin: '2px 0' }}>Software provided by {receiptSettings.softwareProvidedBy}</p>}
               <p style={{ margin: '4px 0', fontWeight: 'bold' }}>*** {receiptSettings.headerText} ***</p>
             </div>
           </div>

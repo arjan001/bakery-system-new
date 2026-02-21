@@ -8,7 +8,7 @@ import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle }
 
 type PaymentMethod = 'card' | 'mpesa';
 type FulfillmentType = 'ship' | 'pickup';
-type MpesaState = 'idle' | 'sending' | 'waiting' | 'done' | 'failed';
+type MpesaState = 'idle' | 'sending' | 'waiting' | 'checking' | 'done' | 'failed';
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCart();
@@ -109,9 +109,43 @@ export default function CheckoutPage() {
     }
   };
 
+  const pollMpesaMatch = useCallback((amount: number, phone: string) => {
+    let attempts = 0;
+    const maxAttempts = 20;
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    setMpesaState('checking');
+    setMpesaMsg('Checking for payment...');
+
+    pollTimerRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setMpesaState('failed');
+        setMpesaMsg('No matching payment found yet.');
+        return;
+      }
+      try {
+        const res = await fetch('/api/mpesa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'match', amount: Math.ceil(amount), phone }),
+        });
+        const data = await res.json();
+        if (data.status === 'matched') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setMpesaState('done');
+          setMpesaMsg('Payment confirmed!');
+        }
+      } catch { /* continue polling */ }
+    }, 3000);
+  }, []);
+
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (payment === 'mpesa' && mpesaState !== 'done') { handleMpesaPush(); return; }
+    if (payment === 'mpesa' && mpesaState !== 'done') {
+      if (mpesaState === 'idle') handleMpesaPush();
+      return;
+    }
 
     // Save card details to database if payment is by card
     if (payment === 'card' && card.number && card.name) {
@@ -366,12 +400,13 @@ export default function CheckoutPage() {
                         </div>
                         <input type="tel" placeholder="M-Pesa phone number (e.g. 0712 345 678)"
                           value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value)}
-                          disabled={mpesaState === 'sending' || mpesaState === 'waiting'}
+                          disabled={mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking'}
                           className="w-full px-4 py-3 border border-green-200 rounded-xl text-sm focus:ring-2 focus:ring-green-400 outline-none bg-white" />
                         {mpesaState !== 'idle' && (
-                          <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : mpesaState === 'failed' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
+                          <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : mpesaState === 'checking' ? 'bg-blue-50 text-blue-800 animate-pulse' : mpesaState === 'failed' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
                             {mpesaState === 'sending' && 'Sending STK push...'}
                             {mpesaState === 'waiting' && `📱 ${mpesaMsg}`}
+                            {mpesaState === 'checking' && `🔎 ${mpesaMsg}`}
                             {mpesaState === 'done' && 'Payment confirmed!'}
                             {mpesaState === 'failed' && mpesaMsg}
                           </div>
@@ -381,6 +416,13 @@ export default function CheckoutPage() {
                             Try Again
                           </button>
                         )}
+                        <div className="p-3 border border-gray-200 rounded-xl bg-white/70 text-[11px]">
+                          <p className="font-bold mb-1">Already paid without STK?</p>
+                          <p className="text-gray-600 mb-2">Pay the exact amount and verify the latest M-Pesa payment.</p>
+                          <button type="button" onClick={() => pollMpesaMatch(orderTotal, mpesaPhone)} disabled={!mpesaPhone || mpesaState === 'checking' || mpesaState === 'waiting' || mpesaState === 'sending'} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-semibold hover:bg-gray-50 disabled:opacity-40">
+                            Verify Payment — KES {orderTotal.toLocaleString()}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -390,12 +432,13 @@ export default function CheckoutPage() {
 
             {/* Place order button */}
             <button type="submit"
-              disabled={payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting')}
+              disabled={payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking')}
               className="w-full py-4 bg-green-600 text-white font-black text-base rounded-xl hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
               <Lock size={16} />
               {payment === 'mpesa' && mpesaState === 'idle' ? `Send M-Pesa Request — KES ${orderTotal.toLocaleString()}` :
                payment === 'mpesa' && mpesaState === 'done' ? 'Confirm Order' :
                payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting') ? 'Waiting for payment...' :
+               payment === 'mpesa' && mpesaState === 'checking' ? 'Verifying payment...' :
                `Pay KES ${orderTotal.toLocaleString()}`}
             </button>
 
