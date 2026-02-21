@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { ClipboardList } from 'lucide-react';
 
 interface Customer {
   id: string;
@@ -111,12 +112,21 @@ function dbToDelivery(r: Record<string, unknown>): Delivery {
   };
 }
 
+interface RecentOrder {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  items: { productName: string; quantity: number }[];
+}
+
 export default function DeliveryPage() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
 
   // Modal states
   const [showForm, setShowForm] = useState(false);
@@ -201,12 +211,55 @@ export default function DeliveryPage() {
     }
   }, []);
 
+  // Fetch recent orders for import
+  const fetchRecentOrders = useCallback(async () => {
+    const { data } = await supabase
+      .from('orders')
+      .select('id, order_number, customer_name, customer_phone')
+      .in('status', ['Pending', 'Confirmed', 'Processing', 'Ready'])
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (data && data.length > 0) {
+      const withItems = await Promise.all(data.map(async (r: Record<string, unknown>) => {
+        const { data: items } = await supabase.from('order_items').select('product_name, quantity').eq('order_id', r.id);
+        return {
+          id: r.id as string,
+          orderNumber: (r.order_number || '') as string,
+          customerName: (r.customer_name || '') as string,
+          customerPhone: (r.customer_phone || '') as string,
+          items: (items || []).map((i: Record<string, unknown>) => ({ productName: (i.product_name || '') as string, quantity: (i.quantity || 1) as number })),
+        };
+      }));
+      setRecentOrders(withItems);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDeliveries();
     fetchCustomers();
     fetchDrivers();
     fetchVehicles();
-  }, [fetchDeliveries, fetchCustomers, fetchDrivers, fetchVehicles]);
+    fetchRecentOrders();
+  }, [fetchDeliveries, fetchCustomers, fetchDrivers, fetchVehicles, fetchRecentOrders]);
+
+  // Import from order: populate customer + items
+  const importFromOrder = (orderId: string) => {
+    const order = recentOrders.find(o => o.id === orderId);
+    if (!order) return;
+    // Try to match customer from customers list
+    const matchedCustomer = customers.find(
+      c => c.name.toLowerCase() === order.customerName.toLowerCase()
+        || c.phone === order.customerPhone
+    );
+    setFormData(prev => ({
+      ...prev,
+      customerId: matchedCustomer?.id || '',
+      items: order.items.length > 0
+        ? order.items.map(i => ({ name: i.productName, quantity: i.quantity, unit: 'pcs' }))
+        : [{ ...emptyItem }],
+    }));
+    if (matchedCustomer) setCustomerSearch('');
+  };
 
   // Get selected customer details
   const selectedCustomer = customers.find(c => c.id === formData.customerId);
@@ -432,6 +485,29 @@ export default function DeliveryPage() {
         size="3xl"
       >
         <form onSubmit={handleSubmit} className="space-y-5 max-h-[75vh] overflow-y-auto pr-1">
+
+          {/* Section: Import from Order */}
+          {recentOrders.length > 0 && (
+            <div className="border border-primary/30 rounded-xl p-4 bg-primary/5">
+              <p className="text-sm font-semibold mb-1 flex items-center gap-2">
+                📦 Import from Recent Order
+                <span className="text-xs font-normal text-muted-foreground">— auto-fills customer & items</span>
+              </p>
+              <select
+                onChange={(e) => e.target.value && importFromOrder(e.target.value)}
+                defaultValue=""
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+              >
+                <option value="">— Select an order to import —</option>
+                {recentOrders.map(o => (
+                  <option key={o.id} value={o.id}>
+                    {o.orderNumber} · {o.customerName} · {o.items.length} item(s)
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1.5">After selecting, review and adjust the items below as needed.</p>
+            </div>
+          )}
 
           {/* Section: Delivery Info */}
           <div className="border border-border rounded-lg p-4 bg-secondary/30">

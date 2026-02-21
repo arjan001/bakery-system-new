@@ -102,9 +102,28 @@ export default function ProductionPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="mb-2">Production Reports</h1>
-        <p className="text-muted-foreground">Manage and track production runs and batch reports</p>
+      <div className="mb-6">
+        <h1 className="mb-2">Production Runs</h1>
+        <p className="text-muted-foreground">Schedule, track, and record daily baking batches from start to finish</p>
+      </div>
+
+      {/* What is a Production Run? */}
+      <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex gap-4">
+        <span className="text-2xl mt-0.5">🏭</span>
+        <div>
+          <p className="font-semibold text-amber-900 mb-1">What is a Production Run?</p>
+          <p className="text-sm text-amber-800 leading-relaxed">
+            A <strong>Production Run</strong> (also called a <strong>batch</strong>) is a single baking session for a specific recipe.
+            For example: <em>"Batch of 200 White Bread Loaves — started 5:00 AM, finished 8:00 AM, yielded 195 loaves."</em>
+          </p>
+          <ul className="mt-2 text-sm text-amber-800 space-y-1 list-disc list-inside">
+            <li><strong>Batch Size</strong> — how many units you planned to make (e.g. 200 loaves)</li>
+            <li><strong>Yield</strong> — how many units actually came out good (e.g. 195 loaves)</li>
+            <li><strong>Loss</strong> — the difference (e.g. 5 loaves wasted/burned)</li>
+            <li><strong>Efficiency</strong> — yield ÷ batch size as a percentage (e.g. 97.5%)</li>
+          </ul>
+          <p className="mt-2 text-xs text-amber-700">Track every run to monitor waste, efficiency, and production output over time.</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">

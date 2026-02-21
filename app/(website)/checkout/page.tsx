@@ -1,0 +1,377 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { useCart } from '@/lib/cart-context';
+import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle } from 'lucide-react';
+
+type PaymentMethod = 'card' | 'mpesa';
+type FulfillmentType = 'ship' | 'pickup';
+type MpesaState = 'idle' | 'sending' | 'waiting' | 'done';
+
+export default function CheckoutPage() {
+  const { items, total, clearCart } = useCart();
+
+  const [fulfillment, setFulfillment] = useState<FulfillmentType>('ship');
+  const [payment, setPayment] = useState<PaymentMethod>('card');
+  const [step, setStep] = useState<'form' | 'success'>('form');
+
+  // Contact
+  const [email, setEmail] = useState('');
+
+  // Address
+  const [form, setForm] = useState({
+    firstName: '', lastName: '', address: '', apartment: '',
+    city: '', county: '', postalCode: '', phone: '',
+    saveInfo: false,
+  });
+
+  // Card
+  const [card, setCard] = useState({ number: '', expiry: '', cvv: '', name: '', sameAsShipping: true });
+
+  // M-Pesa
+  const [mpesaPhone, setMpesaPhone] = useState('');
+  const [mpesaState, setMpesaState] = useState<MpesaState>('idle');
+  const [mpesaMsg, setMpesaMsg] = useState('');
+
+  const delivery = total >= 2000 ? 0 : 200;
+  const orderTotal = total + delivery;
+
+  const handleMpesaPush = () => {
+    if (!mpesaPhone) { setMpesaMsg('Enter your M-Pesa phone number'); return; }
+    setMpesaState('sending');
+    setMpesaMsg('Sending STK push…');
+    setTimeout(() => {
+      setMpesaState('waiting');
+      setMpesaMsg(`Check your phone (${mpesaPhone}) — enter your M-Pesa PIN to complete payment`);
+      setTimeout(() => { setMpesaState('done'); setMpesaMsg('Payment received! ✅'); }, 8000);
+    }, 2000);
+  };
+
+  const handlePlaceOrder = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (payment === 'mpesa' && mpesaState !== 'done') { handleMpesaPush(); return; }
+    clearCart();
+    setStep('success');
+  };
+
+  if (step === 'success') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <CheckCircle size={64} className="text-green-500 mx-auto mb-4" />
+          <h1 className="text-3xl font-black text-gray-900 mb-2">Order Confirmed! 🎉</h1>
+          <p className="text-gray-600 mb-2">Thank you for your order. We&apos;ll bake it fresh and{fulfillment === 'ship' ? ' deliver it to you' : ' have it ready for pickup'}.</p>
+          <p className="text-sm text-gray-400 mb-6">A confirmation will be sent to <strong>{email}</strong></p>
+          <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700">
+            Continue Shopping
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-500 mb-4">Your cart is empty.</p>
+          <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full">Shop Now</Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Logo + breadcrumb */}
+        <div className="mb-8 text-center">
+          <Link href="/" className="text-2xl font-black text-gray-900">SNACKOH</Link>
+          <div className="flex items-center justify-center gap-2 mt-3 text-xs">
+            {['Cart', 'Information', 'Shipping', 'Payment'].map((s, i) => (
+              <span key={s} className="flex items-center gap-2">
+                {i > 0 && <ChevronRight size={10} className="text-gray-300" />}
+                <span className={i === 1 ? 'text-orange-600 font-bold' : 'text-gray-400'}>{s}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-[1fr_400px] gap-10 items-start">
+
+          {/* ─── LEFT: Checkout Form ─────────────────────────────────────── */}
+          <form onSubmit={handlePlaceOrder} className="space-y-7">
+
+            {/* Contact */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-black text-gray-900">Contact</h2>
+                <Link href="#" className="text-xs text-orange-600 hover:underline">Sign in</Link>
+              </div>
+              <input type="email" placeholder="Email or mobile phone number" value={email}
+                onChange={e => setEmail(e.target.value)} required
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+            </div>
+
+            {/* Delivery method */}
+            <div>
+              <h2 className="text-base font-black text-gray-900 mb-3">Delivery</h2>
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                {[
+                  { value: 'ship', label: 'Ship', sub: 'Deliver to my address', icon: Truck },
+                  { value: 'pickup', label: 'Pick up', sub: 'Collect from our bakery', icon: Store },
+                ].map((opt, i) => (
+                  <label key={opt.value}
+                    className={`flex items-center gap-4 px-4 py-3.5 cursor-pointer transition-colors ${fulfillment === opt.value ? 'bg-orange-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                    <input type="radio" name="fulfillment" value={opt.value}
+                      checked={fulfillment === opt.value} onChange={() => setFulfillment(opt.value as FulfillmentType)}
+                      className="accent-orange-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">{opt.label}</p>
+                      <p className="text-xs text-gray-500">{opt.sub}</p>
+                    </div>
+                    <opt.icon size={18} className="text-gray-400" />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Address (only for Ship) */}
+            {fulfillment === 'ship' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Country / Region</label>
+                  <select className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    <option>Kenya</option>
+                    <option>Uganda</option>
+                    <option>Tanzania</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input placeholder="First name (optional)" value={form.firstName}
+                    onChange={e => setForm({ ...form, firstName: e.target.value })}
+                    className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+                  <input placeholder="Last name" value={form.lastName}
+                    onChange={e => setForm({ ...form, lastName: e.target.value })} required
+                    className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+                </div>
+                <div className="relative">
+                  <input placeholder="Address" value={form.address}
+                    onChange={e => setForm({ ...form, address: e.target.value })} required
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none pr-10" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                </div>
+                <input placeholder="Apartment, suite, etc. (optional)" value={form.apartment}
+                  onChange={e => setForm({ ...form, apartment: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+                <div className="grid grid-cols-3 gap-3">
+                  <input placeholder="City" value={form.city}
+                    onChange={e => setForm({ ...form, city: e.target.value })} required
+                    className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+                  <select value={form.county} onChange={e => setForm({ ...form, county: e.target.value })}
+                    className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    <option value="">County</option>
+                    {['Nairobi','Mombasa','Kisumu','Nakuru','Eldoret','Thika'].map(c => <option key={c}>{c}</option>)}
+                  </select>
+                  <input placeholder="Postal code" value={form.postalCode}
+                    onChange={e => setForm({ ...form, postalCode: e.target.value })}
+                    className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+                </div>
+                <input placeholder="Phone number" type="tel" value={form.phone}
+                  onChange={e => setForm({ ...form, phone: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.saveInfo} onChange={e => setForm({ ...form, saveInfo: e.target.checked })}
+                    className="accent-orange-600 w-4 h-4" />
+                  <span className="text-sm text-gray-600">Save this information for next time</span>
+                </label>
+
+                {/* Shipping method */}
+                <div className="mt-2">
+                  <h3 className="text-sm font-black text-gray-800 mb-2">Shipping method</h3>
+                  <div className="border border-gray-200 rounded-xl px-4 py-4">
+                    {delivery === 0 ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Standard Delivery</span>
+                        <span className="text-sm font-bold text-green-600">FREE</span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 text-center">Enter your shipping address to view available shipping methods.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {fulfillment === 'pickup' && (
+              <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-sm text-orange-800">
+                <p className="font-bold mb-1">Pickup Location</p>
+                <p>📍 Snackoh Bakery, Nairobi CBD</p>
+                <p className="text-xs text-orange-600 mt-1">Mon–Sat: 6:00 AM – 7:00 PM &nbsp;|&nbsp; Sun: 7:00 AM – 4:00 PM</p>
+              </div>
+            )}
+
+            {/* Payment */}
+            <div>
+              <h2 className="text-base font-black text-gray-900 mb-1">Payment</h2>
+              <p className="text-xs text-gray-400 flex items-center gap-1 mb-3">
+                <Lock size={11} /> All transactions are secure and encrypted.
+              </p>
+
+              {/* Payment tabs */}
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                {[
+                  { id: 'card', label: 'Credit / Debit Card', icon: CreditCard },
+                  { id: 'mpesa', label: 'M-Pesa', icon: Smartphone },
+                ].map((opt, i) => (
+                  <div key={opt.id}>
+                    <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? 'bg-blue-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                      <input type="radio" name="payment" value={opt.id} checked={payment === opt.id}
+                        onChange={() => setPayment(opt.id as PaymentMethod)} className="accent-orange-600" />
+                      <opt.icon size={16} className="text-gray-500" />
+                      <span className="text-sm font-semibold text-gray-800 flex-1">{opt.label}</span>
+                      {opt.id === 'card' && (
+                        <div className="flex gap-1">
+                          {['VISA', 'MC', 'AMEX'].map(b => (
+                            <span key={b} className="text-[9px] font-black px-1.5 py-0.5 bg-gray-800 text-white rounded">{b}</span>
+                          ))}
+                        </div>
+                      )}
+                      {opt.id === 'mpesa' && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-green-600 text-white rounded">MPESA</span>
+                      )}
+                    </label>
+
+                    {/* Card fields */}
+                    {payment === 'card' && opt.id === 'card' && (
+                      <div className="px-4 pb-4 space-y-3 bg-blue-50/50 border-t border-gray-100">
+                        <div className="relative">
+                          <input placeholder="Card number" value={card.number} maxLength={19}
+                            onChange={e => setCard({ ...card, number: e.target.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim() })}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none pr-10 bg-white font-mono tracking-wider" />
+                          <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input placeholder="Expiration date (MM / YY)" value={card.expiry}
+                            onChange={e => setCard({ ...card, expiry: e.target.value })}
+                            className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
+                          <div className="relative">
+                            <input placeholder="Security code" value={card.cvv} maxLength={4}
+                              onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/,'') })}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">?</span>
+                          </div>
+                        </div>
+                        <input placeholder="Name on card" value={card.name}
+                          onChange={e => setCard({ ...card, name: e.target.value })}
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={card.sameAsShipping} onChange={e => setCard({ ...card, sameAsShipping: e.target.checked })}
+                            className="accent-orange-600 w-4 h-4" />
+                          <span className="text-xs text-gray-600">Use shipping address as billing address</span>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* M-Pesa fields */}
+                    {payment === 'mpesa' && opt.id === 'mpesa' && (
+                      <div className="px-4 pb-4 space-y-3 bg-green-50/50 border-t border-gray-100">
+                        <div className="bg-green-50 rounded-lg p-3 text-xs text-green-800">
+                          <p className="font-bold mb-0.5">How M-Pesa works:</p>
+                          <p>1. Enter your M-Pesa phone number below</p>
+                          <p>2. Click &quot;Place Order&quot; to receive a payment prompt on your phone</p>
+                          <p>3. Enter your M-Pesa PIN to complete the payment</p>
+                        </div>
+                        <input type="tel" placeholder="M-Pesa phone number (e.g. 0712 345 678)"
+                          value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value)}
+                          className="w-full px-4 py-3 border border-green-200 rounded-xl text-sm focus:ring-2 focus:ring-green-400 outline-none bg-white" />
+                        {mpesaState !== 'idle' && (
+                          <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : 'bg-blue-50 text-blue-800'}`}>
+                            {mpesaState === 'sending' && '⏳ Sending STK push…'}
+                            {mpesaState === 'waiting' && `📱 ${mpesaMsg}`}
+                            {mpesaState === 'done' && '✅ Payment confirmed!'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Place order button */}
+            <button type="submit"
+              className="w-full py-4 bg-blue-700 text-white font-black text-base rounded-xl hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
+              <Lock size={16} />
+              {payment === 'mpesa' && mpesaState === 'idle' ? 'Send M-Pesa Request' :
+               payment === 'mpesa' && mpesaState === 'done' ? 'Confirm Order' :
+               'Pay now'}
+            </button>
+
+            {/* Footer links */}
+            <div className="flex flex-wrap justify-center gap-4 text-xs text-gray-400 border-t border-gray-100 pt-5">
+              {['Refund policy', 'Shipping', 'Privacy policy', 'Terms of service', 'Cancellations'].map(l => (
+                <Link key={l} href="#" className="hover:text-orange-600 hover:underline">{l}</Link>
+              ))}
+            </div>
+          </form>
+
+          {/* ─── RIGHT: Order Summary ────────────────────────────────────── */}
+          <div className="border border-gray-100 rounded-2xl p-5 bg-gray-50/50 h-fit sticky top-24">
+            <h3 className="font-black text-gray-800 mb-4 text-sm">Order Summary</h3>
+
+            {/* Items */}
+            <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
+              {items.map(item => (
+                <div key={item.id} className="flex items-center gap-3">
+                  <div className="relative shrink-0">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-white border border-gray-100">
+                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    </div>
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {item.quantity}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-gray-700 truncate">{item.name}</p>
+                    <p className="text-[10px] text-gray-400">{item.category}</p>
+                  </div>
+                  <span className="text-xs font-bold text-gray-800 shrink-0">KES {(item.price * item.quantity).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Gift card */}
+            <div className="flex gap-2 mb-4">
+              <input placeholder="Gift card" className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-orange-400 outline-none bg-white" />
+              <button className="px-3 py-2 border border-gray-200 rounded-lg text-xs font-semibold hover:bg-gray-100">Apply</button>
+            </div>
+
+            {/* Price breakdown */}
+            <div className="space-y-2 border-t border-gray-100 pt-3">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Subtotal</span>
+                <span>KES {total.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Shipping</span>
+                <span className="flex items-center gap-1">
+                  {delivery === 0 ? <span className="text-green-600 font-semibold">FREE</span> : `KES ${delivery}`}
+                  <span className="text-gray-400 text-xs">{delivery > 0 ? '(Enter shipping address)' : ''}</span>
+                </span>
+              </div>
+              <div className="flex justify-between font-black text-gray-900 pt-2 border-t border-gray-100 text-base">
+                <span>Total</span>
+                <span>
+                  <span className="text-xs font-normal text-gray-400 mr-1">KES</span>
+                  {orderTotal.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -88,12 +88,12 @@ export default function Dashboard() {
         <div className="border border-border rounded-lg p-6">
           <h2 className="mb-4 font-semibold">Quick Actions</h2>
           <div className="space-y-2">
-            <a href="/pos" className="block px-4 py-2.5 text-sm bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors font-medium">Open POS</a>
-            <a href="/recipes" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Add Recipe</a>
-            <a href="/orders" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Create Order</a>
-            <a href="/production" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Start Production</a>
-            <a href="/employees" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Add Employee</a>
-            <a href="/settings" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Settings</a>
+            <a href="/admin/pos" className="block px-4 py-2.5 text-sm bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors font-medium">Open POS</a>
+            <a href="/admin/recipes" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Add Recipe</a>
+            <a href="/admin/orders" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Create Order</a>
+            <a href="/admin/production" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Start Production</a>
+            <a href="/admin/employees" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Add Employee</a>
+            <a href="/admin/settings" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Settings</a>
           </div>
         </div>
       </div>
