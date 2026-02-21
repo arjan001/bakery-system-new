@@ -340,6 +340,8 @@ CREATE TABLE IF NOT EXISTS waste_records (
   cost DECIMAL DEFAULT 0,
   batch_number TEXT,
   notes TEXT,
+  status TEXT DEFAULT 'Pending',
+  approved_by TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

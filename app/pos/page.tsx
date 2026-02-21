@@ -12,20 +12,12 @@ interface ReceiptData { receiptNo: string; date: string; cashier: string; custom
 
 type PaymentMethod = 'Cash' | 'Mpesa' | 'Credit';
 type MpesaStatus = 'idle' | 'sending' | 'waiting' | 'success' | 'failed';
-type POSView = 'login' | 'pos';
 
 export default function POSPage() {
-  // ── Auth ──
-  const [view, setView] = useState<POSView>('login');
-  const [cashierName, setCashierName] = useState('');
-  const [cashierPin, setCashierPin] = useState('');
-  const [loggedCashier, setLoggedCashier] = useState('');
-  const [loginError, setLoginError] = useState('');
+  // ── Auth (login disabled — anyone can use POS) ──
+  const [loggedCashier] = useState('Cashier');
 
-  // ── Opening Balance ──
-  const [openingBalance, setOpeningBalance] = useState(0);
-  const [showOpeningBalance, setShowOpeningBalance] = useState(false);
-  const [shiftStartTime, setShiftStartTime] = useState('');
+  // ── Sales Totals ──
   const [totalSalesCount, setTotalSalesCount] = useState(0);
   const [totalSalesAmount, setTotalSalesAmount] = useState(0);
 
@@ -103,27 +95,6 @@ export default function POSPage() {
     const cat = filterCategory === 'All' || p.category === filterCategory;
     return match && cat;
   });
-
-  // ── Login ──
-  const handleLogin = async () => {
-    if (!cashierName.trim()) { setLoginError('Enter your name'); return; }
-    if (!cashierPin || cashierPin.length < 4) { setLoginError('Enter 4-digit PIN'); return; }
-    // Check against employees table
-    const { data } = await supabase.from('employees').select('*').ilike('first_name', `%${cashierName.split(' ')[0]}%`).eq('status', 'Active').limit(1);
-    if (data && data.length > 0) {
-      setLoggedCashier(`${data[0].first_name} ${data[0].last_name}`);
-    } else {
-      setLoggedCashier(cashierName);
-    }
-    setLoginError('');
-    setShiftStartTime(new Date().toLocaleTimeString());
-    setShowOpeningBalance(true);
-  };
-
-  const handleStartShift = () => {
-    setShowOpeningBalance(false);
-    setView('pos');
-  };
 
   // ── Cart ──
   const addToCart = (product: Product) => {
@@ -242,47 +213,6 @@ export default function POSPage() {
 
   const quickCash = [100, 200, 500, 1000, 2000, 5000];
 
-  // ── LOGIN VIEW ──
-  if (view === 'login') {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-65px)] bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="w-full max-w-sm">
-          <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-primary px-6 py-8 text-center text-primary-foreground">
-              <h1 className="text-2xl font-black tracking-wide">SNACKOH</h1>
-              <p className="text-sm opacity-80 mt-1">Point of Sale</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Cashier Name</label>
-                <input type="text" placeholder="Enter your name" value={cashierName} onChange={(e) => setCashierName(e.target.value)} className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none text-center font-medium" autoFocus />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">PIN</label>
-                <input type="password" placeholder="4-digit PIN" maxLength={6} value={cashierPin} onChange={(e) => setCashierPin(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none text-center text-2xl tracking-[0.5em] font-mono" />
-              </div>
-              {loginError && <p className="text-sm text-red-600 text-center font-medium">{loginError}</p>}
-              <button onClick={handleLogin} className="w-full py-3 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-sm">Sign In to POS</button>
-            </div>
-          </div>
-        </div>
-
-        {/* Opening Balance Modal */}
-        <Modal isOpen={showOpeningBalance} onClose={() => {}} title="Opening Balance" size="sm">
-          <div className="space-y-4 text-center">
-            <p className="text-sm text-muted-foreground">Welcome, <strong>{loggedCashier}</strong></p>
-            <p className="text-xs text-muted-foreground">Shift started: {shiftStartTime}</p>
-            <div>
-              <label className="block text-sm font-medium mb-2">Cash in Drawer (KES)</label>
-              <input type="number" value={openingBalance || ''} onChange={(e) => setOpeningBalance(parseFloat(e.target.value) || 0)} className="w-full px-4 py-3 border border-border rounded-xl text-center text-2xl font-bold focus:ring-2 focus:ring-primary/50 outline-none" placeholder="0" autoFocus />
-            </div>
-            <button onClick={handleStartShift} className="w-full py-3 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold">Start Shift</button>
-          </div>
-        </Modal>
-      </div>
-    );
-  }
-
   // ── POS VIEW ──
   return (
     <div className="flex flex-col h-[calc(100vh-65px)] bg-background">
@@ -306,7 +236,7 @@ export default function POSPage() {
           <button onClick={() => setShowHeld(true)} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium relative">
             Recall {heldOrders.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 text-white rounded-full text-[10px] flex items-center justify-center">{heldOrders.length}</span>}
           </button>
-          <button onClick={() => { setView('login'); setCashierName(''); setCashierPin(''); }} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium">End Shift</button>
+          <button onClick={() => { if (confirm('End shift and clear cart?')) { setCartItems([]); setTotalSalesCount(0); setTotalSalesAmount(0); } }} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium">End Shift</button>
         </div>
       </div>
 
