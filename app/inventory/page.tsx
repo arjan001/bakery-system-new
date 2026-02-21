@@ -4,6 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 
+interface Distributor {
+  id: string;
+  name: string;
+  category: string;
+}
+
 interface InventoryItem {
   id: string;
   name: string;
@@ -14,6 +20,7 @@ interface InventoryItem {
   unitCost: number;
   reorderLevel: number;
   supplier: string;
+  distributorId: string;
   lastRestocked: string;
 }
 
@@ -31,13 +38,21 @@ interface InventoryCategory {
 
 export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [distributors, setDistributors] = useState<Distributor[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const fetchInventory = useCallback(async () => {
     const { data } = await supabase.from('inventory_items').select('*').order('created_at', { ascending: false });
-    if (data && data.length > 0) setInventory(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryItem['type'], category: (r.category || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'kg') as string, unitCost: (r.unit_cost || 0) as number, reorderLevel: (r.reorder_level || 0) as number, supplier: (r.supplier || '') as string, lastRestocked: (r.last_restocked || '') as string })));
+    if (data && data.length > 0) setInventory(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryItem['type'], category: (r.category || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'kg') as string, unitCost: (r.unit_cost || 0) as number, reorderLevel: (r.reorder_level || 0) as number, supplier: (r.supplier || '') as string, distributorId: (r.distributor_id || '') as string, lastRestocked: (r.last_restocked || '') as string })));
   }, []);
 
-  useEffect(() => { fetchInventory(); }, [fetchInventory]);
+  const fetchDistributors = useCallback(async () => {
+    const { data } = await supabase.from('distributors').select('id, name, category').order('name');
+    if (data) setDistributors(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, category: (r.category || '') as string })));
+  }, []);
+
+  useEffect(() => { fetchInventory(); fetchDistributors(); }, [fetchInventory, fetchDistributors]);
 
   const [inventoryTypes] = useState<InventoryType[]>([
     { id: '1', name: 'Consumable', description: 'Items used up in production' },
@@ -68,6 +83,7 @@ export default function InventoryPage() {
     unitCost: 0,
     reorderLevel: 0,
     supplier: '',
+    distributorId: '',
     lastRestocked: new Date().toISOString().split('T')[0],
   });
 
@@ -79,7 +95,7 @@ export default function InventoryPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const row = { name: formData.name, type: formData.type, category: formData.category, quantity: formData.quantity, unit: formData.unit, unit_cost: formData.unitCost, reorder_level: formData.reorderLevel, supplier: formData.supplier, last_restocked: formData.lastRestocked || null };
+    const row = { name: formData.name, type: formData.type, category: formData.category, quantity: formData.quantity, unit: formData.unit, unit_cost: formData.unitCost, reorder_level: formData.reorderLevel, supplier: formData.supplier, distributor_id: formData.distributorId || null, last_restocked: formData.lastRestocked || null };
     try {
       if (editingId) await supabase.from('inventory_items').update(row).eq('id', editingId);
       else await supabase.from('inventory_items').insert(row);
@@ -107,6 +123,7 @@ export default function InventoryPage() {
       unitCost: 0,
       reorderLevel: 0,
       supplier: '',
+      distributorId: '',
       lastRestocked: new Date().toISOString().split('T')[0],
     });
   };
@@ -133,6 +150,9 @@ export default function InventoryPage() {
   const filteredInventory = filterType === 'All' ? inventory : inventory.filter(i => i.type === filterType);
   const lowStockCount = inventory.filter(i => i.quantity <= i.reorderLevel).length;
   const totalValue = inventory.reduce((sum, i) => sum + (i.quantity * i.unitCost), 0);
+  const totalPages = Math.ceil(filteredInventory.length / itemsPerPage);
+  const paginatedInventory = filteredInventory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const getDistributorName = (id: string) => distributors.find(d => d.id === id)?.name || '';
 
   return (
     <div className="p-8">
@@ -299,6 +319,18 @@ export default function InventoryPage() {
                 className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
               />
 
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Received From Distributor</label>
+                <select
+                  value={formData.distributorId}
+                  onChange={(e) => setFormData({ ...formData, distributorId: e.target.value })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                >
+                  <option value="">Select Distributor (optional)</option>
+                  {distributors.map(d => <option key={d.id} value={d.id}>{d.name} — {d.category}</option>)}
+                </select>
+              </div>
+
               <div className="flex gap-2 justify-end pt-4 border-t border-border">
                 <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">
                   Cancel
@@ -321,18 +353,19 @@ export default function InventoryPage() {
                   <th className="px-4 py-3 text-left font-semibold">Status</th>
                   <th className="px-4 py-3 text-left font-semibold">Unit Cost</th>
                   <th className="px-4 py-3 text-left font-semibold">Total Value</th>
+                  <th className="px-4 py-3 text-left font-semibold">Distributor</th>
                   <th className="px-4 py-3 text-left font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredInventory.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                       No inventory items found
                     </td>
                   </tr>
                 ) : (
-                  filteredInventory.map(item => {
+                  paginatedInventory.map(item => {
                     const isLowStock = item.quantity <= item.reorderLevel;
                     return (
                       <tr key={item.id} className="border-b border-border hover:bg-secondary/50">
@@ -355,6 +388,7 @@ export default function InventoryPage() {
                         </td>
                         <td className="px-4 py-3">{item.unitCost}</td>
                         <td className="px-4 py-3 font-medium">{(item.quantity * item.unitCost).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{getDistributorName(item.distributorId) || item.supplier || '—'}</td>
                         <td className="px-4 py-3 flex gap-2">
                           <button onClick={() => handleEdit(item)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">
                             Edit
@@ -370,6 +404,22 @@ export default function InventoryPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-muted-foreground">
+                Showing {((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, filteredInventory.length)} of {filteredInventory.length} items
+              </p>
+              <div className="flex gap-1">
+                <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">Previous</button>
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
+                  <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1.5 text-sm rounded-lg ${currentPage === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-secondary'}`}>{page}</button>
+                ))}
+                <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

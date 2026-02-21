@@ -57,6 +57,7 @@ export function Sidebar() {
       items: [
         { label: 'Inventory', href: '/inventory', tip: 'Raw materials, packaging & stock levels' },
         { label: 'Purchasing', href: '/purchasing', tip: 'Purchase orders & supplier procurement' },
+        { label: 'Distributors', href: '/distributors', tip: 'Manage suppliers & distributors' },
         { label: 'Assets', href: '/assets', tip: 'Equipment, vehicles & depreciation tracking' },
       ],
     },
@@ -80,7 +81,7 @@ export function Sidebar() {
       title: 'SYSTEM',
       color: 'border-l-gray-400',
       items: [
-        { label: 'Reports', href: '/reports', tip: 'P&L accounting, revenue & cost analysis' },
+        { label: 'Reports & Ledger', href: '/reports', tip: 'Financial reports, P&L, sales, debtors, creditors & ledger' },
         { label: 'Settings', href: '/settings', tip: 'System config, receipt, theme & security' },
       ],
     },

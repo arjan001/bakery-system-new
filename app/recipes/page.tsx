@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+
+// ── Interfaces ──
 
 interface RecipeIngredient {
   id: string;
@@ -10,6 +12,7 @@ interface RecipeIngredient {
   quantity: number;
   unit: string;
   costPerUnit: number;
+  sourcingNote?: string;
 }
 
 interface Recipe {
@@ -29,32 +32,46 @@ interface Recipe {
   status: 'active' | 'inactive';
 }
 
+interface FilePreviewRow {
+  name: string;
+  quantity: string;
+  unit: string;
+  costPerUnit: string;
+}
+
+// ── Constants ──
+
 const CATEGORIES = ['Bread', 'Pastry', 'Cake', 'Buns', 'Cookies', 'Other'];
 const PRODUCT_TYPES = ['White Bread', 'Brown Bread', 'Sourdough', 'Croissant', 'Buns', 'Muffin', 'Cake', 'Cookies', 'Donut', 'Bagel', 'Other'];
 const UNITS = ['g', 'kg', 'ml', 'L', 'tsp', 'tbsp', 'cups', 'pieces', 'dozen'];
+const ROWS_PER_PAGE = 10;
+
+// ── Page Component ──
 
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const fetchRecipes = useCallback(async () => {
-    const { data } = await supabase.from('recipes').select('*').order('created_at', { ascending: false });
-    if (data && data.length > 0) {
-      const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
-        const { data: ings } = await supabase.from('recipe_ingredients').select('*').eq('recipe_id', r.id);
-        return { id: r.id as string, name: (r.name || '') as string, code: (r.code || '') as string, category: (r.product_type || 'Bread') as string, productType: (r.product_type || '') as string, batchSize: (r.batch_size || 1) as number, expectedOutput: (r.expected_output || 0) as number, outputUnit: (r.output_unit || 'pieces') as string, ingredients: (ings || []).map((i: Record<string, unknown>) => ({ id: i.id as string, name: (i.name || '') as string, quantity: (i.quantity || 0) as number, unit: (i.unit || 'g') as string, costPerUnit: (i.cost_per_unit || 0) as number })), instructions: (r.instructions || '') as string, prepTime: (r.prep_time || 0) as number, bakeTime: (r.bake_time || 0) as number, bakeTemp: (r.bake_temp || 180) as number, status: (r.status || 'active') as Recipe['status'] };
-      }));
-      setRecipes(mapped);
-    }
-  }, []);
-
-  useEffect(() => { fetchRecipes(); }, [fetchRecipes]);
-
+  // Modals
   const [showForm, setShowForm] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+
+  // Search & Filter
   const [filterCategory, setFilterCategory] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // File Upload
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<FilePreviewRow[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Form State ──
 
   const emptyForm: Recipe = {
     id: '',
@@ -75,6 +92,49 @@ export default function RecipesPage() {
 
   const [formData, setFormData] = useState<Recipe>(emptyForm);
 
+  // ── Data Fetching ──
+
+  const fetchRecipes = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from('recipes').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) {
+      const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
+        const { data: ings } = await supabase.from('recipe_ingredients').select('*').eq('recipe_id', r.id);
+        return {
+          id: r.id as string,
+          name: (r.name || '') as string,
+          code: (r.code || '') as string,
+          category: (r.product_type || 'Bread') as string,
+          productType: (r.product_type || '') as string,
+          batchSize: (r.batch_size || 1) as number,
+          expectedOutput: (r.expected_output || 0) as number,
+          outputUnit: (r.output_unit || 'pieces') as string,
+          ingredients: (ings || []).map((i: Record<string, unknown>) => ({
+            id: i.id as string,
+            name: (i.name || '') as string,
+            quantity: (i.quantity || 0) as number,
+            unit: (i.unit || 'g') as string,
+            costPerUnit: (i.cost_per_unit || 0) as number,
+            sourcingNote: (i.sourcing_note || '') as string,
+          })),
+          instructions: (r.instructions || '') as string,
+          prepTime: (r.prep_time || 0) as number,
+          bakeTime: (r.bake_time || 0) as number,
+          bakeTemp: (r.bake_temp || 180) as number,
+          status: (r.status || 'active') as Recipe['status'],
+        };
+      }));
+      setRecipes(mapped);
+    } else {
+      setRecipes([]);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchRecipes(); }, [fetchRecipes]);
+
+  // ── Cost Calculations ──
+
   const calcBatchCost = (recipe: Recipe) => {
     return recipe.ingredients.reduce((sum, ing) => sum + (ing.quantity * ing.costPerUnit), 0);
   };
@@ -84,28 +144,95 @@ export default function RecipesPage() {
     return calcBatchCost(recipe) / recipe.expectedOutput;
   };
 
+  // ── Filtering & Pagination ──
+
+  const filtered = recipes.filter(r => {
+    const matchCategory = filterCategory === 'All' || r.category === filterCategory;
+    const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) || r.code.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchCategory && matchSearch;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  const paginatedRecipes = filtered.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterCategory]);
+
+  // ── Stats ──
+
+  const totalRecipes = recipes.length;
+  const activeRecipes = recipes.filter(r => r.status === 'active').length;
+  const avgBatchCost = totalRecipes > 0 ? recipes.reduce((s, r) => s + calcBatchCost(r), 0) / totalRecipes : 0;
+  const uniqueCategories = new Set(recipes.map(r => r.category)).size;
+
+  // ── CRUD Operations ──
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const row = { name: formData.name, code: formData.code, product_type: formData.productType, batch_size: formData.batchSize, expected_output: formData.expectedOutput, output_unit: formData.outputUnit, instructions: formData.instructions, prep_time: formData.prepTime, bake_time: formData.bakeTime, bake_temp: formData.bakeTemp, status: formData.status };
+    const row = {
+      name: formData.name,
+      code: formData.code,
+      product_type: formData.productType,
+      batch_size: formData.batchSize,
+      expected_output: formData.expectedOutput,
+      output_unit: formData.outputUnit,
+      instructions: formData.instructions,
+      prep_time: formData.prepTime,
+      bake_time: formData.bakeTime,
+      bake_temp: formData.bakeTemp,
+      status: formData.status,
+    };
     try {
       if (editId) {
         await supabase.from('recipes').update(row).eq('id', editId);
         await supabase.from('recipe_ingredients').delete().eq('recipe_id', editId);
-        if (formData.ingredients.length > 0) await supabase.from('recipe_ingredients').insert(formData.ingredients.map(i => ({ recipe_id: editId, name: i.name, quantity: i.quantity, unit: i.unit, cost_per_unit: i.costPerUnit })));
+        if (formData.ingredients.length > 0) {
+          await supabase.from('recipe_ingredients').insert(
+            formData.ingredients.map(i => ({
+              recipe_id: editId,
+              name: i.name,
+              quantity: i.quantity,
+              unit: i.unit,
+              cost_per_unit: i.costPerUnit,
+              sourcing_note: i.sourcingNote || '',
+            }))
+          );
+        }
       } else {
         const { data: created } = await supabase.from('recipes').insert(row).select().single();
-        if (created && formData.ingredients.length > 0) await supabase.from('recipe_ingredients').insert(formData.ingredients.map(i => ({ recipe_id: created.id, name: i.name, quantity: i.quantity, unit: i.unit, cost_per_unit: i.costPerUnit })));
+        if (created && formData.ingredients.length > 0) {
+          await supabase.from('recipe_ingredients').insert(
+            formData.ingredients.map(i => ({
+              recipe_id: created.id,
+              name: i.name,
+              quantity: i.quantity,
+              unit: i.unit,
+              cost_per_unit: i.costPerUnit,
+              sourcing_note: i.sourcingNote || '',
+            }))
+          );
+        }
       }
       await fetchRecipes();
-    } catch (err) { console.error('Recipe save error:', err); }
+    } catch (err) {
+      console.error('Recipe save error:', err);
+    }
+    resetForm();
+  };
+
+  const resetForm = () => {
     setEditId(null);
     setFormData(emptyForm);
     setShowForm(false);
+    setUploadedFile(null);
+    setFilePreview([]);
   };
 
   const handleEdit = (recipe: Recipe) => {
     setFormData(recipe);
     setEditId(recipe.id);
+    setUploadedFile(null);
+    setFilePreview([]);
     setShowForm(true);
   };
 
@@ -117,21 +244,55 @@ export default function RecipesPage() {
     }
   };
 
-  const handleDuplicate = (recipe: Recipe) => {
-    const dup: Recipe = {
-      ...recipe,
-      id: Date.now().toString(),
+  const handleDuplicate = async (recipe: Recipe) => {
+    const row = {
       name: recipe.name + ' (Copy)',
       code: recipe.code + '-COPY',
-      ingredients: recipe.ingredients.map(ing => ({ ...ing, id: Date.now().toString() + Math.random() })),
+      product_type: recipe.productType,
+      batch_size: recipe.batchSize,
+      expected_output: recipe.expectedOutput,
+      output_unit: recipe.outputUnit,
+      instructions: recipe.instructions,
+      prep_time: recipe.prepTime,
+      bake_time: recipe.bakeTime,
+      bake_temp: recipe.bakeTemp,
+      status: recipe.status,
     };
-    setRecipes([...recipes, dup]);
+    try {
+      const { data: created } = await supabase.from('recipes').insert(row).select().single();
+      if (created && recipe.ingredients.length > 0) {
+        await supabase.from('recipe_ingredients').insert(
+          recipe.ingredients.map(i => ({
+            recipe_id: created.id,
+            name: i.name,
+            quantity: i.quantity,
+            unit: i.unit,
+            cost_per_unit: i.costPerUnit,
+            sourcing_note: i.sourcingNote || '',
+          }))
+        );
+      }
+      await fetchRecipes();
+    } catch (err) {
+      console.error('Duplicate error:', err);
+    }
   };
+
+  const toggleStatus = async (recipe: Recipe) => {
+    const newStatus = recipe.status === 'active' ? 'inactive' : 'active';
+    await supabase.from('recipes').update({ status: newStatus }).eq('id', recipe.id);
+    setRecipes(recipes.map(r => r.id === recipe.id ? { ...r, status: newStatus } : r));
+  };
+
+  // ── Ingredient Management ──
 
   const addIngredient = () => {
     setFormData({
       ...formData,
-      ingredients: [...formData.ingredients, { id: Date.now().toString(), name: '', quantity: 0, unit: 'g', costPerUnit: 0 }],
+      ingredients: [
+        ...formData.ingredients,
+        { id: Date.now().toString(), name: '', quantity: 0, unit: 'g', costPerUnit: 0, sourcingNote: '' },
+      ],
     });
   };
 
@@ -145,311 +306,903 @@ export default function RecipesPage() {
     setFormData({ ...formData, ingredients: formData.ingredients.filter((_, i) => i !== index) });
   };
 
-  const filtered = recipes.filter(r => {
-    const matchCategory = filterCategory === 'All' || r.category === filterCategory;
-    const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) || r.code.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchCategory && matchSearch;
-  });
+  // ── File Upload Handlers (UI Only) ──
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.csv') || file.name.endsWith('.pdf'))) {
+      setUploadedFile(file);
+      setFilePreview([]);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadedFile(file);
+      setFilePreview([]);
+    }
+  };
+
+  const handleParseFile = () => {
+    // UI-only: simulate parsed data preview
+    if (uploadedFile) {
+      setFilePreview([
+        { name: 'Wheat Flour', quantity: '5000', unit: 'g', costPerUnit: '0.12' },
+        { name: 'Sugar', quantity: '500', unit: 'g', costPerUnit: '0.15' },
+        { name: 'Butter', quantity: '250', unit: 'g', costPerUnit: '0.80' },
+        { name: 'Eggs', quantity: '6', unit: 'pieces', costPerUnit: '15.00' },
+        { name: 'Yeast', quantity: '15', unit: 'g', costPerUnit: '2.50' },
+      ]);
+    }
+  };
+
+  const importParsedIngredients = () => {
+    const newIngredients: RecipeIngredient[] = filePreview.map((row, idx) => ({
+      id: `parsed-${Date.now()}-${idx}`,
+      name: row.name,
+      quantity: parseFloat(row.quantity) || 0,
+      unit: row.unit,
+      costPerUnit: parseFloat(row.costPerUnit) || 0,
+      sourcingNote: '',
+    }));
+    setFormData({
+      ...formData,
+      ingredients: [...formData.ingredients, ...newIngredients],
+    });
+    setUploadedFile(null);
+    setFilePreview([]);
+  };
+
+  // ── Render ──
 
   return (
     <div className="p-8">
+      {/* Header */}
       <div className="mb-8">
-        <h1 className="mb-2">Recipe & Product Management</h1>
-        <p className="text-muted-foreground">Define recipes with full ingredient tracking, costs, and expected output per batch</p>
+        <h1 className="text-2xl font-bold mb-2">Recipe & Product Management</h1>
+        <p className="text-muted-foreground">Define recipes with full ingredient tracking, costs, production flow, and expected output per batch</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Total Recipes</p>
-          <p className="text-2xl font-bold">{recipes.length}</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Recipes</p>
+              <p className="text-2xl font-bold">{totalRecipes}</p>
+            </div>
+          </div>
         </div>
         <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Active</p>
-          <p className="text-2xl font-bold text-green-600">{recipes.filter(r => r.status === 'active').length}</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Active</p>
+              <p className="text-2xl font-bold text-green-600">{activeRecipes}</p>
+            </div>
+          </div>
         </div>
         <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Avg Batch Cost</p>
-          <p className="text-2xl font-bold">KES {recipes.length > 0 ? (recipes.reduce((s, r) => s + calcBatchCost(r), 0) / recipes.length).toFixed(0) : 0}</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Avg Batch Cost</p>
+              <p className="text-2xl font-bold">KES {avgBatchCost.toFixed(0)}</p>
+            </div>
+          </div>
         </div>
         <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Categories</p>
-          <p className="text-2xl font-bold">{new Set(recipes.map(r => r.category)).size}</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Categories</p>
+              <p className="text-2xl font-bold">{uniqueCategories}</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="mb-6 flex justify-between items-center gap-4">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Search recipes..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-          />
+      {/* Search, Filter & Actions Bar */}
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-wrap gap-2">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <input
+              type="text"
+              placeholder="Search by name or code..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none w-64"
+            />
+          </div>
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
             className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none font-medium"
           >
             <option value="All">All Categories</option>
-            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <button
-          onClick={() => { setEditId(null); setFormData(emptyForm); setShowForm(true); }}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold"
+          onClick={() => { setEditId(null); setFormData(emptyForm); setUploadedFile(null); setFilePreview([]); setShowForm(true); }}
+          className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold flex items-center gap-2 shadow-sm"
         >
-          + New Recipe
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          New Recipe
         </button>
       </div>
 
-      {/* Create/Edit Form Modal */}
-      <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditId(null); }} title={editId ? 'Edit Recipe' : 'Create Recipe'} size="lg">
-        <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Recipe Name *</label>
-              <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Recipe Code *</label>
-              <input type="text" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required placeholder="e.g. WB-001" />
-            </div>
-          </div>
+      {/* DataTable */}
+      <div className="border border-border rounded-lg bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-secondary/70 border-b border-border">
+                <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Code</th>
+                <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Name</th>
+                <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Category</th>
+                <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Type</th>
+                <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Output</th>
+                <th className="px-4 py-3 text-center font-semibold text-muted-foreground">Ingredients</th>
+                <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Batch Cost</th>
+                <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Cost/Unit</th>
+                <th className="px-4 py-3 text-center font-semibold text-muted-foreground">Status</th>
+                <th className="px-4 py-3 text-center font-semibold text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
+                    <div className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+                      Loading recipes...
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedRecipes.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
+                    {searchTerm || filterCategory !== 'All'
+                      ? 'No recipes match your search or filter criteria.'
+                      : 'No recipes found. Create your first recipe to get started.'}
+                  </td>
+                </tr>
+              ) : (
+                paginatedRecipes.map((recipe, idx) => (
+                  <tr
+                    key={recipe.id}
+                    className={`border-b border-border hover:bg-secondary/30 transition-colors cursor-pointer ${idx % 2 === 0 ? '' : 'bg-secondary/10'}`}
+                    onClick={() => { setSelectedRecipe(recipe); setShowDetail(true); }}
+                  >
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs bg-secondary px-2 py-0.5 rounded">{recipe.code}</span>
+                    </td>
+                    <td className="px-4 py-3 font-medium">{recipe.name}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">{recipe.category}</span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{recipe.productType}</td>
+                    <td className="px-4 py-3 text-right font-medium">{recipe.expectedOutput} <span className="text-muted-foreground text-xs">{recipe.outputUnit}</span></td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-secondary text-xs font-bold">{recipe.ingredients.length}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium">KES {calcBatchCost(recipe).toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                    <td className="px-4 py-3 text-right font-medium text-primary">KES {calcCostPerUnit(recipe).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => toggleStatus(recipe)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                          recipe.status === 'active'
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {recipe.status === 'active' ? 'Active' : 'Inactive'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => { setSelectedRecipe(recipe); setShowDetail(true); }}
+                          className="p-1.5 rounded hover:bg-secondary transition-colors"
+                          title="View Details"
+                        >
+                          <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        </button>
+                        <button
+                          onClick={() => handleEdit(recipe)}
+                          className="p-1.5 rounded hover:bg-blue-50 transition-colors"
+                          title="Edit Recipe"
+                        >
+                          <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <button
+                          onClick={() => handleDuplicate(recipe)}
+                          className="p-1.5 rounded hover:bg-purple-50 transition-colors"
+                          title="Duplicate Recipe"
+                        >
+                          <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(recipe.id)}
+                          className="p-1.5 rounded hover:bg-red-50 transition-colors"
+                          title="Delete Recipe"
+                        >
+                          <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Category</label>
-              <select value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none">
-                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Product Type (Output)</label>
-              <select value={formData.productType} onChange={(e) => setFormData({ ...formData, productType: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none">
-                {PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Batch Multiplier</label>
-              <input type="number" min="1" value={formData.batchSize} onChange={(e) => setFormData({ ...formData, batchSize: parseInt(e.target.value) || 1 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Expected Output *</label>
-              <input type="number" min="1" value={formData.expectedOutput} onChange={(e) => setFormData({ ...formData, expectedOutput: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required placeholder="e.g. 10" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Output Unit</label>
-              <input type="text" value={formData.outputUnit} onChange={(e) => setFormData({ ...formData, outputUnit: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" placeholder="loaves, pieces, etc" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Prep Time (min)</label>
-              <input type="number" value={formData.prepTime} onChange={(e) => setFormData({ ...formData, prepTime: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Bake Time (min)</label>
-              <input type="number" value={formData.bakeTime} onChange={(e) => setFormData({ ...formData, bakeTime: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Bake Temp (°C)</label>
-              <input type="number" value={formData.bakeTemp} onChange={(e) => setFormData({ ...formData, bakeTemp: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
-            </div>
-          </div>
-
-          {/* Ingredients Section */}
-          <div className="border border-border rounded-lg p-4 bg-secondary/50">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-semibold">Ingredients (per single batch)</h3>
-              <button type="button" onClick={addIngredient} className="px-3 py-1 text-sm bg-primary text-primary-foreground rounded hover:opacity-90">
-                + Add Ingredient
+        {/* Pagination */}
+        {filtered.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary/30">
+            <p className="text-sm text-muted-foreground">
+              Showing <span className="font-medium">{(currentPage - 1) * ROWS_PER_PAGE + 1}</span> to{' '}
+              <span className="font-medium">{Math.min(currentPage * ROWS_PER_PAGE, filtered.length)}</span> of{' '}
+              <span className="font-medium">{filtered.length}</span> recipes
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-sm rounded border border-border hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                First
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm rounded border border-border hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                .reduce<(number | string)[]>((acc, p, i, arr) => {
+                  if (i > 0 && typeof arr[i - 1] === 'number' && (p as number) - (arr[i - 1] as number) > 1) {
+                    acc.push('...');
+                  }
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, i) =>
+                  typeof p === 'string' ? (
+                    <span key={`ellipsis-${i}`} className="px-2 py-1 text-sm text-muted-foreground">...</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p)}
+                      className={`px-3 py-1 text-sm rounded border ${
+                        currentPage === p
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'border-border hover:bg-secondary'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm rounded border border-border hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-sm rounded border border-border hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Last
               </button>
             </div>
-            {formData.ingredients.length === 0 && (
-              <p className="text-sm text-muted-foreground py-4 text-center">No ingredients added yet. Click &quot;+ Add Ingredient&quot; to start.</p>
-            )}
-            {formData.ingredients.map((ing, idx) => (
-              <div key={ing.id} className="grid grid-cols-12 gap-2 mb-2 items-end">
-                <div className="col-span-4">
-                  {idx === 0 && <label className="text-xs text-muted-foreground">Ingredient</label>}
-                  <input type="text" placeholder="e.g. Flour" value={ing.name} onChange={(e) => updateIngredient(idx, 'name', e.target.value)} className="w-full px-2 py-1.5 border border-border rounded text-sm" required />
-                </div>
-                <div className="col-span-2">
-                  {idx === 0 && <label className="text-xs text-muted-foreground">Qty</label>}
-                  <input type="number" step="0.1" placeholder="0" value={ing.quantity} onChange={(e) => updateIngredient(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border border-border rounded text-sm" required />
-                </div>
-                <div className="col-span-2">
-                  {idx === 0 && <label className="text-xs text-muted-foreground">Unit</label>}
-                  <select value={ing.unit} onChange={(e) => updateIngredient(idx, 'unit', e.target.value)} className="w-full px-2 py-1.5 border border-border rounded text-sm">
-                    {UNITS.map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div className="col-span-2">
-                  {idx === 0 && <label className="text-xs text-muted-foreground">Cost/unit</label>}
-                  <input type="number" step="0.01" placeholder="0" value={ing.costPerUnit} onChange={(e) => updateIngredient(idx, 'costPerUnit', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border border-border rounded text-sm" />
-                </div>
-                <div className="col-span-2 flex items-center gap-1">
-                  {idx === 0 && <label className="text-xs text-muted-foreground invisible">Subtotal</label>}
-                  <span className="text-xs font-medium w-14 text-right">{(ing.quantity * ing.costPerUnit).toFixed(1)}</span>
-                  <button type="button" onClick={() => removeIngredient(idx)} className="px-1.5 py-1 text-xs text-red-600 hover:text-red-800 font-bold">✕</button>
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* CREATE / EDIT RECIPE MODAL                                        */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <Modal
+        isOpen={showForm}
+        onClose={resetForm}
+        title={editId ? 'Edit Recipe' : 'Create New Recipe'}
+        size="3xl"
+      >
+        <form onSubmit={handleSubmit} className="max-h-[80vh] overflow-y-auto pr-2 space-y-6">
+
+          {/* ── Section 1: Basic Information (Blue) ── */}
+          <div className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-blue-500 text-white flex items-center justify-center text-sm font-bold">1</div>
+              <h3 className="font-bold text-blue-900 text-lg">Basic Information</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-blue-800">Recipe Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+                  required
+                  placeholder="e.g. Classic White Loaf"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-blue-800">Recipe Code *</label>
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white font-mono"
+                  required
+                  placeholder="e.g. WB-001"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-blue-800">Category</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+                >
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-blue-800">Product Type</label>
+                <select
+                  value={formData.productType}
+                  onChange={(e) => setFormData({ ...formData, productType: e.target.value })}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+                >
+                  {PRODUCT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-blue-800">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Section 2: Production Output (Green) ── */}
+          <div className="rounded-xl border-2 border-green-200 bg-green-50/50 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-green-500 text-white flex items-center justify-center text-sm font-bold">2</div>
+              <h3 className="font-bold text-green-900 text-lg">Production Output</h3>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-green-800">Batch Multiplier</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formData.batchSize}
+                  onChange={(e) => setFormData({ ...formData, batchSize: parseInt(e.target.value) || 1 })}
+                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-400 outline-none bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-green-800">Expected Output *</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formData.expectedOutput}
+                  onChange={(e) => setFormData({ ...formData, expectedOutput: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-400 outline-none bg-white"
+                  required
+                  placeholder="e.g. 10"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-green-800">Output Unit</label>
+                <input
+                  type="text"
+                  value={formData.outputUnit}
+                  onChange={(e) => setFormData({ ...formData, outputUnit: e.target.value })}
+                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-400 outline-none bg-white"
+                  placeholder="loaves, pieces, etc"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-green-800">Prep Time (min)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.prepTime}
+                  onChange={(e) => setFormData({ ...formData, prepTime: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-400 outline-none bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-green-800">Bake Time (min)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.bakeTime}
+                  onChange={(e) => setFormData({ ...formData, bakeTime: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-400 outline-none bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-green-800">Bake Temp (degC)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.bakeTemp}
+                  onChange={(e) => setFormData({ ...formData, bakeTemp: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-400 outline-none bg-white"
+                />
+              </div>
+            </div>
+            {/* Production Flow Summary */}
+            {formData.prepTime > 0 || formData.bakeTime > 0 ? (
+              <div className="mt-4 p-3 bg-green-100 rounded-lg">
+                <p className="text-sm font-medium text-green-800">Production Flow Summary</p>
+                <div className="flex items-center gap-2 mt-2 text-xs text-green-700">
+                  <span className="px-2 py-1 bg-white rounded">Prep: {formData.prepTime} min</span>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                  <span className="px-2 py-1 bg-white rounded">Bake: {formData.bakeTime} min @ {formData.bakeTemp}C</span>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                  <span className="px-2 py-1 bg-white rounded font-semibold">Output: {formData.expectedOutput} {formData.outputUnit}</span>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                  <span className="px-2 py-1 bg-white rounded">Total: {formData.prepTime + formData.bakeTime} min</span>
                 </div>
               </div>
-            ))}
-            {formData.ingredients.length > 0 && (
-              <div className="flex justify-between items-center mt-3 pt-3 border-t border-border">
-                <span className="text-sm font-medium">Total Batch Cost:</span>
-                <span className="text-sm font-bold">KES {calcBatchCost(formData).toFixed(2)}</span>
+            ) : null}
+          </div>
+
+          {/* ── Section 3: Ingredients (Amber/Orange) ── */}
+          <div className="rounded-xl border-2 border-amber-200 bg-amber-50/50 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center text-sm font-bold">3</div>
+                <h3 className="font-bold text-amber-900 text-lg">Ingredients & Costing</h3>
               </div>
+              <button
+                type="button"
+                onClick={addIngredient}
+                className="px-3 py-1.5 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Add Ingredient
+              </button>
+            </div>
+
+            {formData.ingredients.length === 0 ? (
+              <div className="text-center py-8 text-amber-700/60">
+                <svg className="w-12 h-12 mx-auto mb-2 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                <p className="text-sm font-medium">No ingredients added yet</p>
+                <p className="text-xs mt-1">Click &quot;Add Ingredient&quot; or upload a CSV/PDF below</p>
+              </div>
+            ) : (
+              <>
+                {/* Ingredients Table Header */}
+                <div className="grid grid-cols-12 gap-2 mb-2 px-1">
+                  <div className="col-span-3 text-xs font-semibold text-amber-800 uppercase">Ingredient</div>
+                  <div className="col-span-2 text-xs font-semibold text-amber-800 uppercase">Qty</div>
+                  <div className="col-span-1 text-xs font-semibold text-amber-800 uppercase">Unit</div>
+                  <div className="col-span-2 text-xs font-semibold text-amber-800 uppercase">Cost/Unit (KES)</div>
+                  <div className="col-span-2 text-xs font-semibold text-amber-800 uppercase">Sourcing</div>
+                  <div className="col-span-1 text-xs font-semibold text-amber-800 uppercase text-right">Subtotal</div>
+                  <div className="col-span-1"></div>
+                </div>
+
+                {formData.ingredients.map((ing, idx) => (
+                  <div key={ing.id} className="grid grid-cols-12 gap-2 mb-2 items-center">
+                    <div className="col-span-3">
+                      <input
+                        type="text"
+                        placeholder="e.g. Wheat Flour"
+                        value={ing.name}
+                        onChange={(e) => updateIngredient(idx, 'name', e.target.value)}
+                        className="w-full px-2 py-1.5 border border-amber-200 rounded text-sm bg-white focus:ring-2 focus:ring-amber-300 outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0"
+                        value={ing.quantity || ''}
+                        onChange={(e) => updateIngredient(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1.5 border border-amber-200 rounded text-sm bg-white focus:ring-2 focus:ring-amber-300 outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <select
+                        value={ing.unit}
+                        onChange={(e) => updateIngredient(idx, 'unit', e.target.value)}
+                        className="w-full px-1 py-1.5 border border-amber-200 rounded text-sm bg-white focus:ring-2 focus:ring-amber-300 outline-none"
+                      >
+                        {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={ing.costPerUnit || ''}
+                        onChange={(e) => updateIngredient(idx, 'costPerUnit', parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1.5 border border-amber-200 rounded text-sm bg-white focus:ring-2 focus:ring-amber-300 outline-none"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="text"
+                        placeholder="Supplier / note"
+                        value={ing.sourcingNote || ''}
+                        onChange={(e) => updateIngredient(idx, 'sourcingNote', e.target.value)}
+                        className="w-full px-2 py-1.5 border border-amber-200 rounded text-sm bg-white focus:ring-2 focus:ring-amber-300 outline-none text-xs"
+                      />
+                    </div>
+                    <div className="col-span-1 text-right text-sm font-medium text-amber-900">
+                      {(ing.quantity * ing.costPerUnit).toFixed(1)}
+                    </div>
+                    <div className="col-span-1 text-center">
+                      <button
+                        type="button"
+                        onClick={() => removeIngredient(idx)}
+                        className="p-1 rounded hover:bg-red-100 transition-colors"
+                        title="Remove ingredient"
+                      >
+                        <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Cost Summary */}
+                <div className="mt-4 p-4 bg-amber-100 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-semibold text-amber-900">Total Batch Cost:</span>
+                    <span className="text-lg font-bold text-amber-900">KES {calcBatchCost(formData).toFixed(2)}</span>
+                  </div>
+                  {formData.expectedOutput > 0 && (
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-sm font-semibold text-amber-900">Cost Per {formData.outputUnit || 'unit'}:</span>
+                      <span className="text-lg font-bold text-primary">KES {calcCostPerUnit(formData).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-xs text-amber-700">Ingredients count: {formData.ingredients.length}</span>
+                    <span className="text-xs text-amber-700">{formData.ingredients.filter(i => i.sourcingNote).length} with sourcing info</span>
+                  </div>
+                </div>
+              </>
             )}
-            {formData.ingredients.length > 0 && formData.expectedOutput > 0 && (
-              <div className="flex justify-between items-center mt-1">
-                <span className="text-sm font-medium">Cost Per {formData.outputUnit || 'unit'}:</span>
-                <span className="text-sm font-bold text-primary">KES {calcCostPerUnit(formData).toFixed(2)}</span>
+          </div>
+
+          {/* ── Section 4: File Upload (Violet/Purple) ── */}
+          <div className="rounded-xl border-2 border-violet-200 bg-violet-50/50 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-violet-500 text-white flex items-center justify-center text-sm font-bold">4</div>
+              <h3 className="font-bold text-violet-900 text-lg">Import Ingredients from File</h3>
+              <span className="text-xs px-2 py-0.5 bg-violet-200 text-violet-700 rounded-full font-medium ml-2">Optional</span>
+            </div>
+
+            {/* Drag & Drop Area */}
+            <div
+              className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+                isDragging
+                  ? 'border-violet-500 bg-violet-100'
+                  : 'border-violet-300 bg-white hover:border-violet-400'
+              }`}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleFileDrop}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.pdf"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <svg className="w-10 h-10 mx-auto mb-3 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+              {uploadedFile ? (
+                <div>
+                  <p className="text-sm font-medium text-violet-800">
+                    Selected: <span className="font-bold">{uploadedFile.name}</span>
+                  </p>
+                  <p className="text-xs text-violet-600 mt-1">
+                    {(uploadedFile.size / 1024).toFixed(1)} KB - {uploadedFile.type || 'unknown type'}
+                  </p>
+                  <div className="flex items-center justify-center gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={handleParseFile}
+                      className="px-4 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-sm font-medium"
+                    >
+                      Parse File
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setUploadedFile(null); setFilePreview([]); }}
+                      className="px-4 py-2 border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-100 text-sm font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm text-violet-700 font-medium">Drag and drop a CSV or PDF file here</p>
+                  <p className="text-xs text-violet-500 mt-1">Supported formats: .csv, .pdf</p>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="mt-3 px-4 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600 text-sm font-medium"
+                  >
+                    Browse Files
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Preview Table */}
+            {filePreview.length > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-violet-900">Extracted Data Preview ({filePreview.length} ingredients)</p>
+                  <button
+                    type="button"
+                    onClick={importParsedIngredients}
+                    className="px-3 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium flex items-center gap-1"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Import All to Recipe
+                  </button>
+                </div>
+                <div className="border border-violet-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-violet-100">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-violet-800">Ingredient</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-violet-800">Quantity</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-violet-800">Unit</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-violet-800">Cost/Unit (KES)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filePreview.map((row, idx) => (
+                        <tr key={idx} className={`border-t border-violet-100 ${idx % 2 === 0 ? '' : 'bg-violet-50/50'}`}>
+                          <td className="px-3 py-2 font-medium">{row.name}</td>
+                          <td className="px-3 py-2 text-right">{row.quantity}</td>
+                          <td className="px-3 py-2">{row.unit}</td>
+                          <td className="px-3 py-2 text-right">{row.costPerUnit}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Instructions</label>
-            <textarea value={formData.instructions} onChange={(e) => setFormData({ ...formData, instructions: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" rows={3} placeholder="Step-by-step preparation instructions..." />
+          {/* ── Section 5: Instructions (Teal) ── */}
+          <div className="rounded-xl border-2 border-teal-200 bg-teal-50/50 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-teal-500 text-white flex items-center justify-center text-sm font-bold">5</div>
+              <h3 className="font-bold text-teal-900 text-lg">Instructions</h3>
+            </div>
+            <textarea
+              value={formData.instructions}
+              onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
+              className="w-full px-3 py-2 border border-teal-200 rounded-lg focus:ring-2 focus:ring-teal-400 outline-none bg-white"
+              rows={5}
+              placeholder="Step-by-step preparation and baking instructions...&#10;&#10;1. Mix dry ingredients&#10;2. Add wet ingredients&#10;3. Knead dough for 10 minutes&#10;..."
+            />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Status</label>
-            <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none">
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-
-          <div className="flex gap-2 justify-end pt-4 border-t border-border">
-            <button type="button" onClick={() => { setShowForm(false); setEditId(null); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold">{editId ? 'Update' : 'Create'} Recipe</button>
+          {/* ── Form Actions ── */}
+          <div className="flex items-center gap-3 justify-end pt-4 border-t border-border sticky bottom-0 bg-card py-4">
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-5 py-2.5 border border-border rounded-lg hover:bg-secondary transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold shadow-sm flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              {editId ? 'Update Recipe' : 'Create Recipe'}
+            </button>
           </div>
         </form>
       </Modal>
 
-      {/* Recipe Detail Modal */}
-      <Modal isOpen={showDetail && !!selectedRecipe} onClose={() => { setShowDetail(false); setSelectedRecipe(null); }} title={selectedRecipe?.name || ''} size="lg">
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* RECIPE DETAIL MODAL                                               */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <Modal
+        isOpen={showDetail && !!selectedRecipe}
+        onClose={() => { setShowDetail(false); setSelectedRecipe(null); }}
+        title={selectedRecipe?.name || 'Recipe Details'}
+        size="3xl"
+      >
         {selectedRecipe && (
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div><p className="text-xs text-muted-foreground">Code</p><p className="font-medium">{selectedRecipe.code}</p></div>
-              <div><p className="text-xs text-muted-foreground">Category</p><p className="font-medium">{selectedRecipe.category}</p></div>
-              <div><p className="text-xs text-muted-foreground">Product Type</p><p className="font-medium">{selectedRecipe.productType}</p></div>
-              <div><p className="text-xs text-muted-foreground">Expected Output</p><p className="font-medium">{selectedRecipe.expectedOutput} {selectedRecipe.outputUnit}</p></div>
-              <div><p className="text-xs text-muted-foreground">Prep + Bake Time</p><p className="font-medium">{selectedRecipe.prepTime} + {selectedRecipe.bakeTime} min</p></div>
-              <div><p className="text-xs text-muted-foreground">Bake Temp</p><p className="font-medium">{selectedRecipe.bakeTemp}°C</p></div>
+          <div className="max-h-[80vh] overflow-y-auto pr-2 space-y-6">
+
+            {/* Top Info Bar */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="font-mono text-sm bg-secondary px-3 py-1 rounded">{selectedRecipe.code}</span>
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                selectedRecipe.status === 'active'
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-gray-100 text-gray-600'
+              }`}>
+                {selectedRecipe.status === 'active' ? 'Active' : 'Inactive'}
+              </span>
+              <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium">{selectedRecipe.category}</span>
+              <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium">{selectedRecipe.productType}</span>
             </div>
 
-            <div className="border border-border rounded-lg overflow-hidden">
-              <div className="bg-secondary px-4 py-2 font-semibold text-sm">Ingredients (per batch)</div>
+            {/* Key Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 rounded-xl bg-green-50 border border-green-200">
+                <p className="text-xs text-green-700 font-medium">Expected Output</p>
+                <p className="text-xl font-bold text-green-900">{selectedRecipe.expectedOutput} <span className="text-sm font-normal">{selectedRecipe.outputUnit}</span></p>
+              </div>
+              <div className="p-4 rounded-xl bg-blue-50 border border-blue-200">
+                <p className="text-xs text-blue-700 font-medium">Prep + Bake Time</p>
+                <p className="text-xl font-bold text-blue-900">{selectedRecipe.prepTime + selectedRecipe.bakeTime} <span className="text-sm font-normal">min</span></p>
+                <p className="text-xs text-blue-600 mt-0.5">{selectedRecipe.prepTime}m prep + {selectedRecipe.bakeTime}m bake</p>
+              </div>
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+                <p className="text-xs text-amber-700 font-medium">Batch Cost</p>
+                <p className="text-xl font-bold text-amber-900">KES {calcBatchCost(selectedRecipe).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+              <div className="p-4 rounded-xl bg-violet-50 border border-violet-200">
+                <p className="text-xs text-violet-700 font-medium">Cost per {selectedRecipe.outputUnit}</p>
+                <p className="text-xl font-bold text-violet-900">KES {calcCostPerUnit(selectedRecipe).toFixed(2)}</p>
+              </div>
+            </div>
+
+            {/* Production Flow */}
+            <div className="p-4 rounded-xl bg-secondary/50 border border-border">
+              <p className="text-sm font-semibold mb-3">Production Flow</p>
+              <div className="flex items-center gap-2 flex-wrap text-sm">
+                <span className="px-3 py-1.5 bg-blue-100 text-blue-800 rounded-lg font-medium">
+                  Prep: {selectedRecipe.prepTime} min
+                </span>
+                <svg className="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                <span className="px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg font-medium">
+                  Bake: {selectedRecipe.bakeTime} min @ {selectedRecipe.bakeTemp}C
+                </span>
+                <svg className="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                <span className="px-3 py-1.5 bg-green-100 text-green-800 rounded-lg font-medium">
+                  Output: {selectedRecipe.expectedOutput} {selectedRecipe.outputUnit}
+                </span>
+              </div>
+            </div>
+
+            {/* Ingredients Table */}
+            <div className="border border-border rounded-xl overflow-hidden">
+              <div className="bg-amber-50 px-4 py-3 border-b border-amber-200 flex items-center justify-between">
+                <span className="font-semibold text-amber-900">Ingredients ({selectedRecipe.ingredients.length})</span>
+                <span className="text-xs text-amber-700">Per single batch (x{selectedRecipe.batchSize})</span>
+              </div>
               <table className="w-full text-sm">
-                <thead className="bg-secondary/50">
+                <thead className="bg-amber-50/50">
                   <tr>
-                    <th className="px-4 py-2 text-left">Ingredient</th>
-                    <th className="px-4 py-2 text-right">Quantity</th>
-                    <th className="px-4 py-2 text-left">Unit</th>
-                    <th className="px-4 py-2 text-right">Cost/Unit</th>
-                    <th className="px-4 py-2 text-right">Subtotal</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">#</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Ingredient</th>
+                    <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Quantity</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Unit</th>
+                    <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Cost/Unit (KES)</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Sourcing</th>
+                    <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Subtotal (KES)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedRecipe.ingredients.map(ing => (
-                    <tr key={ing.id} className="border-t border-border">
-                      <td className="px-4 py-2 font-medium">{ing.name}</td>
-                      <td className="px-4 py-2 text-right">{ing.quantity}</td>
-                      <td className="px-4 py-2">{ing.unit}</td>
-                      <td className="px-4 py-2 text-right">{ing.costPerUnit.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-right font-medium">{(ing.quantity * ing.costPerUnit).toFixed(2)}</td>
+                  {selectedRecipe.ingredients.map((ing, idx) => (
+                    <tr key={ing.id} className={`border-t border-border ${idx % 2 === 0 ? '' : 'bg-secondary/20'}`}>
+                      <td className="px-4 py-2.5 text-muted-foreground">{idx + 1}</td>
+                      <td className="px-4 py-2.5 font-medium">{ing.name}</td>
+                      <td className="px-4 py-2.5 text-right">{ing.quantity}</td>
+                      <td className="px-4 py-2.5">{ing.unit}</td>
+                      <td className="px-4 py-2.5 text-right">{ing.costPerUnit.toFixed(2)}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{ing.sourcingNote || '-'}</td>
+                      <td className="px-4 py-2.5 text-right font-medium">{(ing.quantity * ing.costPerUnit).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="bg-secondary/50 font-semibold">
+                <tfoot className="bg-amber-50 font-semibold border-t-2 border-amber-200">
                   <tr>
-                    <td colSpan={4} className="px-4 py-2 text-right">Total Batch Cost:</td>
-                    <td className="px-4 py-2 text-right">KES {calcBatchCost(selectedRecipe).toFixed(2)}</td>
+                    <td colSpan={6} className="px-4 py-2.5 text-right text-amber-900">Total Batch Cost:</td>
+                    <td className="px-4 py-2.5 text-right text-amber-900">KES {calcBatchCost(selectedRecipe).toFixed(2)}</td>
                   </tr>
                   <tr>
-                    <td colSpan={4} className="px-4 py-2 text-right">Cost per {selectedRecipe.outputUnit}:</td>
-                    <td className="px-4 py-2 text-right text-primary">KES {calcCostPerUnit(selectedRecipe).toFixed(2)}</td>
+                    <td colSpan={6} className="px-4 py-2.5 text-right text-primary">Cost per {selectedRecipe.outputUnit}:</td>
+                    <td className="px-4 py-2.5 text-right text-primary font-bold">KES {calcCostPerUnit(selectedRecipe).toFixed(2)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
 
+            {/* Instructions */}
             {selectedRecipe.instructions && (
-              <div>
-                <p className="text-sm font-semibold mb-1">Instructions</p>
-                <p className="text-sm text-muted-foreground whitespace-pre-line">{selectedRecipe.instructions}</p>
+              <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-5">
+                <p className="font-semibold mb-2 text-teal-900">Preparation Instructions</p>
+                <p className="text-sm text-teal-800 whitespace-pre-line leading-relaxed">{selectedRecipe.instructions}</p>
               </div>
             )}
+
+            {/* Detail Modal Actions */}
+            <div className="flex items-center gap-2 pt-4 border-t border-border">
+              <button
+                onClick={() => { setShowDetail(false); handleEdit(selectedRecipe); }}
+                className="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 font-medium text-sm flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Edit
+              </button>
+              <button
+                onClick={() => { setShowDetail(false); handleDuplicate(selectedRecipe); }}
+                className="px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 font-medium text-sm flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                Duplicate
+              </button>
+              <button
+                onClick={() => { setShowDetail(false); handleDelete(selectedRecipe.id); }}
+                className="px-4 py-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 font-medium text-sm flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                Delete
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={() => { setShowDetail(false); setSelectedRecipe(null); }}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm"
+              >
+                Close
+              </button>
+            </div>
           </div>
         )}
       </Modal>
-
-      {/* Recipe Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filtered.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-muted-foreground">No recipes found. Create your first recipe to get started.</div>
-        ) : (
-          filtered.map(recipe => (
-            <div key={recipe.id} className="border border-border rounded-lg bg-card hover:shadow-md transition-shadow">
-              <div className="p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h3 className="font-semibold">{recipe.name}</h3>
-                    <p className="text-xs text-muted-foreground">{recipe.code}</p>
-                  </div>
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${recipe.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {recipe.status === 'active' ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-
-                <div className="flex gap-2 mb-3">
-                  <span className="px-2 py-0.5 bg-secondary rounded text-xs">{recipe.category}</span>
-                  <span className="px-2 py-0.5 bg-secondary rounded text-xs">{recipe.productType}</span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 text-center mb-3">
-                  <div className="bg-secondary/50 rounded p-2">
-                    <p className="text-xs text-muted-foreground">Output</p>
-                    <p className="text-sm font-bold">{recipe.expectedOutput} {recipe.outputUnit}</p>
-                  </div>
-                  <div className="bg-secondary/50 rounded p-2">
-                    <p className="text-xs text-muted-foreground">Ingredients</p>
-                    <p className="text-sm font-bold">{recipe.ingredients.length}</p>
-                  </div>
-                  <div className="bg-secondary/50 rounded p-2">
-                    <p className="text-xs text-muted-foreground">Batch Cost</p>
-                    <p className="text-sm font-bold">KES {calcBatchCost(recipe).toFixed(0)}</p>
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground mb-3">
-                  <span className="font-medium">Key ingredients:</span>{' '}
-                  {recipe.ingredients.slice(0, 4).map(i => `${i.name} (${i.quantity}${i.unit})`).join(', ')}
-                  {recipe.ingredients.length > 4 && ` +${recipe.ingredients.length - 4} more`}
-                </div>
-              </div>
-
-              <div className="px-4 py-3 border-t border-border flex gap-2">
-                <button onClick={() => { setSelectedRecipe(recipe); setShowDetail(true); }} className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium">View</button>
-                <button onClick={() => handleEdit(recipe)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button>
-                <button onClick={() => handleDuplicate(recipe)} className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded hover:bg-purple-200 font-medium">Duplicate</button>
-                <button onClick={() => handleDelete(recipe.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 }
