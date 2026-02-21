@@ -230,4 +230,3 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
     </div>
   );
 }
-
