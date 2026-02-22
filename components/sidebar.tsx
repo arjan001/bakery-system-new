@@ -30,6 +30,8 @@ import {
   BarChart3,
   Settings,
   User,
+  ScrollText,
+  Receipt,
   LucideIcon,
 } from 'lucide-react';
 
@@ -123,6 +125,7 @@ export function Sidebar() {
       title: 'FINANCE',
       color: 'border-l-rose-500',
       items: [
+        { label: 'Expenses', href: '/admin/expenses', tip: 'Track & manage business expenses', icon: Receipt },
         { label: 'Debtors', href: '/admin/debtors', tip: 'Track credit sales & customer debts', icon: TrendingDown },
         { label: 'Creditors', href: '/admin/creditors', tip: 'Supplier credit & payment schedules', icon: CreditCard },
       ],
@@ -140,6 +143,7 @@ export function Sidebar() {
       color: 'border-l-gray-400',
       items: [
         { label: 'Reports & Ledger', href: '/admin/reports', tip: 'Financial reports, P&L, sales, debtors, creditors & ledger', icon: BarChart3 },
+        { label: 'Audit Logs', href: '/admin/audit-logs', tip: 'Track system activity, user actions & access logs', icon: ScrollText },
         { label: 'Settings', href: '/admin/settings', tip: 'System config, receipt, theme & security', icon: Settings },
       ],
     },
