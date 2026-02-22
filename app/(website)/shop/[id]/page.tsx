@@ -4,7 +4,7 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/lib/cart-context';
-import { getProduct, getRelated, products } from '@/lib/products';
+import { getProduct, products } from '@/lib/products';
 import { ShoppingBag, Minus, Plus, ChevronRight, Star, Truck, RotateCcw, Shield } from 'lucide-react';
 
 export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +31,6 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
     );
   }
 
-  const related = getRelated(product, 4);
   const savings = product.originalPrice ? product.originalPrice - product.price : 0;
 
   const handleAddToCart = () => {
@@ -196,36 +195,6 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
           </div>
         </div>
 
-        {/* Related products */}
-        {related.length > 0 && (
-          <div className="mt-16">
-            <div className="flex items-end justify-between mb-6">
-              <h2 className="text-2xl font-black text-gray-900">You May Also Like</h2>
-              <Link href={`/shop?category=${product.category}`} className="text-sm font-bold text-gray-500 hover:text-orange-600">
-                View all →
-              </Link>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-              {related.map(p => (
-                <div key={p.id} className="group cursor-pointer" onClick={() => router.push(`/shop/${p.id}`)}>
-                  <div className="relative rounded-2xl overflow-hidden aspect-square bg-gray-50 mb-3">
-                    <img src={p.image} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    {p.isSale && p.originalPrice && (
-                      <div className="absolute top-0 right-0 overflow-hidden w-16 h-16">
-                        <div className="absolute top-3 -right-4 bg-red-500 text-white text-[8px] font-black py-0.5 w-20 text-center rotate-45">SALE</div>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-sm font-semibold text-gray-800 truncate">{p.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-sm font-black text-orange-600">KES {p.price.toLocaleString()}</span>
-                    {p.originalPrice && <span className="text-xs text-gray-400 line-through">KES {p.originalPrice.toLocaleString()}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
