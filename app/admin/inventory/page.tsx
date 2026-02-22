@@ -19,9 +19,20 @@ interface InventoryItem {
   unit: string;
   unitCost: number;
   reorderLevel: number;
+  reorderQty: number;
+  autoReorder: boolean;
   supplier: string;
   distributorId: string;
   lastRestocked: string;
+}
+
+interface InventoryTransaction {
+  id: string;
+  itemId: string;
+  type: 'intake' | 'output';
+  quantity: number;
+  reference: string;
+  createdAt: string;
 }
 
 interface InventoryType {
@@ -39,12 +50,17 @@ interface InventoryCategory {
 export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [distributors, setDistributors] = useState<Distributor[]>([]);
+  const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+  const [showStockModal, setShowStockModal] = useState<{ item: InventoryItem; type: 'intake' | 'output' } | null>(null);
+  const [stockQty, setStockQty] = useState(0);
+  const [stockRef, setStockRef] = useState('');
 
   const fetchInventory = useCallback(async () => {
     const { data } = await supabase.from('inventory_items').select('*').order('created_at', { ascending: false });
-    if (data && data.length > 0) setInventory(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryItem['type'], category: (r.category || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'kg') as string, unitCost: (r.unit_cost || 0) as number, reorderLevel: (r.reorder_level || 0) as number, supplier: (r.supplier || '') as string, distributorId: (r.distributor_id || '') as string, lastRestocked: (r.last_restocked || '') as string })));
+    if (data && data.length > 0) setInventory(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryItem['type'], category: (r.category || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'kg') as string, unitCost: (r.unit_cost || 0) as number, reorderLevel: (r.reorder_level || 0) as number, reorderQty: (r.reorder_qty || 0) as number, autoReorder: Boolean(r.auto_reorder), supplier: (r.supplier || '') as string, distributorId: (r.distributor_id || '') as string, lastRestocked: (r.last_restocked || '') as string })));
   }, []);
 
   const fetchDistributors = useCallback(async () => {
@@ -52,7 +68,24 @@ export default function InventoryPage() {
     if (data) setDistributors(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, category: (r.category || '') as string })));
   }, []);
 
-  useEffect(() => { fetchInventory(); fetchDistributors(); }, [fetchInventory, fetchDistributors]);
+  const fetchTransactions = useCallback(async () => {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('inventory_transactions')
+      .select('*')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false });
+    if (data) setTransactions(data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      itemId: (r.item_id || '') as string,
+      type: (r.type || 'output') as 'intake' | 'output',
+      quantity: (r.quantity || 0) as number,
+      reference: (r.reference || '') as string,
+      createdAt: (r.created_at || '') as string,
+    })));
+  }, []);
+
+  useEffect(() => { fetchInventory(); fetchDistributors(); fetchTransactions(); }, [fetchInventory, fetchDistributors, fetchTransactions]);
 
   const [inventoryTypes] = useState<InventoryType[]>([
     { id: '1', name: 'Consumable', description: 'Items used up in production' },
@@ -82,6 +115,8 @@ export default function InventoryPage() {
     unit: 'kg',
     unitCost: 0,
     reorderLevel: 0,
+    reorderQty: 0,
+    autoReorder: false,
     supplier: '',
     distributorId: '',
     lastRestocked: new Date().toISOString().split('T')[0],
@@ -93,9 +128,37 @@ export default function InventoryPage() {
     type: 'Consumable',
   });
 
+  // Calculate daily usage rate from transactions (last 30 days)
+  const getDailyUsage = (itemId: string): number => {
+    const itemTxns = transactions.filter(t => t.itemId === itemId && t.type === 'output');
+    if (itemTxns.length === 0) return 0;
+    const totalUsed = itemTxns.reduce((sum, t) => sum + t.quantity, 0);
+    return Math.round((totalUsed / 30) * 10) / 10;
+  };
+
+  // Estimate days until stock runs out
+  const getDaysRemaining = (item: InventoryItem): number | null => {
+    const dailyUsage = getDailyUsage(item.id);
+    if (dailyUsage <= 0) return null;
+    return Math.floor(item.quantity / dailyUsage);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const row = { name: formData.name, type: formData.type, category: formData.category, quantity: formData.quantity, unit: formData.unit, unit_cost: formData.unitCost, reorder_level: formData.reorderLevel, supplier: formData.supplier, distributor_id: formData.distributorId || null, last_restocked: formData.lastRestocked || null };
+    const row = {
+      name: formData.name,
+      type: formData.type,
+      category: formData.category,
+      quantity: formData.quantity,
+      unit: formData.unit,
+      unit_cost: formData.unitCost,
+      reorder_level: formData.reorderLevel,
+      reorder_qty: formData.reorderQty,
+      auto_reorder: formData.autoReorder,
+      supplier: formData.supplier,
+      distributor_id: formData.distributorId || null,
+      last_restocked: formData.lastRestocked || null,
+    };
     try {
       if (editingId) await supabase.from('inventory_items').update(row).eq('id', editingId);
       else await supabase.from('inventory_items').insert(row);
@@ -122,6 +185,8 @@ export default function InventoryPage() {
       unit: 'kg',
       unitCost: 0,
       reorderLevel: 0,
+      reorderQty: 0,
+      autoReorder: false,
       supplier: '',
       distributorId: '',
       lastRestocked: new Date().toISOString().split('T')[0],
@@ -147,8 +212,43 @@ export default function InventoryPage() {
     }
   };
 
+  // Record stock intake or output
+  const handleStockTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showStockModal || stockQty <= 0) return;
+
+    const item = showStockModal.item;
+    const txnType = showStockModal.type;
+    const newQty = txnType === 'intake' ? item.quantity + stockQty : Math.max(0, item.quantity - stockQty);
+
+    try {
+      // Record the transaction
+      await supabase.from('inventory_transactions').insert({
+        item_id: item.id,
+        type: txnType,
+        quantity: stockQty,
+        reference: stockRef || (txnType === 'intake' ? 'Stock replenishment' : 'Production usage'),
+      });
+
+      // Update inventory quantity
+      const updateData: Record<string, unknown> = { quantity: newQty };
+      if (txnType === 'intake') {
+        updateData.last_restocked = new Date().toISOString().split('T')[0];
+      }
+      await supabase.from('inventory_items').update(updateData).eq('id', item.id);
+
+      await fetchInventory();
+      await fetchTransactions();
+    } catch { /* fallback */ }
+
+    setShowStockModal(null);
+    setStockQty(0);
+    setStockRef('');
+  };
+
   const filteredInventory = filterType === 'All' ? inventory : inventory.filter(i => i.type === filterType);
-  const lowStockCount = inventory.filter(i => i.quantity <= i.reorderLevel).length;
+  const lowStockConsumables = inventory.filter(i => i.type === 'Consumable' && i.reorderLevel > 0 && i.quantity <= i.reorderLevel);
+  const lowStockCount = inventory.filter(i => i.quantity <= i.reorderLevel && i.reorderLevel > 0).length;
   const totalValue = inventory.reduce((sum, i) => sum + (i.quantity * i.unitCost), 0);
   const totalPages = Math.ceil(filteredInventory.length / itemsPerPage);
   const paginatedInventory = filteredInventory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -161,6 +261,63 @@ export default function InventoryPage() {
         <p className="text-muted-foreground">Track consumable and non-consumable inventory with categories</p>
       </div>
 
+      {/* Reorder Alert Banner for Consumables */}
+      {lowStockConsumables.filter(i => !dismissedAlerts.has(i.id)).length > 0 && (
+        <div className="mb-6 border-2 border-red-200 bg-red-50 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-red-600 text-lg">!!!</span>
+              <h3 className="font-bold text-red-800">Reorder Alert — Consumable Items Low on Stock</h3>
+            </div>
+            <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">
+              {lowStockConsumables.filter(i => !dismissedAlerts.has(i.id)).length} item(s)
+            </span>
+          </div>
+          <div className="space-y-2">
+            {lowStockConsumables.filter(i => !dismissedAlerts.has(i.id)).map(item => {
+              const dailyUsage = getDailyUsage(item.id);
+              const daysLeft = getDaysRemaining(item);
+              return (
+                <div key={item.id} className="flex items-center justify-between bg-white border border-red-100 rounded-lg px-4 py-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm text-red-800">{item.name}</span>
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">{item.category}</span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-1 text-xs text-gray-600">
+                      <span>Current: <strong className="text-red-700">{item.quantity} {item.unit}</strong></span>
+                      <span>Reorder Level: <strong>{item.reorderLevel} {item.unit}</strong></span>
+                      {dailyUsage > 0 && <span>Avg Daily Usage: <strong>{dailyUsage} {item.unit}/day</strong></span>}
+                      {daysLeft !== null && (
+                        <span className={`font-semibold ${daysLeft <= 3 ? 'text-red-700' : daysLeft <= 7 ? 'text-orange-600' : 'text-gray-700'}`}>
+                          ~{daysLeft} days remaining
+                        </span>
+                      )}
+                      {item.autoReorder && <span className="text-blue-600 font-semibold">Auto-reorder ON</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => { setShowStockModal({ item, type: 'intake' }); setStockQty(item.reorderQty || item.reorderLevel); }}
+                      className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                    >
+                      Restock Now
+                    </button>
+                    <button
+                      onClick={() => setDismissedAlerts(prev => new Set([...prev, item.id]))}
+                      className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600"
+                      title="Dismiss"
+                    >
+                      x
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="border border-border rounded-lg p-4">
           <p className="text-sm text-muted-foreground">Total Items</p>
@@ -172,7 +329,10 @@ export default function InventoryPage() {
         </div>
         <div className="border border-border rounded-lg p-4">
           <p className="text-sm text-muted-foreground">Low Stock Items</p>
-          <p className={`text-2xl font-bold ${lowStockCount > 0 ? 'text-orange-600' : 'text-green-600'}`}>{lowStockCount}</p>
+          <p className={`text-2xl font-bold ${lowStockCount > 0 ? 'text-red-600' : 'text-green-600'}`}>{lowStockCount}</p>
+          {lowStockCount > 0 && (
+            <p className="text-xs text-red-500 mt-1">{lowStockConsumables.length} consumable(s) need reorder</p>
+          )}
         </div>
       </div>
 
@@ -204,7 +364,7 @@ export default function InventoryPage() {
           <div className="mb-6 flex justify-between items-center">
             <select
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value as any)}
+              onChange={(e) => setFilterType(e.target.value as 'All' | 'Consumable' | 'Non-Consumable')}
               className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none font-medium"
             >
               <option>All</option>
@@ -223,6 +383,7 @@ export default function InventoryPage() {
             </button>
           </div>
 
+          {/* Add/Edit Inventory Item Modal */}
           <Modal isOpen={showForm} onClose={() => setShowForm(false)} title={editingId ? 'Edit Item' : 'Add Inventory Item'} size="lg">
             <form onSubmit={handleSubmit} className="space-y-4">
               <input
@@ -237,7 +398,7 @@ export default function InventoryPage() {
               <div className="grid grid-cols-2 gap-4">
                 <select
                   value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value as 'Consumable' | 'Non-Consumable' })}
                   className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                 >
                   <option>Consumable</option>
@@ -295,21 +456,79 @@ export default function InventoryPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  placeholder="Reorder Level"
-                  value={formData.reorderLevel}
-                  onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
-                  className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                />
+              {/* Reorder Settings — shown prominently for Consumable items */}
+              {formData.type === 'Consumable' ? (
+                <div className="border-2 border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-blue-800">Consumable Reorder Settings</h4>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.autoReorder}
+                        onChange={(e) => setFormData({ ...formData, autoReorder: e.target.checked })}
+                        className="w-4 h-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-xs font-semibold text-blue-700">Auto-Reorder Alert</span>
+                    </label>
+                  </div>
+                  <p className="text-xs text-blue-600">
+                    Set the reorder level to get alerts when stock falls below the threshold. The system tracks intake/output to estimate when you will need to restock.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-blue-800 mb-1">Reorder Level ({formData.unit})</label>
+                      <input
+                        type="number"
+                        placeholder="Min stock before alert"
+                        value={formData.reorderLevel}
+                        onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-blue-800 mb-1">Reorder Quantity ({formData.unit})</label>
+                      <input
+                        type="number"
+                        placeholder="How much to reorder"
+                        value={formData.reorderQty}
+                        onChange={(e) => setFormData({ ...formData, reorderQty: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+                      />
+                    </div>
+                  </div>
+                  {formData.autoReorder && formData.reorderLevel > 0 && (
+                    <p className="text-xs text-blue-700 bg-blue-100 px-3 py-2 rounded">
+                      Alert will trigger when stock drops to or below <strong>{formData.reorderLevel} {formData.unit}</strong>.
+                      {formData.reorderQty > 0 && <> Suggested reorder: <strong>{formData.reorderQty} {formData.unit}</strong>.</>}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <input
+                    type="number"
+                    placeholder="Reorder Level"
+                    value={formData.reorderLevel}
+                    onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
+                    className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                  />
+                  <input
+                    type="date"
+                    value={formData.lastRestocked}
+                    onChange={(e) => setFormData({ ...formData, lastRestocked: e.target.value })}
+                    className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                  />
+                </div>
+              )}
+
+              {formData.type === 'Consumable' && (
                 <input
                   type="date"
                   value={formData.lastRestocked}
                   onChange={(e) => setFormData({ ...formData, lastRestocked: e.target.value })}
-                  className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                 />
-              </div>
+              )}
 
               <input
                 type="text"
@@ -342,6 +561,56 @@ export default function InventoryPage() {
             </form>
           </Modal>
 
+          {/* Stock Intake/Output Modal */}
+          <Modal isOpen={!!showStockModal} onClose={() => { setShowStockModal(null); setStockQty(0); setStockRef(''); }} title={showStockModal?.type === 'intake' ? `Restock: ${showStockModal?.item.name}` : `Record Usage: ${showStockModal?.item.name}`} size="sm">
+            <form onSubmit={handleStockTransaction} className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                Current stock: <strong>{showStockModal?.item.quantity} {showStockModal?.item.unit}</strong>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">
+                  {showStockModal?.type === 'intake' ? 'Quantity to Add' : 'Quantity Used'}
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={stockQty}
+                  onChange={(e) => setStockQty(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">Reference / Notes</label>
+                <input
+                  type="text"
+                  value={stockRef}
+                  onChange={(e) => setStockRef(e.target.value)}
+                  placeholder={showStockModal?.type === 'intake' ? 'e.g. Supplier delivery' : 'e.g. Morning production batch'}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                />
+              </div>
+              {showStockModal?.type === 'intake' && (
+                <p className="text-xs text-green-600">
+                  New stock will be: <strong>{(showStockModal?.item.quantity || 0) + stockQty} {showStockModal?.item.unit}</strong>
+                </p>
+              )}
+              {showStockModal?.type === 'output' && (
+                <p className="text-xs text-orange-600">
+                  Remaining stock will be: <strong>{Math.max(0, (showStockModal?.item.quantity || 0) - stockQty)} {showStockModal?.item.unit}</strong>
+                </p>
+              )}
+              <div className="flex gap-2 justify-end pt-4 border-t border-border">
+                <button type="button" onClick={() => { setShowStockModal(null); setStockQty(0); setStockRef(''); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">
+                  Cancel
+                </button>
+                <button type="submit" className={`px-4 py-2 text-white rounded-lg hover:opacity-90 ${showStockModal?.type === 'intake' ? 'bg-green-600' : 'bg-orange-600'}`}>
+                  {showStockModal?.type === 'intake' ? 'Add Stock' : 'Record Usage'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
           <div className="border border-border rounded-lg overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-secondary border-b border-border">
@@ -351,8 +620,8 @@ export default function InventoryPage() {
                   <th className="px-4 py-3 text-left font-semibold">Category</th>
                   <th className="px-4 py-3 text-left font-semibold">Quantity</th>
                   <th className="px-4 py-3 text-left font-semibold">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold">Usage/Day</th>
                   <th className="px-4 py-3 text-left font-semibold">Unit Cost</th>
-                  <th className="px-4 py-3 text-left font-semibold">Total Value</th>
                   <th className="px-4 py-3 text-left font-semibold">Distributor</th>
                   <th className="px-4 py-3 text-left font-semibold">Actions</th>
                 </tr>
@@ -366,10 +635,17 @@ export default function InventoryPage() {
                   </tr>
                 ) : (
                   paginatedInventory.map(item => {
-                    const isLowStock = item.quantity <= item.reorderLevel;
+                    const isLowStock = item.reorderLevel > 0 && item.quantity <= item.reorderLevel;
+                    const dailyUsage = getDailyUsage(item.id);
+                    const daysLeft = getDaysRemaining(item);
                     return (
-                      <tr key={item.id} className="border-b border-border hover:bg-secondary/50">
-                        <td className="px-4 py-3 font-medium">{item.name}</td>
+                      <tr key={item.id} className={`border-b border-border hover:bg-secondary/50 ${isLowStock ? 'bg-red-50/50' : ''}`}>
+                        <td className="px-4 py-3 font-medium">
+                          {item.name}
+                          {item.autoReorder && item.type === 'Consumable' && (
+                            <span className="ml-1 text-[10px] text-blue-600 font-semibold" title="Auto-reorder enabled">AUTO</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-sm">
                           <span className={`px-2 py-1 rounded text-xs font-semibold ${
                             item.type === 'Consumable' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
@@ -385,17 +661,46 @@ export default function InventoryPage() {
                           }`}>
                             {isLowStock ? 'Low Stock' : 'OK'}
                           </span>
+                          {isLowStock && daysLeft !== null && (
+                            <span className="block text-[10px] text-red-600 mt-0.5">~{daysLeft}d left</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {item.type === 'Consumable' && dailyUsage > 0 ? (
+                            <span>{dailyUsage} {item.unit}/day</span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">{item.unitCost}</td>
-                        <td className="px-4 py-3 font-medium">{(item.quantity * item.unitCost).toLocaleString()}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">{getDistributorName(item.distributorId) || item.supplier || '—'}</td>
-                        <td className="px-4 py-3 flex gap-2">
-                          <button onClick={() => handleEdit(item)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">
-                            Edit
-                          </button>
-                          <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">
-                            Delete
-                          </button>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1 flex-wrap">
+                            {item.type === 'Consumable' && (
+                              <>
+                                <button
+                                  onClick={() => { setShowStockModal({ item, type: 'intake' }); setStockQty(item.reorderQty || 0); }}
+                                  className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200"
+                                  title="Record stock intake"
+                                >
+                                  +In
+                                </button>
+                                <button
+                                  onClick={() => setShowStockModal({ item, type: 'output' })}
+                                  className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded hover:bg-orange-200"
+                                  title="Record stock output/usage"
+                                >
+                                  -Out
+                                </button>
+                              </>
+                            )}
+                            <button onClick={() => handleEdit(item)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">
+                              Edit
+                            </button>
+                            <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -446,7 +751,7 @@ export default function InventoryPage() {
               />
               <select
                 value={categoryForm.type}
-                onChange={(e) => setCategoryForm({ ...categoryForm, type: e.target.value as any })}
+                onChange={(e) => setCategoryForm({ ...categoryForm, type: e.target.value as 'Consumable' | 'Non-Consumable' })}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
               >
                 <option>Consumable</option>

@@ -83,7 +83,36 @@ function getQueryUrl(env: string) {
     : 'https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query';
 }
 
+// Safely parse JSON from a fetch response, handling empty or non-JSON bodies
+async function safeJsonParse(response: Response): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  const status = response.status;
+  const text = await response.text();
+
+  if (!text || text.trim().length === 0) {
+    return {
+      ok: response.ok,
+      status,
+      data: { error: `Empty response from API (HTTP ${status})` },
+    };
+  }
+
+  try {
+    const data = JSON.parse(text);
+    return { ok: response.ok, status, data };
+  } catch {
+    return {
+      ok: false,
+      status,
+      data: { error: `Invalid JSON response from API (HTTP ${status}): ${text.substring(0, 200)}` },
+    };
+  }
+}
+
 async function getAccessToken(config: Record<string, string>): Promise<string> {
+  if (!config.consumer_key || !config.consumer_secret) {
+    throw new Error('M-Pesa consumer key and secret are not configured. Please set MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET in your environment variables or admin settings.');
+  }
+
   const auth = Buffer.from(
     `${config.consumer_key}:${config.consumer_secret}`
   ).toString('base64');
@@ -93,8 +122,14 @@ async function getAccessToken(config: Record<string, string>): Promise<string> {
     headers: { Authorization: `Basic ${auth}` },
   });
 
-  const data = await response.json();
-  return data.access_token;
+  const result = await safeJsonParse(response);
+
+  if (!result.ok || !result.data.access_token) {
+    const errMsg = result.data.error || result.data.errorMessage || result.data.error_description || `Authentication failed (HTTP ${result.status})`;
+    throw new Error(`M-Pesa auth failed: ${errMsg}`);
+  }
+
+  return result.data.access_token as string;
 }
 
 function generateTimestamp(): string {
@@ -141,6 +176,14 @@ export async function POST(request: NextRequest) {
     }
 
     const config = await getMpesaConfig();
+
+    if (!config.consumer_key || !config.consumer_secret) {
+      return NextResponse.json(
+        { success: false, message: 'M-Pesa API credentials are not configured. Please set them in Admin Settings.' },
+        { status: 500 }
+      );
+    }
+
     const formattedPhone = formatPhone(phone);
     const accessToken = await getAccessToken(config);
     const timestamp = generateTimestamp();
@@ -173,7 +216,15 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(stkPayload),
     });
 
-    const data = await response.json();
+    const result = await safeJsonParse(response);
+    const data = result.data;
+
+    if (!result.ok && data.error) {
+      return NextResponse.json(
+        { success: false, message: `M-Pesa API error: ${data.error}` },
+        { status: 502 }
+      );
+    }
 
     if (data.ResponseCode === '0') {
       // Store the transaction in Supabase for tracking
@@ -203,7 +254,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       return NextResponse.json(
-        { success: false, message: data.errorMessage || data.CustomerMessage || 'STK Push failed', data },
+        { success: false, message: (data.errorMessage || data.CustomerMessage || 'STK Push failed') as string, data },
         { status: 400 }
       );
     }
@@ -326,7 +377,16 @@ async function handleStkQuery(checkoutRequestId: string) {
       }),
     });
 
-    const data = await response.json();
+    const result = await safeJsonParse(response);
+    const data = result.data;
+
+    if (!result.ok && data.error) {
+      return NextResponse.json({
+        success: false,
+        status: 'pending',
+        message: `Unable to verify payment: ${data.error}`,
+      });
+    }
 
     if (data.ResultCode === '0' || data.ResultCode === 0) {
       return NextResponse.json({
@@ -338,7 +398,7 @@ async function handleStkQuery(checkoutRequestId: string) {
       return NextResponse.json({
         success: false,
         status: data.ResultCode === '1032' ? 'cancelled' : 'pending',
-        message: data.ResultDesc || 'Payment pending',
+        message: (data.ResultDesc || 'Payment pending') as string,
       });
     }
   } catch (error) {

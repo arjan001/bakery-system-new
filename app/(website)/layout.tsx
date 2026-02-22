@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { CartProvider, useCart } from '@/lib/cart-context';
-import { products } from '@/lib/products';
 import { supabase } from '@/lib/supabase';
 import { ShoppingBag, Search, User, Heart, X, Plus, Minus, Menu, ChevronRight } from 'lucide-react';
 
@@ -177,8 +176,6 @@ function CartDrawer() {
   const remaining = Math.max(0, freeDeliveryThreshold - total);
   const progress = Math.min(100, (total / freeDeliveryThreshold) * 100);
 
-  const suggested = products.filter(p => !items.find(i => i.id === p.id) && p.inStock).slice(0, 3);
-
   return (
     <>
       {/* Backdrop */}
@@ -249,23 +246,6 @@ function CartDrawer() {
             ))
           )}
 
-          {/* You may also like */}
-          {items.length > 0 && suggested.length > 0 && (
-            <div className="border-t border-gray-100 pt-4">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">You may also like</p>
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {suggested.map(p => (
-                  <div key={p.id} className="shrink-0 w-28">
-                    <div className="w-28 h-28 rounded-xl overflow-hidden bg-gray-50 mb-1.5">
-                      <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
-                    </div>
-                    <p className="text-xs font-semibold text-gray-700 truncate">{p.name}</p>
-                    <p className="text-xs text-orange-600 font-bold">KES {p.price.toLocaleString()}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
