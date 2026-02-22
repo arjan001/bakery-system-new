@@ -259,6 +259,8 @@ CREATE TABLE IF NOT EXISTS pricing_tiers (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   product_code TEXT,
   product_name TEXT NOT NULL,
+  recipe_id UUID REFERENCES recipes(id) ON DELETE SET NULL,
+  recipe_name TEXT,
   cost DECIMAL DEFAULT 0,
   base_price DECIMAL DEFAULT 0,
   wholesale_price DECIMAL DEFAULT 0,
@@ -267,6 +269,16 @@ CREATE TABLE IF NOT EXISTS pricing_tiers (
   active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration: Add recipe_id and recipe_name if they don't already exist
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'pricing_tiers' AND column_name = 'recipe_id') THEN
+    ALTER TABLE pricing_tiers ADD COLUMN recipe_id UUID REFERENCES recipes(id) ON DELETE SET NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'pricing_tiers' AND column_name = 'recipe_name') THEN
+    ALTER TABLE pricing_tiers ADD COLUMN recipe_name TEXT;
+  END IF;
+END $$;
 
 -- =============================================
 -- 11. PRODUCTION RUNS
