@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Sidebar } from '@/components/sidebar';
 import { Header } from '@/components/header';
+import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
 import { UserPermissionsProvider, useUserPermissions, getAllowedRoutes } from '@/lib/user-permissions';
 import { Loader2 } from 'lucide-react';
 
@@ -97,6 +98,7 @@ export default function AdminLayout({
   return (
     <UserPermissionsProvider>
       <AdminContent>{children}</AdminContent>
+      <PwaInstallPrompt />
     </UserPermissionsProvider>
   );
 }

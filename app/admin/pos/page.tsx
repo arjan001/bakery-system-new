@@ -26,17 +26,51 @@ function loadSettings() {
   return null;
 }
 
+// ── Session persistence helpers ──
+const POS_SESSION_KEY = 'snackoh_pos_session';
+
+interface PosSession {
+  shiftStarted: boolean;
+  openingBalance: number;
+  totalSalesCount: number;
+  totalSalesAmount: number;
+  cashierName: string;
+  startedAt: string;
+  heldOrders: HeldOrder[];
+}
+
+function saveSession(session: PosSession) {
+  try { localStorage.setItem(POS_SESSION_KEY, JSON.stringify(session)); } catch { /* ignore */ }
+}
+
+function loadSession(): PosSession | null {
+  try {
+    const saved = localStorage.getItem(POS_SESSION_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.shiftStarted) return parsed;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function clearSession() {
+  try { localStorage.removeItem(POS_SESSION_KEY); } catch { /* ignore */ }
+}
+
 export default function POSPage() {
   // ── Auth (login disabled — anyone can use POS) ──
   const [loggedCashier] = useState('Cashier');
 
   // ── Opening / Closing Balance ──
-  const [showOpeningBalance, setShowOpeningBalance] = useState(true);
+  // Check for existing session on mount
+  const existingSession = typeof window !== 'undefined' ? loadSession() : null;
+  const [showOpeningBalance, setShowOpeningBalance] = useState(!existingSession);
   const [showClosingBalance, setShowClosingBalance] = useState(false);
-  const [openingBalance, setOpeningBalance] = useState(0);
+  const [openingBalance, setOpeningBalance] = useState(existingSession?.openingBalance ?? 0);
   const [openingBalanceInput, setOpeningBalanceInput] = useState('');
   const [closingNotes, setClosingNotes] = useState('');
-  const [shiftStarted, setShiftStarted] = useState(false);
+  const [shiftStarted, setShiftStarted] = useState(existingSession?.shiftStarted ?? false);
 
   // ── Settings ──
   const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>({
@@ -107,9 +141,9 @@ export default function POSPage() {
     loadSettingsFromDb();
   }, []);
 
-  // ── Sales Totals ──
-  const [totalSalesCount, setTotalSalesCount] = useState(0);
-  const [totalSalesAmount, setTotalSalesAmount] = useState(0);
+  // ── Sales Totals (restore from session) ──
+  const [totalSalesCount, setTotalSalesCount] = useState(existingSession?.totalSalesCount ?? 0);
+  const [totalSalesAmount, setTotalSalesAmount] = useState(existingSession?.totalSalesAmount ?? 0);
 
   // ── Products ──
   const [products, setProducts] = useState<Product[]>([]);
@@ -124,8 +158,8 @@ export default function POSPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
 
-  // ── Held Orders ──
-  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
+  // ── Held Orders (restore from session) ──
+  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>(existingSession?.heldOrders ?? []);
   const [showHeld, setShowHeld] = useState(false);
 
   // ── Payment ──
@@ -178,6 +212,21 @@ export default function POSPage() {
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
   }, []);
 
+  // ── Persist session state across navigation ──
+  useEffect(() => {
+    if (shiftStarted) {
+      saveSession({
+        shiftStarted,
+        openingBalance,
+        totalSalesCount,
+        totalSalesAmount,
+        cashierName: loggedCashier,
+        startedAt: existingSession?.startedAt || new Date().toISOString(),
+        heldOrders,
+      });
+    }
+  }, [shiftStarted, openingBalance, totalSalesCount, totalSalesAmount, heldOrders, loggedCashier]);
+
   // Totals
   const taxRate = generalSettings.taxRate / 100;
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -210,17 +259,30 @@ export default function POSPage() {
   const holdOrder = () => {
     if (cartItems.length === 0) return;
     const held: HeldOrder = { id: Date.now().toString(), name: selectedCustomer.name, items: [...cartItems], customer: selectedCustomer, saleType, time: new Date().toLocaleTimeString() };
-    setHeldOrders([...heldOrders, held]);
+    const newHeld = [...heldOrders, held];
+    setHeldOrders(newHeld);
     setCartItems([]);
   };
   const recallOrder = (held: HeldOrder) => {
+    // If there are items in the cart, confirm before replacing
+    if (cartItems.length > 0 && !confirm('You have items in the cart. Replace them with the recalled order?')) return;
     setCartItems(held.items);
     setSelectedCustomer(held.customer);
     setSaleType(held.saleType as 'Retail' | 'Wholesale');
     setHeldOrders(heldOrders.filter(h => h.id !== held.id));
     setShowHeld(false);
   };
-  const deleteHeld = (id: string) => setHeldOrders(heldOrders.filter(h => h.id !== id));
+  const cancelOrder = () => {
+    if (cartItems.length === 0) return;
+    if (confirm('Cancel current order and clear the cart?')) {
+      setCartItems([]);
+    }
+  };
+  const deleteHeld = (id: string) => {
+    if (confirm('Delete this held order?')) {
+      setHeldOrders(heldOrders.filter(h => h.id !== id));
+    }
+  };
 
   // ── Customer ──
   const handleCustomerChange = (cid: string) => {
@@ -550,7 +612,7 @@ export default function POSPage() {
             <div className="flex justify-between text-xs"><span className="text-muted-foreground">VAT ({generalSettings.taxRate}%)</span><span>{cur} {tax.toFixed(0)}</span></div>
             <div className="flex justify-between text-base font-bold border-t border-border pt-1.5"><span>Total</span><span className="text-primary">{cur} {total.toLocaleString()}</span></div>
             <div className="grid grid-cols-2 gap-2 pt-2">
-              <button onClick={clearCart} className="px-3 py-2 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Clear</button>
+              <button onClick={cancelOrder} className="px-3 py-2 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 text-xs font-medium">Cancel Order</button>
               <button onClick={openCheckout} disabled={cartItems.length === 0} className="px-3 py-2 bg-primary text-primary-foreground rounded-xl hover:opacity-90 disabled:opacity-40 font-bold text-xs">Checkout</button>
             </div>
           </div>
@@ -933,6 +995,8 @@ export default function POSPage() {
                 setOpeningBalanceInput('');
                 setOpeningBalance(0);
                 setClosingNotes('');
+                setHeldOrders([]);
+                clearSession();
               }}
               className="flex-1 px-3 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 font-bold text-xs"
             >
