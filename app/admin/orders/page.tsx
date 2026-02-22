@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { ShoppingBag, Globe, PhoneCall, CheckCircle, XCircle, CreditCard, Truck, Clock } from 'lucide-react';
+import { ShoppingBag, Globe, PhoneCall, CheckCircle, XCircle, CreditCard, Truck, Clock, Eye, MapPin, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
 interface OrderItem {
@@ -30,6 +30,19 @@ interface Order {
   rejectionReason?: string;
 }
 
+interface CustomerLocation {
+  name: string;
+  phone: string;
+  location: string;
+  address: string;
+  gpsLat: number;
+  gpsLng: number;
+  landmark: string;
+  deliveryInstructions: string;
+  type: string;
+  isRegistered: boolean;
+}
+
 type Tab = 'regular' | 'online' | 'oncall';
 
 export default function OrdersPage() {
@@ -43,9 +56,11 @@ export default function OrdersPage() {
   const [showConfirmModal, setShowConfirmModal] = useState<Order | null>(null);
   const [showRejectModal, setShowRejectModal] = useState<Order | null>(null);
   const [showDetailModal, setShowDetailModal] = useState<Order | null>(null);
+  const [detailCustomerLocation, setDetailCustomerLocation] = useState<CustomerLocation | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('All');
+  const [filterOnlineStatus, setFilterOnlineStatus] = useState<string>('All');
   const [rejectReason, setRejectReason] = useState('');
   const [confirmPayment, setConfirmPayment] = useState<Order['paymentStatus']>('Pay on Delivery');
   const [confirmFulfillment, setConfirmFulfillment] = useState<Order['fulfillment']>('Delivery');
@@ -114,6 +129,58 @@ export default function OrdersPage() {
   const onCallOrders  = orders.filter(o => o.source === 'OnCall');
 
   const pendingOnline = onlineOrders.filter(o => o.status === 'Pending').length;
+
+  // Fetch customer location for detail modal
+  const fetchCustomerLocation = useCallback(async (order: Order) => {
+    if (!order.customerPhone && !order.customerName) {
+      setDetailCustomerLocation(null);
+      return;
+    }
+    // Try to find by phone first, then by name
+    let customer = null;
+    if (order.customerPhone) {
+      const { data } = await supabase.from('customers').select('*').eq('phone', order.customerPhone).limit(1).single();
+      customer = data;
+    }
+    if (!customer && order.customerName) {
+      const { data } = await supabase.from('customers').select('*').eq('name', order.customerName).limit(1).single();
+      customer = data;
+    }
+
+    if (customer) {
+      setDetailCustomerLocation({
+        name: (customer.name || '') as string,
+        phone: (customer.phone || '') as string,
+        location: (customer.location || '') as string,
+        address: (customer.address || '') as string,
+        gpsLat: (customer.gps_lat || 0) as number,
+        gpsLng: (customer.gps_lng || 0) as number,
+        landmark: (customer.landmark || '') as string,
+        deliveryInstructions: (customer.delivery_instructions || '') as string,
+        type: (customer.type || '') as string,
+        isRegistered: true,
+      });
+    } else {
+      // Walk-in customer — only delivery notes available
+      setDetailCustomerLocation({
+        name: order.customerName,
+        phone: order.customerPhone,
+        location: '',
+        address: '',
+        gpsLat: 0,
+        gpsLng: 0,
+        landmark: '',
+        deliveryInstructions: order.deliveryNotes || '',
+        type: 'Walk-in',
+        isRegistered: false,
+      });
+    }
+  }, []);
+
+  const openDetailModal = (order: Order) => {
+    setShowDetailModal(order);
+    fetchCustomerLocation(order);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,11 +254,18 @@ export default function OrdersPage() {
   const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    // Update detail modal if open
+    if (showDetailModal && showDetailModal.id === orderId) {
+      setShowDetailModal({ ...showDetailModal, status: newStatus });
+    }
   };
 
   const handleAssignDriver = async (orderId: string, driver: string) => {
     await supabase.from('orders').update({ assigned_driver: driver, status: 'Shipped' }).eq('id', orderId);
     setOrders(orders.map(o => o.id === orderId ? { ...o, assignedDriver: driver, status: 'Shipped' } : o));
+    if (showDetailModal && showDetailModal.id === orderId) {
+      setShowDetailModal({ ...showDetailModal, assignedDriver: driver, status: 'Shipped' });
+    }
     setShowTracking(false);
   };
 
@@ -203,9 +277,14 @@ export default function OrdersPage() {
       payment_status: confirmPayment,
       fulfillment: confirmFulfillment,
     }).eq('id', showConfirmModal.id);
-    setOrders(orders.map(o => o.id === showConfirmModal.id
-      ? { ...o, status: 'Confirmed', paymentStatus: confirmPayment, fulfillment: confirmFulfillment }
-      : o));
+    const updated = orders.map(o => o.id === showConfirmModal.id
+      ? { ...o, status: 'Confirmed' as const, paymentStatus: confirmPayment, fulfillment: confirmFulfillment }
+      : o);
+    setOrders(updated);
+    // Update detail modal if open
+    if (showDetailModal && showDetailModal.id === showConfirmModal.id) {
+      setShowDetailModal({ ...showDetailModal, status: 'Confirmed', paymentStatus: confirmPayment, fulfillment: confirmFulfillment });
+    }
     setShowConfirmModal(null);
   };
 
@@ -215,9 +294,13 @@ export default function OrdersPage() {
       status: 'Rejected',
       rejection_reason: rejectReason,
     }).eq('id', showRejectModal.id);
-    setOrders(orders.map(o => o.id === showRejectModal.id
-      ? { ...o, status: 'Rejected', rejectionReason: rejectReason }
-      : o));
+    const updated = orders.map(o => o.id === showRejectModal.id
+      ? { ...o, status: 'Rejected' as const, rejectionReason: rejectReason }
+      : o);
+    setOrders(updated);
+    if (showDetailModal && showDetailModal.id === showRejectModal.id) {
+      setShowDetailModal({ ...showDetailModal, status: 'Rejected', rejectionReason: rejectReason });
+    }
     setShowRejectModal(null);
     setRejectReason('');
   };
@@ -257,10 +340,11 @@ export default function OrdersPage() {
   };
 
   const filteredRegular = regularOrders.filter(o => filterStatus === 'All' || o.status === filterStatus);
+  const filteredOnline  = onlineOrders.filter(o => filterOnlineStatus === 'All' || o.status === filterOnlineStatus);
   const filteredOnCall  = onCallOrders.filter(o => filterStatus === 'All' || o.status === filterStatus);
 
   // ── Shared Order Row renderer ──
-  const OrderRow = ({ order, showActions = true }: { order: Order; showActions?: boolean }) => (
+  const OrderRow = ({ order }: { order: Order }) => (
     <tr className="border-b border-border hover:bg-secondary/50 transition-colors">
       <td className="px-4 py-3 font-mono text-xs font-semibold">{order.orderNumber}</td>
       <td className="px-4 py-3">
@@ -275,27 +359,73 @@ export default function OrdersPage() {
       <td className="px-4 py-3">
         <span className={`px-2 py-1 rounded text-xs font-semibold ${getPaymentColor(order.paymentStatus)}`}>{order.paymentStatus}</span>
       </td>
-      <td className="px-4 py-3 text-xs text-muted-foreground">{order.dueDate || '—'}</td>
-      {showActions && (
-        <td className="px-4 py-3">
-          <div className="flex gap-1 flex-wrap">
-            <button onClick={() => setShowDetailModal(order)}
-              className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium">View</button>
-            <button onClick={() => handleEdit(order)}
-              className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button>
-            {order.status === 'Ready' && (
-              <button onClick={() => { setSelectedOrderId(order.id); setShowTracking(true); }}
-                className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded hover:bg-orange-200 font-medium">Assign</button>
-            )}
-            <button onClick={() => handleDelete(order.id)}
-              className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button>
-          </div>
-        </td>
-      )}
+      <td className="px-4 py-3 text-xs text-muted-foreground">{order.dueDate || '\u2014'}</td>
+      <td className="px-4 py-3">
+        <div className="flex gap-1 items-center">
+          <button onClick={() => openDetailModal(order)}
+            title="View Order Details"
+            className="p-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors">
+            <Eye size={15} />
+          </button>
+          <button onClick={() => handleEdit(order)}
+            className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button>
+          {order.status === 'Ready' && (
+            <button onClick={() => { setSelectedOrderId(order.id); setShowTracking(true); }}
+              className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded hover:bg-orange-200 font-medium">Assign</button>
+          )}
+          <button onClick={() => handleDelete(order.id)}
+            className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button>
+        </div>
+      </td>
     </tr>
   );
 
-  const TableHead = ({ showActions = true }: { showActions?: boolean }) => (
+  // ── Online Order Row with eye icon ──
+  const OnlineOrderRow = ({ order }: { order: Order }) => (
+    <tr className={`border-b border-border hover:bg-secondary/50 transition-colors ${order.status === 'Pending' ? 'bg-blue-50/40' : ''}`}>
+      <td className="px-4 py-3 font-mono text-xs font-semibold">{order.orderNumber}</td>
+      <td className="px-4 py-3">
+        <p className="font-medium text-sm">{order.customerName}</p>
+        <p className="text-xs text-muted-foreground">{order.customerPhone}</p>
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex flex-wrap gap-1">
+          {order.items.slice(0, 3).map((item, i) => (
+            <span key={i} className="text-xs px-1.5 py-0.5 bg-secondary rounded">
+              {item.quantity}x {item.productName}
+            </span>
+          ))}
+          {order.items.length > 3 && (
+            <span className="text-xs text-muted-foreground">+{order.items.length - 3} more</span>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-3 font-semibold text-sm">KES {order.total.toLocaleString()}</td>
+      <td className="px-4 py-3">
+        <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(order.status)}`}>{order.status}</span>
+      </td>
+      <td className="px-4 py-3">
+        <span className={`px-2 py-1 rounded text-xs font-semibold ${getPaymentColor(order.paymentStatus)}`}>{order.paymentStatus}</span>
+      </td>
+      <td className="px-4 py-3">
+        {order.fulfillment && (
+          <span className="px-2 py-1 rounded text-xs font-semibold bg-secondary text-secondary-foreground">
+            {order.fulfillment === 'Delivery' ? 'Delivery' : 'Pickup'}
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-xs text-muted-foreground">{order.orderDate || '\u2014'}</td>
+      <td className="px-4 py-3">
+        <button onClick={() => openDetailModal(order)}
+          title="View Order Details"
+          className="p-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">
+          <Eye size={15} />
+        </button>
+      </td>
+    </tr>
+  );
+
+  const TableHead = () => (
     <thead className="bg-secondary border-b border-border">
       <tr>
         <th className="px-4 py-3 text-left font-semibold text-sm">Order #</th>
@@ -305,7 +435,23 @@ export default function OrdersPage() {
         <th className="px-4 py-3 text-left font-semibold text-sm">Status</th>
         <th className="px-4 py-3 text-left font-semibold text-sm">Payment</th>
         <th className="px-4 py-3 text-left font-semibold text-sm">Due Date</th>
-        {showActions && <th className="px-4 py-3 text-left font-semibold text-sm">Actions</th>}
+        <th className="px-4 py-3 text-left font-semibold text-sm">Actions</th>
+      </tr>
+    </thead>
+  );
+
+  const OnlineTableHead = () => (
+    <thead className="bg-secondary border-b border-border">
+      <tr>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Order #</th>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Customer</th>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Items</th>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Total</th>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Status</th>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Payment</th>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Fulfilment</th>
+        <th className="px-4 py-3 text-left font-semibold text-sm">Date</th>
+        <th className="px-4 py-3 text-center font-semibold text-sm">View</th>
       </tr>
     </thead>
   );
@@ -314,7 +460,7 @@ export default function OrdersPage() {
     <div className="p-8">
       <div className="mb-6">
         <h1 className="mb-1">Order Management</h1>
-        <p className="text-muted-foreground">Regular orders, online orders, and on-call orders — all in one place</p>
+        <p className="text-muted-foreground">Regular orders, online orders, and on-call orders &mdash; all in one place</p>
       </div>
 
       {/* Stats */}
@@ -345,7 +491,7 @@ export default function OrdersPage() {
           return (
             <button
               key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setFilterStatus('All'); }}
+              onClick={() => { setActiveTab(tab.id); setFilterStatus('All'); setFilterOnlineStatus('All'); }}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-colors relative ${
                 isActive
                   ? 'border-primary text-primary'
@@ -414,14 +560,24 @@ export default function OrdersPage() {
           <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-5 py-3 flex gap-3 items-start">
             <Globe size={18} className="text-blue-600 mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-blue-800">Online Orders — from your website</p>
+              <p className="text-sm font-semibold text-blue-800">Online Orders &mdash; from your website</p>
               <p className="text-xs text-blue-700 mt-0.5">
-                These orders come in from your public website. <strong>Confirm</strong> to approve and proceed to fulfilment, or <strong>Reject</strong> if you can&apos;t fulfil the order. After confirming, set whether the customer has paid or will pay on delivery.
+                Click the <Eye size={12} className="inline mx-0.5" /> eye icon to view full order details, confirm, reject, or manage fulfilment.
               </p>
             </div>
           </div>
 
-          {onlineOrders.length === 0 ? (
+          {/* Status filter */}
+          <div className="mb-4">
+            <select value={filterOnlineStatus} onChange={e => setFilterOnlineStatus(e.target.value)}
+              className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none">
+              {['All', 'Pending', 'Confirmed', 'Processing', 'Ready', 'Shipped', 'Delivered', 'Rejected', 'Cancelled'].map(s => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          {filteredOnline.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-border rounded-xl">
               <Globe size={36} className="text-muted-foreground/30 mb-3" />
               <p className="font-semibold text-muted-foreground">No online orders yet</p>
@@ -430,85 +586,13 @@ export default function OrdersPage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {onlineOrders.map(order => (
-                <div key={order.id} className={`border rounded-xl p-4 bg-card ${order.status === 'Pending' ? 'border-blue-300 bg-blue-50/30' : 'border-border'}`}>
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono font-bold text-sm">{order.orderNumber}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${getStatusColor(order.status)}`}>{order.status}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${getPaymentColor(order.paymentStatus)}`}>{order.paymentStatus}</span>
-                        {order.fulfillment && (
-                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-secondary text-secondary-foreground">
-                            {order.fulfillment === 'Delivery' ? '🚚 Delivery' : '🏪 Pickup'}
-                          </span>
-                        )}
-                      </div>
-                      <p className="font-semibold">{order.customerName}</p>
-                      <p className="text-xs text-muted-foreground">{order.customerPhone} &bull; {order.orderDate}</p>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {order.items.map((item, i) => (
-                          <span key={i} className="text-xs px-2 py-0.5 bg-secondary rounded">
-                            {item.quantity}× {item.productName}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="text-sm font-bold mt-2">Total: KES {order.total.toLocaleString()}</p>
-                      {order.rejectionReason && (
-                        <p className="text-xs text-red-600 mt-1">Rejected: {order.rejectionReason}</p>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-2 items-end shrink-0">
-                      {order.status === 'Pending' && (
-                        <>
-                          <button
-                            onClick={() => { setShowConfirmModal(order); setConfirmPayment('Pay on Delivery'); setConfirmFulfillment('Delivery'); }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-semibold"
-                          >
-                            <CheckCircle size={13} /> Confirm Order
-                          </button>
-                          <button
-                            onClick={() => { setShowRejectModal(order); setRejectReason(''); }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs font-semibold"
-                          >
-                            <XCircle size={13} /> Reject
-                          </button>
-                        </>
-                      )}
-                      {order.status === 'Confirmed' && (
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleStatusChange(order.id, 'Processing')}
-                            className="px-3 py-1.5 text-xs bg-indigo-100 text-indigo-800 rounded-lg hover:bg-indigo-200 font-semibold"
-                          >
-                            → Processing
-                          </button>
-                          <button
-                            onClick={() => handleStatusChange(order.id, 'Ready')}
-                            className="px-3 py-1.5 text-xs bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 font-semibold"
-                          >
-                            → Ready
-                          </button>
-                        </div>
-                      )}
-                      {order.status === 'Ready' && (
-                        <button
-                          onClick={() => { setSelectedOrderId(order.id); setShowTracking(true); }}
-                          className="flex items-center gap-1.5 px-3 py-2 bg-orange-100 text-orange-800 rounded-lg hover:bg-orange-200 text-xs font-semibold"
-                        >
-                          <Truck size={13} /> Assign Driver
-                        </button>
-                      )}
-                      <button onClick={() => setShowDetailModal(order)}
-                        className="px-3 py-1.5 text-xs bg-secondary text-foreground rounded-lg hover:bg-secondary/70 font-medium">
-                        View Details
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+              <table className="w-full text-sm">
+                <OnlineTableHead />
+                <tbody>
+                  {filteredOnline.map(o => <OnlineOrderRow key={o.id} order={o} />)}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -667,7 +751,7 @@ export default function OrdersPage() {
                     onChange={e => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
                     className="w-24 px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
                   {formData.items.length > 1 && (
-                    <button type="button" onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700 text-xs font-bold px-1">✕</button>
+                    <button type="button" onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700 text-xs font-bold px-1">&times;</button>
                   )}
                 </div>
               ))}
@@ -696,7 +780,7 @@ export default function OrdersPage() {
 
       {/* ── Assign Driver Modal ── */}
       <Modal isOpen={showTracking && !!selectedOrder} onClose={() => setShowTracking(false)}
-        title={`Assign Driver — ${selectedOrder?.orderNumber}`} size="sm">
+        title={`Assign Driver \u2014 ${selectedOrder?.orderNumber}`} size="sm">
         <div className="space-y-4">
           <div className="bg-secondary rounded-lg p-3 text-sm">
             <p className="font-semibold">{selectedOrder?.customerName}</p>
@@ -707,10 +791,10 @@ export default function OrdersPage() {
             <label className="text-sm font-medium block mb-2">Select Driver</label>
             <select onChange={e => handleAssignDriver(selectedOrderId!, e.target.value)}
               className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" defaultValue="">
-              <option value="">Choose a driver…</option>
+              <option value="">Choose a driver&hellip;</option>
               {drivers.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
-            {drivers.length === 0 && <p className="text-xs text-muted-foreground mt-1">No drivers found. Add employees with category "Driver".</p>}
+            {drivers.length === 0 && <p className="text-xs text-muted-foreground mt-1">No drivers found. Add employees with category &quot;Driver&quot;.</p>}
           </div>
           <button onClick={() => setShowTracking(false)}
             className="w-full px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm">Cancel</button>
@@ -733,9 +817,9 @@ export default function OrdersPage() {
               </label>
               <div className="grid grid-cols-1 gap-2">
                 {([
-                  { v: 'Paid' as const, label: '✅ Already Paid (online)', desc: 'Customer paid via card or M-Pesa online' },
-                  { v: 'Pay on Delivery' as const, label: '💵 Pay on Delivery (Cash)', desc: 'Customer pays in cash upon delivery/pickup' },
-                  { v: 'M-Pesa Pending' as const, label: '📱 M-Pesa on Delivery', desc: 'We send STK push when delivering' },
+                  { v: 'Paid' as const, label: 'Already Paid (online)', desc: 'Customer paid via card or M-Pesa online' },
+                  { v: 'Pay on Delivery' as const, label: 'Pay on Delivery (Cash)', desc: 'Customer pays in cash upon delivery/pickup' },
+                  { v: 'M-Pesa Pending' as const, label: 'M-Pesa on Delivery', desc: 'We send STK push when delivering' },
                 ]).map(opt => (
                   <button key={opt.v} type="button" onClick={() => setConfirmPayment(opt.v)}
                     className={`text-left px-3 py-2.5 rounded-lg border-2 transition-colors ${confirmPayment === opt.v ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}>
@@ -754,7 +838,7 @@ export default function OrdersPage() {
                 {(['Delivery', 'Pickup'] as const).map(f => (
                   <button key={f} type="button" onClick={() => setConfirmFulfillment(f)}
                     className={`flex-1 py-2 rounded-lg border-2 text-sm font-semibold transition-colors ${confirmFulfillment === f ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:border-primary/40'}`}>
-                    {f === 'Delivery' ? '🚚 Delivery' : '🏪 Pickup'}
+                    {f === 'Delivery' ? 'Delivery' : 'Pickup'}
                   </button>
                 ))}
               </div>
@@ -765,7 +849,7 @@ export default function OrdersPage() {
                 className="flex-1 px-3 py-2 border border-border rounded-lg hover:bg-secondary text-sm">Cancel</button>
               <button onClick={handleConfirmOrder}
                 className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold text-sm">
-                ✓ Confirm Order
+                Confirm Order
               </button>
             </div>
           </div>
@@ -785,7 +869,7 @@ export default function OrdersPage() {
               <label className="block text-sm font-medium mb-1">Reason for rejection</label>
               <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" rows={3}
-                placeholder="e.g. Out of stock, delivery area not covered, order incomplete…" />
+                placeholder="e.g. Out of stock, delivery area not covered, order incomplete..." />
             </div>
             <div className="flex gap-2">
               <button onClick={() => setShowRejectModal(null)}
@@ -799,51 +883,248 @@ export default function OrdersPage() {
         )}
       </Modal>
 
-      {/* ── Order Detail Modal ── */}
-      <Modal isOpen={!!showDetailModal} onClose={() => setShowDetailModal(null)}
-        title={showDetailModal?.orderNumber || ''} size="md">
+      {/* ── Enhanced Order Detail Modal ── */}
+      <Modal isOpen={!!showDetailModal} onClose={() => { setShowDetailModal(null); setDetailCustomerLocation(null); }}
+        title={`Order Details \u2014 ${showDetailModal?.orderNumber || ''}`} size="xl">
         {showDetailModal && (
-          <div className="space-y-3 max-h-[70vh] overflow-y-auto text-sm">
-            <div className="grid grid-cols-2 gap-3">
-              <div><span className="text-muted-foreground">Customer:</span><strong className="ml-2">{showDetailModal.customerName}</strong></div>
-              <div><span className="text-muted-foreground">Phone:</span><strong className="ml-2">{showDetailModal.customerPhone || '—'}</strong></div>
-              <div><span className="text-muted-foreground">Status:</span><span className={`ml-2 px-2 py-0.5 rounded text-xs font-bold ${getStatusColor(showDetailModal.status)}`}>{showDetailModal.status}</span></div>
-              <div><span className="text-muted-foreground">Payment:</span><span className={`ml-2 px-2 py-0.5 rounded text-xs font-bold ${getPaymentColor(showDetailModal.paymentStatus)}`}>{showDetailModal.paymentStatus}</span></div>
-              <div><span className="text-muted-foreground">Source:</span><strong className="ml-2">{showDetailModal.source}</strong></div>
-              <div><span className="text-muted-foreground">Fulfilment:</span><strong className="ml-2">{showDetailModal.fulfillment}</strong></div>
-              <div><span className="text-muted-foreground">Order Date:</span><strong className="ml-2">{showDetailModal.orderDate || '—'}</strong></div>
-              <div><span className="text-muted-foreground">Due Date:</span><strong className="ml-2">{showDetailModal.dueDate || '—'}</strong></div>
-              {showDetailModal.assignedDriver && <div className="col-span-2"><span className="text-muted-foreground">Driver:</span><strong className="ml-2">{showDetailModal.assignedDriver}</strong></div>}
+          <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+
+            {/* Status & Quick Actions Bar */}
+            <div className="flex items-center justify-between flex-wrap gap-2 bg-secondary/50 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2.5 py-1 rounded text-xs font-bold ${getStatusColor(showDetailModal.status)}`}>{showDetailModal.status}</span>
+                <span className={`px-2.5 py-1 rounded text-xs font-bold ${getPaymentColor(showDetailModal.paymentStatus)}`}>{showDetailModal.paymentStatus}</span>
+                <span className="px-2.5 py-1 rounded text-xs font-semibold bg-secondary text-secondary-foreground">
+                  {showDetailModal.fulfillment === 'Delivery' ? 'Delivery' : 'Pickup'}
+                </span>
+                <span className="px-2 py-1 rounded text-xs font-medium bg-secondary text-muted-foreground">{showDetailModal.source}</span>
+              </div>
             </div>
+
+            {/* Action Controls */}
+            <div className="flex flex-wrap gap-2">
+              {showDetailModal.status === 'Pending' && (
+                <>
+                  <button
+                    onClick={() => { setShowConfirmModal(showDetailModal); setConfirmPayment('Pay on Delivery'); setConfirmFulfillment('Delivery'); }}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-semibold"
+                  >
+                    <CheckCircle size={13} /> Confirm Order
+                  </button>
+                  <button
+                    onClick={() => { setShowRejectModal(showDetailModal); setRejectReason(''); }}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-xs font-semibold"
+                  >
+                    <XCircle size={13} /> Reject
+                  </button>
+                </>
+              )}
+              {showDetailModal.status === 'Confirmed' && (
+                <>
+                  <button
+                    onClick={() => handleStatusChange(showDetailModal.id, 'Processing')}
+                    className="px-3 py-2 text-xs bg-indigo-100 text-indigo-800 rounded-lg hover:bg-indigo-200 font-semibold"
+                  >
+                    Mark as Processing
+                  </button>
+                  <button
+                    onClick={() => handleStatusChange(showDetailModal.id, 'Ready')}
+                    className="px-3 py-2 text-xs bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 font-semibold"
+                  >
+                    Mark as Ready
+                  </button>
+                </>
+              )}
+              {showDetailModal.status === 'Processing' && (
+                <button
+                  onClick={() => handleStatusChange(showDetailModal.id, 'Ready')}
+                  className="px-3 py-2 text-xs bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 font-semibold"
+                >
+                  Mark as Ready
+                </button>
+              )}
+              {showDetailModal.status === 'Ready' && (
+                <button
+                  onClick={() => { setSelectedOrderId(showDetailModal.id); setShowTracking(true); }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-orange-100 text-orange-800 rounded-lg hover:bg-orange-200 text-xs font-semibold"
+                >
+                  <Truck size={13} /> Assign Driver
+                </button>
+              )}
+              {showDetailModal.status === 'Shipped' && (
+                <button
+                  onClick={() => handleStatusChange(showDetailModal.id, 'Delivered')}
+                  className="px-3 py-2 text-xs bg-green-100 text-green-800 rounded-lg hover:bg-green-200 font-semibold"
+                >
+                  Mark as Delivered
+                </button>
+              )}
+              <button onClick={() => { handleEdit(showDetailModal); setShowDetailModal(null); setDetailCustomerLocation(null); }}
+                className="px-3 py-2 text-xs bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 font-semibold ml-auto">
+                Edit Order
+              </button>
+            </div>
+
+            {showDetailModal.rejectionReason && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-xs font-semibold text-red-700 mb-0.5">Rejection Reason</p>
+                <p className="text-sm text-red-800">{showDetailModal.rejectionReason}</p>
+              </div>
+            )}
+
+            {/* Order Info Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="bg-card border border-border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-0.5">Customer</p>
+                <p className="font-semibold">{showDetailModal.customerName}</p>
+              </div>
+              <div className="bg-card border border-border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-0.5">Phone</p>
+                <p className="font-semibold">{showDetailModal.customerPhone || '\u2014'}</p>
+              </div>
+              <div className="bg-card border border-border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-0.5">Order Date</p>
+                <p className="font-semibold">{showDetailModal.orderDate || '\u2014'}</p>
+              </div>
+              <div className="bg-card border border-border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-0.5">Due Date</p>
+                <p className="font-semibold">{showDetailModal.dueDate || '\u2014'}</p>
+              </div>
+              {showDetailModal.assignedDriver && (
+                <div className="bg-card border border-border rounded-lg p-3 col-span-2">
+                  <p className="text-xs text-muted-foreground mb-0.5">Assigned Driver</p>
+                  <p className="font-semibold">{showDetailModal.assignedDriver}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Items Table */}
             <div className="border border-border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
-                <thead className="bg-secondary"><tr><th className="px-3 py-2 text-left">Product</th><th className="px-3 py-2 text-center">Qty</th><th className="px-3 py-2 text-right">Unit Price</th><th className="px-3 py-2 text-right">Total</th></tr></thead>
+                <thead className="bg-secondary">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Product</th>
+                    <th className="px-3 py-2 text-center">Qty</th>
+                    <th className="px-3 py-2 text-right">Unit Price</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {showDetailModal.items.map((item, i) => (
                     <tr key={i} className="border-t border-border">
                       <td className="px-3 py-2">{item.productName}</td>
                       <td className="px-3 py-2 text-center">{item.quantity}</td>
-                      <td className="px-3 py-2 text-right">KES {item.unitPrice}</td>
+                      <td className="px-3 py-2 text-right">KES {item.unitPrice.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right font-semibold">KES {(item.quantity * item.unitPrice).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="border-t-2 border-border bg-secondary/50">
-                  <tr><td colSpan={3} className="px-3 py-2 text-right font-bold">Total</td><td className="px-3 py-2 text-right font-bold text-primary">KES {showDetailModal.total.toLocaleString()}</td></tr>
+                  <tr>
+                    <td colSpan={3} className="px-3 py-2 text-right font-bold">Total</td>
+                    <td className="px-3 py-2 text-right font-bold text-primary">KES {showDetailModal.total.toLocaleString()}</td>
+                  </tr>
                 </tfoot>
               </table>
             </div>
+
+            {/* Delivery Notes */}
             {showDetailModal.deliveryNotes && (
               <div className="border border-border rounded-lg p-3">
                 <p className="text-xs font-semibold text-muted-foreground mb-1">Delivery Notes</p>
-                <p>{showDetailModal.deliveryNotes}</p>
+                <p className="text-sm">{showDetailModal.deliveryNotes}</p>
               </div>
             )}
-            <div className="flex gap-2 pt-2 border-t border-border">
-              <button onClick={() => { handleEdit(showDetailModal); setShowDetailModal(null); }}
-                className="flex-1 px-3 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 text-sm font-medium">Edit Order</button>
-              <button onClick={() => setShowDetailModal(null)}
-                className="flex-1 px-3 py-2 border border-border rounded-lg hover:bg-secondary text-sm">Close</button>
+
+            {/* Customer Location / Map Section */}
+            {detailCustomerLocation && (
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="bg-secondary px-4 py-2 border-b border-border flex items-center gap-2">
+                  <MapPin size={14} className="text-muted-foreground" />
+                  <p className="text-sm font-semibold">
+                    {detailCustomerLocation.isRegistered ? 'Registered Customer Location' : 'Walk-in Customer \u2014 Delivery Info'}
+                  </p>
+                  {detailCustomerLocation.isRegistered && (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 ml-auto">{detailCustomerLocation.type}</span>
+                  )}
+                </div>
+                <div className="p-4 space-y-3">
+                  {detailCustomerLocation.isRegistered ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {detailCustomerLocation.location && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Location</p>
+                            <p className="font-medium">{detailCustomerLocation.location}</p>
+                          </div>
+                        )}
+                        {detailCustomerLocation.address && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Full Address</p>
+                            <p className="font-medium">{detailCustomerLocation.address}</p>
+                          </div>
+                        )}
+                        {detailCustomerLocation.landmark && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Landmark</p>
+                            <p className="font-medium">{detailCustomerLocation.landmark}</p>
+                          </div>
+                        )}
+                        {detailCustomerLocation.deliveryInstructions && (
+                          <div className="col-span-2">
+                            <p className="text-xs text-muted-foreground">Delivery Instructions</p>
+                            <p className="font-medium">{detailCustomerLocation.deliveryInstructions}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Map for registered customers with GPS */}
+                      {detailCustomerLocation.gpsLat !== 0 && detailCustomerLocation.gpsLng !== 0 && (
+                        <div className="space-y-2">
+                          <div className="rounded-lg overflow-hidden border border-border">
+                            <iframe
+                              width="100%"
+                              height="250"
+                              style={{ border: 0 }}
+                              loading="lazy"
+                              src={`https://www.openstreetmap.org/export/embed.html?bbox=${detailCustomerLocation.gpsLng - 0.005},${detailCustomerLocation.gpsLat - 0.005},${detailCustomerLocation.gpsLng + 0.005},${detailCustomerLocation.gpsLat + 0.005}&layer=mapnik&marker=${detailCustomerLocation.gpsLat},${detailCustomerLocation.gpsLng}`}
+                            />
+                          </div>
+                          <a
+                            href={`https://www.google.com/maps?q=${detailCustomerLocation.gpsLat},${detailCustomerLocation.gpsLng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium"
+                          >
+                            <ExternalLink size={12} /> Open in Google Maps
+                          </a>
+                        </div>
+                      )}
+                      {(detailCustomerLocation.gpsLat === 0 && detailCustomerLocation.gpsLng === 0) && (
+                        <p className="text-xs text-muted-foreground italic">No GPS coordinates saved for this customer.</p>
+                      )}
+                    </>
+                  ) : (
+                    /* Walk-in customer */
+                    <div className="text-sm">
+                      {detailCustomerLocation.deliveryInstructions ? (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Delivery Location / Notes</p>
+                          <p className="font-medium">{detailCustomerLocation.deliveryInstructions}</p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">No delivery location information available for this walk-in customer.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Close Button */}
+            <div className="flex justify-end pt-2 border-t border-border">
+              <button onClick={() => { setShowDetailModal(null); setDetailCustomerLocation(null); }}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm">Close</button>
             </div>
           </div>
         )}
