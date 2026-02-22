@@ -12,9 +12,11 @@ interface ReceiptData { receiptNo: string; date: string; cashier: string; custom
 interface ReceiptSettings { headerText: string; subHeaderText: string; footerText: string; disclaimer: string; showLogo: boolean; showTax: boolean; showCashier: boolean; showCustomer: boolean; showPaymentDetails: boolean; autoPrint: boolean; softwareProvidedBy: string; paperWidth?: string; }
 interface PaymentDetailsSettings { mpesaType: 'paybill' | 'till'; paybillNumber: string; accountNumber: string; tillNumber: string; mpesaName: string; showOnReceipt: boolean; bankName: string; bankAccount: string; bankBranch: string; }
 interface GeneralSettings { businessName: string; phone: string; email: string; shopNumber: string; address: string; currency: string; taxRate: number; logoUrl: string; }
+interface PosCardSettings { enabled: boolean; readerType: string; readerBrand: string; readerModel: string; connectionId: string; autoConnect: boolean; requireApprovalCode: boolean; requireLastFourDigits: boolean; printCardReceipt: boolean; minimumAmount: number; surchargeEnabled: boolean; surchargePercent: number; allowContactless: boolean; allowChip: boolean; allowSwipe: boolean; timeoutSeconds: number; }
 
-type PaymentMethod = 'Cash' | 'Mpesa' | 'Credit';
+type PaymentMethod = 'Cash' | 'Mpesa' | 'Credit' | 'Card';
 type MpesaStatus = 'idle' | 'sending' | 'waiting' | 'checking' | 'success' | 'failed';
+type CardStatus = 'idle' | 'processing' | 'approved' | 'declined';
 
 function loadSettings() {
   try {
@@ -49,6 +51,11 @@ export default function POSPage() {
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings>({
     businessName: 'SNACKOH BITES', phone: '+254 700 000 000', email: 'info@snackoh.com', shopNumber: '', address: 'Nairobi, Kenya', currency: 'KES', taxRate: 16, logoUrl: '',
   });
+  const [posCardSettings, setPosCardSettings] = useState<PosCardSettings>({
+    enabled: false, readerType: 'bluetooth', readerBrand: '', readerModel: '', connectionId: '', autoConnect: true,
+    requireApprovalCode: true, requireLastFourDigits: true, printCardReceipt: true, minimumAmount: 0,
+    surchargeEnabled: false, surchargePercent: 0, allowContactless: true, allowChip: true, allowSwipe: true, timeoutSeconds: 60,
+  });
 
   useEffect(() => {
     async function loadSettingsFromDb() {
@@ -60,6 +67,7 @@ export default function POSPage() {
           for (const row of data) dbSettings[row.key] = row.value;
           if (dbSettings.receipt) setReceiptSettings(prev => ({ ...prev, ...(dbSettings.receipt as Record<string, unknown>) }));
           if (dbSettings.paymentDetails) setPaymentDetailsSettings(prev => ({ ...prev, ...(dbSettings.paymentDetails as Record<string, unknown>) }));
+          if (dbSettings.posCard) setPosCardSettings(prev => ({ ...prev, ...(dbSettings.posCard as Record<string, unknown>) }));
           if (dbSettings.general) {
             const g = dbSettings.general as Record<string, unknown>;
             setGeneralSettings(prev => ({
@@ -83,6 +91,7 @@ export default function POSPage() {
       if (s) {
         if (s.receipt) setReceiptSettings(prev => ({ ...prev, ...s.receipt }));
         if (s.paymentDetails) setPaymentDetailsSettings(prev => ({ ...prev, ...s.paymentDetails }));
+        if (s.posCard) setPosCardSettings(prev => ({ ...prev, ...s.posCard }));
         if (s.general) setGeneralSettings(prev => ({
           businessName: s.general.businessName || prev.businessName,
           phone: s.general.phone || prev.phone,
@@ -129,6 +138,11 @@ export default function POSPage() {
   const [mpesaCheckoutId, setMpesaCheckoutId] = useState('');
   const [creditName, setCreditName] = useState('');
   const [creditPhone, setCreditPhone] = useState('');
+  const [cardApprovalCode, setCardApprovalCode] = useState('');
+  const [cardLastFour, setCardLastFour] = useState('');
+  const [cardEntryMethod, setCardEntryMethod] = useState<'contactless' | 'chip' | 'swipe'>('contactless');
+  const [cardStatus, setCardStatus] = useState<CardStatus>('idle');
+  const [cardMessage, setCardMessage] = useState('');
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Receipt ──
@@ -337,6 +351,11 @@ export default function POSPage() {
     setMpesaPhone('');
     setMpesaStatus('idle');
     setMpesaCheckoutId('');
+    setCardApprovalCode('');
+    setCardLastFour('');
+    setCardStatus('idle');
+    setCardMessage('');
+    setCardEntryMethod('contactless');
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setPaymentMethod('Cash');
   };
@@ -352,6 +371,15 @@ export default function POSPage() {
       const name = creditName || selectedCustomer.name;
       if (!name || name === 'Walk-in Customer') { alert('Select or enter customer for credit'); return; }
       completeSale('Credit', 0, 0);
+    } else if (paymentMethod === 'Card') {
+      if (cardStatus !== 'approved') return;
+      const cardRef = [
+        cardApprovalCode ? `Auth:${cardApprovalCode}` : '',
+        cardLastFour ? `****${cardLastFour}` : '',
+        cardEntryMethod,
+      ].filter(Boolean).join(' | ');
+      const cardTotal = posCardSettings.surchargeEnabled ? total + (total * posCardSettings.surchargePercent / 100) : total;
+      completeSale('Card', cardTotal, 0, cardRef || 'Card-Payment');
     }
   };
 
@@ -359,6 +387,7 @@ export default function POSPage() {
     if (cartItems.length === 0) return;
     setPaymentMethod('Cash'); setCashAmount(0); setMpesaPhone(selectedCustomer.phone || ''); setMpesaStatus('idle'); setMpesaMessage('');
     setCreditName(selectedCustomer.id !== 'walk-in' ? selectedCustomer.name : ''); setCreditPhone(selectedCustomer.phone || '');
+    setCardApprovalCode(''); setCardLastFour(''); setCardStatus('idle'); setCardMessage(''); setCardEntryMethod('contactless');
     setShowPayment(true);
   };
 
@@ -500,9 +529,14 @@ export default function POSPage() {
             <p className="text-3xl font-black text-primary">{cur} {total.toLocaleString()}</p>
             <p className="text-[10px] text-muted-foreground">{selectedCustomer.name} &bull; {cartItems.reduce((s, i) => s + i.quantity, 0)} items &bull; {loggedCashier}</p>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            {([{ v: 'Cash' as const, l: 'Cash', i: '💵' }, { v: 'Mpesa' as const, l: 'M-Pesa', i: '📱' }, { v: 'Credit' as const, l: 'Credit', i: '📝' }]).map(b => (
-              <button key={b.v} onClick={() => { setPaymentMethod(b.v); setMpesaStatus('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 text-xs font-medium transition-all ${paymentMethod === b.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}><span className="text-lg">{b.i}</span>{b.l}</button>
+          <div className={`grid ${posCardSettings.enabled ? 'grid-cols-4' : 'grid-cols-3'} gap-2`}>
+            {([
+              { v: 'Cash' as const, l: 'Cash', i: '💵' },
+              { v: 'Mpesa' as const, l: 'M-Pesa', i: '📱' },
+              ...(posCardSettings.enabled ? [{ v: 'Card' as const, l: 'Card', i: '💳' }] : []),
+              { v: 'Credit' as const, l: 'Credit', i: '📝' },
+            ]).map(b => (
+              <button key={b.v} onClick={() => { setPaymentMethod(b.v); setMpesaStatus('idle'); setCardStatus('idle'); setCardMessage(''); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 text-xs font-medium transition-all ${paymentMethod === b.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}><span className="text-lg">{b.i}</span>{b.l}</button>
             ))}
           </div>
           {paymentMethod === 'Cash' && (
@@ -538,10 +572,126 @@ export default function POSPage() {
               <input type="tel" placeholder="Phone" value={creditPhone} onChange={(e) => setCreditPhone(e.target.value)} className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-white" />
             </div>
           )}
+          {paymentMethod === 'Card' && (
+            <div className="space-y-3">
+              {/* Minimum amount check */}
+              {posCardSettings.minimumAmount > 0 && total < posCardSettings.minimumAmount && (
+                <div className="p-2 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800">
+                  Minimum card payment is {cur} {posCardSettings.minimumAmount.toLocaleString()}. Current total is {cur} {total.toLocaleString()}.
+                </div>
+              )}
+
+              {/* Surcharge notice */}
+              {posCardSettings.surchargeEnabled && posCardSettings.surchargePercent > 0 && (
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded-xl text-center text-xs text-blue-800">
+                  Card surcharge of {posCardSettings.surchargePercent}% applies: {cur} {(total * posCardSettings.surchargePercent / 100).toFixed(0)} fee — Total: <strong>{cur} {(total + total * posCardSettings.surchargePercent / 100).toFixed(0)}</strong>
+                </div>
+              )}
+
+              {/* Card entry method */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Card Entry Method</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    ...(posCardSettings.allowContactless ? [{ v: 'contactless' as const, l: 'Tap / NFC', i: '📶' }] : []),
+                    ...(posCardSettings.allowChip ? [{ v: 'chip' as const, l: 'Chip Insert', i: '💳' }] : []),
+                    ...(posCardSettings.allowSwipe ? [{ v: 'swipe' as const, l: 'Swipe', i: '↔️' }] : []),
+                  ]).map(m => (
+                    <button key={m.v} onClick={() => setCardEntryMethod(m.v)} className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-[11px] font-medium transition-all ${cardEntryMethod === m.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}>
+                      <span className="text-base">{m.i}</span>{m.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reader info */}
+              {posCardSettings.readerBrand && (
+                <div className="p-2 bg-secondary rounded-xl text-[11px] text-muted-foreground text-center">
+                  Reader: <strong>{posCardSettings.readerBrand.toUpperCase()}</strong>{posCardSettings.readerModel ? ` — ${posCardSettings.readerModel}` : ''} ({posCardSettings.readerType})
+                </div>
+              )}
+
+              {/* Process card on reader */}
+              {cardStatus === 'idle' && (
+                <button
+                  onClick={() => {
+                    if (posCardSettings.minimumAmount > 0 && total < posCardSettings.minimumAmount) return;
+                    setCardStatus('processing');
+                    setCardMessage('Present card on reader...');
+                    // Simulate waiting for card reader — in production this would connect to the physical reader API
+                    setTimeout(() => {
+                      setCardStatus('approved');
+                      setCardMessage('Card reader: Ready for approval code');
+                    }, 1500);
+                  }}
+                  disabled={posCardSettings.minimumAmount > 0 && total < posCardSettings.minimumAmount}
+                  className="w-full py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-xs disabled:opacity-40"
+                >
+                  💳 Process Card — {cur} {(posCardSettings.surchargeEnabled ? total + total * posCardSettings.surchargePercent / 100 : total).toFixed(0)}
+                </button>
+              )}
+
+              {cardStatus === 'processing' && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center animate-pulse">
+                  <div className="animate-spin w-6 h-6 border-3 border-blue-200 border-t-blue-600 rounded-full mx-auto mb-1"></div>
+                  <p className="text-xs font-bold text-blue-800">{cardMessage}</p>
+                  <p className="text-[10px] text-blue-600 mt-1">Waiting for card reader response...</p>
+                </div>
+              )}
+
+              {cardStatus === 'approved' && (
+                <div className="space-y-2">
+                  <div className="p-2 bg-green-50 border border-green-200 rounded-xl text-center">
+                    <p className="text-xs font-bold text-green-800">Card Accepted — Enter details from terminal</p>
+                  </div>
+                  {posCardSettings.requireApprovalCode && (
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1 font-medium">Approval / Auth Code *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 123456"
+                        value={cardApprovalCode}
+                        onChange={(e) => setCardApprovalCode(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-border rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary/50 outline-none text-center tracking-wider"
+                        autoFocus
+                        maxLength={10}
+                      />
+                    </div>
+                  )}
+                  {posCardSettings.requireLastFourDigits && (
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1 font-medium">Last 4 Digits of Card</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 4321"
+                        value={cardLastFour}
+                        onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 4); setCardLastFour(v); }}
+                        className="w-full px-4 py-2.5 border border-border rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary/50 outline-none text-center tracking-widest"
+                        maxLength={4}
+                      />
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setCardStatus('idle'); setCardMessage(''); setCardApprovalCode(''); setCardLastFour(''); }}
+                    className="w-full py-1.5 border border-border rounded-xl text-xs hover:bg-secondary text-muted-foreground"
+                  >
+                    Re-process Card
+                  </button>
+                </div>
+              )}
+
+              {cardStatus === 'declined' && (
+                <>
+                  <div className="p-2 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800">{cardMessage || 'Card declined. Try another card or payment method.'}</div>
+                  <button onClick={() => { setCardStatus('idle'); setCardMessage(''); }} className="w-full py-1.5 border border-border rounded-xl text-xs hover:bg-secondary">Retry</button>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex gap-2 pt-2 border-t border-border">
             <button onClick={() => { setShowPayment(false); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="flex-1 px-3 py-2.5 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Cancel</button>
-            <button onClick={handlePayment} disabled={(paymentMethod === 'Cash' && cashAmount < total) || (paymentMethod === 'Mpesa' && mpesaStatus !== 'success') || (paymentMethod === 'Credit' && !creditName && selectedCustomer.id === 'walk-in')} className="flex-1 px-3 py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-xs disabled:opacity-40">
-              {paymentMethod === 'Mpesa' && mpesaStatus === 'success' ? 'Confirm' : paymentMethod === 'Credit' ? 'Record Credit' : 'Complete Sale'}
+            <button onClick={handlePayment} disabled={(paymentMethod === 'Cash' && cashAmount < total) || (paymentMethod === 'Mpesa' && mpesaStatus !== 'success') || (paymentMethod === 'Credit' && !creditName && selectedCustomer.id === 'walk-in') || (paymentMethod === 'Card' && (cardStatus !== 'approved' || (posCardSettings.requireApprovalCode && !cardApprovalCode)))} className="flex-1 px-3 py-2.5 bg-primary text-primary-foreground rounded-xl hover:opacity-90 font-bold text-xs disabled:opacity-40">
+              {paymentMethod === 'Mpesa' && mpesaStatus === 'success' ? 'Confirm' : paymentMethod === 'Credit' ? 'Record Credit' : paymentMethod === 'Card' && cardStatus === 'approved' ? 'Confirm Card Payment' : 'Complete Sale'}
             </button>
           </div>
         </div>
@@ -584,7 +734,12 @@ export default function POSPage() {
               <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
               <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Paid ({receiptData?.method}):</span><span>{cur} {receiptData?.paid.toLocaleString()}</span></div>
               <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Change:</span><span>{cur} {receiptData?.change.toFixed(0)}</span></div>
-              {receiptData?.mpesaRef && <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>M-Pesa Ref:</span><span>{receiptData.mpesaRef}</span></div>}
+              {receiptData?.mpesaRef && receiptData?.method === 'M-Pesa' && <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>M-Pesa Ref:</span><span>{receiptData.mpesaRef}</span></div>}
+              {receiptData?.mpesaRef && receiptData?.method === 'Card' && (
+                <div style={{ fontSize: '10px', marginTop: '4px' }}>
+                  <div className="row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Card Ref:</span><span>{receiptData.mpesaRef}</span></div>
+                </div>
+              )}
             </div>
             {/* Payment Details from Settings */}
             {receiptSettings.showPaymentDetails && paymentDetailsSettings.showOnReceipt && (paymentDetailsSettings.paybillNumber || paymentDetailsSettings.tillNumber || paymentDetailsSettings.bankName) && (

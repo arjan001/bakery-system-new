@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'mpesa-api' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'posCard' | 'security' | 'backup' | 'sessions';
 
 interface OfferForm {
   id?: string;
@@ -83,6 +83,26 @@ export default function SettingsPage() {
     bankAccount: '',
     bankBranch: '',
     showOnReceipt: true,
+  });
+
+  // ── POS Card Reader Settings ──
+  const [posCard, setPosCard] = useState({
+    enabled: false,
+    readerType: 'bluetooth' as 'bluetooth' | 'usb' | 'audio',
+    readerBrand: '',
+    readerModel: '',
+    connectionId: '',
+    autoConnect: true,
+    requireApprovalCode: true,
+    requireLastFourDigits: true,
+    printCardReceipt: true,
+    minimumAmount: 0,
+    surchargeEnabled: false,
+    surchargePercent: 0,
+    allowContactless: true,
+    allowChip: true,
+    allowSwipe: true,
+    timeoutSeconds: 60,
   });
 
   // ── Security Settings ──
@@ -376,6 +396,7 @@ export default function SettingsPage() {
           if (settings.general) setGeneral(prev => ({ ...prev, ...(settings.general as Record<string, unknown>) }));
           if (settings.receipt) setReceipt(prev => ({ ...prev, ...(settings.receipt as Record<string, unknown>) }));
           if (settings.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...(settings.paymentDetails as Record<string, unknown>) }));
+          if (settings.posCard) setPosCard(prev => ({ ...prev, ...(settings.posCard as Record<string, unknown>) }));
           if (settings.security) setSecurity(prev => ({ ...prev, ...(settings.security as Record<string, unknown>) }));
           if (settings.backup) setBackup(prev => ({ ...prev, ...(settings.backup as Record<string, unknown>) }));
           return;
@@ -391,6 +412,7 @@ export default function SettingsPage() {
           if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
           if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
           if (parsed.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...parsed.paymentDetails }));
+          if (parsed.posCard) setPosCard(prev => ({ ...prev, ...parsed.posCard }));
           if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
           if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
         }
@@ -401,7 +423,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, receipt, paymentDetails, security, backup };
+    const settingsData = { general, receipt, paymentDetails, posCard, security, backup };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -438,7 +460,7 @@ export default function SettingsPage() {
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
-    { key: 'mpesa-api', label: 'M-Pesa API', icon: '🔑', tip: 'M-Pesa Daraja API credentials & configuration' },
+    { key: 'posCard', label: 'POS Card', icon: '💳', tip: 'Card reader setup & POS card payment settings' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
@@ -932,208 +954,180 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ── M-PESA API SETTINGS ── */}
-      {activeTab === 'mpesa-api' && (
-        <div className="max-w-3xl space-y-6">
-          {/* Info Banner */}
-          <div className="border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 rounded-lg p-4">
-            <div className="flex gap-3">
-              <span className="text-blue-600 text-lg">ℹ</span>
-              <div className="text-sm">
-                <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">How M-Pesa credentials work</p>
-                <p className="text-blue-700 dark:text-blue-400">Credentials are read from <strong>environment variables</strong> (.env) as the primary source. The database stores a <strong>backup copy</strong>. If env vars are not set, the system falls back to the database backup. To update live credentials, update your Netlify environment variables.</p>
+      {/* ── POS CARD READER ── */}
+      {activeTab === 'posCard' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Card Payment on POS</h3>
+            <p className="text-sm text-muted-foreground mb-4">Enable card payments on the POS cashier terminal. When enabled, cashiers can accept physical card payments using a handheld card reader device.</p>
+            <label className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Enable Card Payments</p>
+                <p className="text-xs text-muted-foreground">Allow &quot;Card&quot; as a payment method on POS</p>
               </div>
-            </div>
+              <button type="button" onClick={() => setPosCard({ ...posCard, enabled: !posCard.enabled })} className={`w-10 h-5 rounded-full transition-colors ${posCard.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </label>
           </div>
 
-          {/* Current Status */}
-          <div className="border border-border rounded-lg p-6 bg-card">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Current M-Pesa Configuration Status</h3>
-              <button onClick={loadMpesaApiSettings} disabled={mpesaApiLoading} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium disabled:opacity-50">
-                {mpesaApiLoading ? 'Loading...' : 'Refresh'}
-              </button>
-            </div>
-            {mpesaApiLoading ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Loading current configuration...</p>
-            ) : (
-              <div className="space-y-2">
-                {[
-                  { key: 'mpesa_env', label: 'Environment' },
-                  { key: 'mpesa_consumer_key', label: 'Consumer Key' },
-                  { key: 'mpesa_consumer_secret', label: 'Consumer Secret' },
-                  { key: 'mpesa_shortcode', label: 'Shortcode' },
-                  { key: 'mpesa_passkey', label: 'Passkey' },
-                  { key: 'mpesa_callback_url', label: 'Callback URL' },
-                ].map(item => (
-                  <div key={item.key} className="flex items-center justify-between py-2 px-3 rounded-lg bg-secondary/50">
-                    <span className="text-sm font-medium">{item.label}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono text-muted-foreground">
-                        {mpesaApiMasked[item.key] || <span className="text-amber-500 italic">Not set</span>}
-                      </span>
-                      {mpesaApiSource[item.key] === 'env' && (
-                        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">ENV</span>
-                      )}
-                      {mpesaApiSource[item.key] === 'db' && (
-                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">DB</span>
-                      )}
-                      {mpesaApiSource[item.key] === 'none' && (
-                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">MISSING</span>
-                      )}
+          {posCard.enabled && (
+            <>
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Card Reader Device</h3>
+                <p className="text-sm text-muted-foreground mb-4">Configure the handheld card reader connected to your POS terminal.</p>
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelCls}>Connection Type</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {([
+                        { v: 'bluetooth' as const, l: 'Bluetooth', d: 'Wireless pairing' },
+                        { v: 'usb' as const, l: 'USB', d: 'Wired connection' },
+                        { v: 'audio' as const, l: 'Audio Jack', d: 'Headphone plug-in' },
+                      ]).map(t => (
+                        <button key={t.v} onClick={() => setPosCard({ ...posCard, readerType: t.v })} className={`px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all text-center ${posCard.readerType === t.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}>
+                          <p className="font-semibold">{t.l}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{t.d}</p>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                ))}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Reader Brand</label>
+                      <select value={posCard.readerBrand} onChange={e => setPosCard({ ...posCard, readerBrand: e.target.value })} className={inputCls}>
+                        <option value="">-- Select Brand --</option>
+                        <option value="square">Square</option>
+                        <option value="sumup">SumUp</option>
+                        <option value="zettle">Zettle (iZettle)</option>
+                        <option value="stripe">Stripe Reader</option>
+                        <option value="verifone">Verifone</option>
+                        <option value="ingenico">Ingenico</option>
+                        <option value="pax">PAX</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Reader Model / Name</label>
+                      <input type="text" value={posCard.readerModel} onChange={e => setPosCard({ ...posCard, readerModel: e.target.value })} placeholder="e.g. Square Reader, SumUp Air" className={inputCls} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Device ID / Serial Number (optional)</label>
+                    <input type="text" value={posCard.connectionId} onChange={e => setPosCard({ ...posCard, connectionId: e.target.value })} placeholder="e.g. SN-12345 or Bluetooth MAC address" className={inputCls} />
+                    <p className="text-xs text-muted-foreground mt-1">Used to identify the reader when multiple devices are available.</p>
+                  </div>
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Auto-connect on POS start</p>
+                      <p className="text-xs text-muted-foreground">Attempt to reconnect to the card reader when POS loads</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, autoConnect: !posCard.autoConnect })} className={`w-10 h-5 rounded-full transition-colors ${posCard.autoConnect ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.autoConnect ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                </div>
               </div>
-            )}
 
-            {/* Test Connection */}
-            <div className="mt-4 pt-4 border-t border-border">
-              <div className="flex items-center gap-3">
-                <button onClick={testMpesaConnection} disabled={mpesaApiTesting} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm disabled:opacity-50">
-                  {mpesaApiTesting ? 'Testing...' : 'Test Connection'}
-                </button>
-                {mpesaApiTestResult && (
-                  <span className={`text-sm font-medium ${mpesaApiTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
-                    {mpesaApiTestResult.message}
-                  </span>
-                )}
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Accepted Card Methods</h3>
+                <p className="text-sm text-muted-foreground mb-4">Choose which card entry methods the reader should accept.</p>
+                <div className="space-y-3">
+                  {[
+                    { key: 'allowContactless', label: 'Contactless / NFC (Tap)', desc: 'Accept tap-to-pay cards and mobile wallets' },
+                    { key: 'allowChip', label: 'Chip (EMV Insert)', desc: 'Accept chip card insert transactions' },
+                    { key: 'allowSwipe', label: 'Magnetic Stripe (Swipe)', desc: 'Accept card swipe (less secure, fallback)' },
+                  ].map(opt => (
+                    <label key={opt.key} className="flex items-center justify-between">
+                      <div><p className="text-sm font-medium">{opt.label}</p><p className="text-xs text-muted-foreground">{opt.desc}</p></div>
+                      <button type="button" onClick={() => setPosCard({ ...posCard, [opt.key]: !posCard[opt.key as keyof typeof posCard] })} className={`w-10 h-5 rounded-full transition-colors ${posCard[opt.key as keyof typeof posCard] ? 'bg-primary' : 'bg-gray-300'}`}>
+                        <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard[opt.key as keyof typeof posCard] ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </label>
+                  ))}
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">Sends a test STK push to verify credentials are working. Uses sandbox test number 254700000000.</p>
-            </div>
-          </div>
 
-          {/* STK Push Credentials */}
-          <div className="border border-border rounded-lg p-6 bg-card">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-semibold">STK Push Credentials</h3>
-                <p className="text-xs text-muted-foreground mt-1">From the Safaricom Daraja portal. Leave blank to keep current values.</p>
-              </div>
-              <button type="button" onClick={() => setShowMpesaSecrets(!showMpesaSecrets)} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium">
-                {showMpesaSecrets ? 'Hide Values' : 'Show Values'}
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className={labelCls}>Environment</label>
-                <select value={mpesaApi.mpesa_env || ''} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_env: e.target.value })} className={inputCls}>
-                  <option value="">-- Keep current --</option>
-                  <option value="sandbox">Sandbox (Testing)</option>
-                  <option value="production">Production (Live)</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>Consumer Key</label>
-                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_consumer_key} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_consumer_key: e.target.value })} placeholder="Enter consumer key..." className={inputCls} autoComplete="off" />
-                </div>
-                <div>
-                  <label className={labelCls}>Consumer Secret</label>
-                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_consumer_secret} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_consumer_secret: e.target.value })} placeholder="Enter consumer secret..." className={inputCls} autoComplete="off" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>Business Shortcode</label>
-                  <input type="text" value={mpesaApi.mpesa_shortcode} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_shortcode: e.target.value })} placeholder="e.g. 174379" className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Passkey</label>
-                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_passkey} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_passkey: e.target.value })} placeholder="STK push passkey..." className={inputCls} autoComplete="off" />
-                </div>
-              </div>
-              <div>
-                <label className={labelCls}>Callback URL</label>
-                <input type="url" value={mpesaApi.mpesa_callback_url} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_callback_url: e.target.value })} placeholder="https://your-site.netlify.app/api/mpesa/callback" className={inputCls} />
-                <p className="text-xs text-muted-foreground mt-1">URL where Safaricom sends payment confirmations. Must be publicly accessible (HTTPS).</p>
-              </div>
-            </div>
-          </div>
-
-          {/* B2C Credentials */}
-          <div className="border border-border rounded-lg p-6 bg-card">
-            <h3 className="font-semibold mb-1">B2C Configuration (Payouts)</h3>
-            <p className="text-xs text-muted-foreground mb-4">For sending money to customers or employees. Leave blank if not used.</p>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>B2C Shortcode</label>
-                  <input type="text" value={mpesaApi.mpesa_b2c_shortcode} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_shortcode: e.target.value })} placeholder="B2C shortcode" className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Initiator Name</label>
-                  <input type="text" value={mpesaApi.mpesa_b2c_initiator_name} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_initiator_name: e.target.value })} placeholder="Initiator name" className={inputCls} />
-                </div>
-              </div>
-              <div>
-                <label className={labelCls}>Security Credential</label>
-                <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_security_credential} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_security_credential: e.target.value })} placeholder="Encrypted security credential" className={inputCls} autoComplete="off" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>B2C Consumer Key</label>
-                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_key} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_key: e.target.value })} placeholder="B2C consumer key" className={inputCls} autoComplete="off" />
-                </div>
-                <div>
-                  <label className={labelCls}>B2C Consumer Secret</label>
-                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_secret} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_secret: e.target.value })} placeholder="B2C consumer secret" className={inputCls} autoComplete="off" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>B2C Result URL</label>
-                  <input type="url" value={mpesaApi.mpesa_b2c_result_url} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_result_url: e.target.value })} placeholder="https://..." className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>B2C Timeout URL</label>
-                  <input type="url" value={mpesaApi.mpesa_b2c_timeout_url} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_timeout_url: e.target.value })} placeholder="https://..." className={inputCls} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* B2C Status */}
-          <div className="border border-border rounded-lg p-6 bg-card">
-            <h3 className="font-semibold mb-4">B2C Configuration Status</h3>
-            <div className="space-y-2">
-              {[
-                { key: 'mpesa_b2c_shortcode', label: 'B2C Shortcode' },
-                { key: 'mpesa_b2c_initiator_name', label: 'Initiator Name' },
-                { key: 'mpesa_b2c_security_credential', label: 'Security Credential' },
-                { key: 'mpesa_b2c_consumer_key', label: 'B2C Consumer Key' },
-                { key: 'mpesa_b2c_consumer_secret', label: 'B2C Consumer Secret' },
-                { key: 'mpesa_b2c_result_url', label: 'Result URL' },
-                { key: 'mpesa_b2c_timeout_url', label: 'Timeout URL' },
-              ].map(item => (
-                <div key={item.key} className="flex items-center justify-between py-2 px-3 rounded-lg bg-secondary/50">
-                  <span className="text-sm font-medium">{item.label}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-mono text-muted-foreground">
-                      {mpesaApiMasked[item.key] || <span className="text-amber-500 italic">Not set</span>}
-                    </span>
-                    {mpesaApiSource[item.key] === 'env' && (
-                      <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">ENV</span>
-                    )}
-                    {mpesaApiSource[item.key] === 'db' && (
-                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">DB</span>
-                    )}
-                    {mpesaApiSource[item.key] === 'none' && (
-                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">MISSING</span>
-                    )}
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Transaction Settings</h3>
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Require Approval Code</p>
+                      <p className="text-xs text-muted-foreground">Cashier must enter the approval / auth code from the terminal</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, requireApprovalCode: !posCard.requireApprovalCode })} className={`w-10 h-5 rounded-full transition-colors ${posCard.requireApprovalCode ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.requireApprovalCode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Require Last 4 Digits</p>
+                      <p className="text-xs text-muted-foreground">Cashier must enter the last 4 digits of the card number for records</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, requireLastFourDigits: !posCard.requireLastFourDigits })} className={`w-10 h-5 rounded-full transition-colors ${posCard.requireLastFourDigits ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.requireLastFourDigits ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Print Card Receipt</p>
+                      <p className="text-xs text-muted-foreground">Show &quot;Card&quot; as payment method and card reference on receipt</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, printCardReceipt: !posCard.printCardReceipt })} className={`w-10 h-5 rounded-full transition-colors ${posCard.printCardReceipt ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.printCardReceipt ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Minimum Card Amount ({general.currency})</label>
+                      <input type="number" value={posCard.minimumAmount} onChange={e => setPosCard({ ...posCard, minimumAmount: parseFloat(e.target.value) || 0 })} className={inputCls} placeholder="0 for no minimum" />
+                      <p className="text-xs text-muted-foreground mt-1">Set 0 to allow any amount</p>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Transaction Timeout (seconds)</label>
+                      <input type="number" value={posCard.timeoutSeconds} onChange={e => setPosCard({ ...posCard, timeoutSeconds: parseInt(e.target.value) || 60 })} className={inputCls} min={10} max={300} />
+                      <p className="text-xs text-muted-foreground mt-1">Max wait time for card reader response</p>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          {/* Save Button */}
-          <div className="flex items-center gap-4">
-            <button onClick={saveMpesaApiSettings} disabled={mpesaApiSaving} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
-              {mpesaApiSaving ? 'Saving...' : 'Save M-Pesa Settings to Database'}
-            </button>
-            <p className="text-xs text-muted-foreground">Saves credentials to the database as backup. Runtime uses env vars from .env as the primary source.</p>
-          </div>
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Card Surcharge (Optional)</h3>
+                <p className="text-sm text-muted-foreground mb-4">Add a processing fee for card transactions. This will be added to the total at checkout.</p>
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Enable Card Surcharge</p>
+                      <p className="text-xs text-muted-foreground">Add a percentage fee on card payments</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, surchargeEnabled: !posCard.surchargeEnabled })} className={`w-10 h-5 rounded-full transition-colors ${posCard.surchargeEnabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.surchargeEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  {posCard.surchargeEnabled && (
+                    <div>
+                      <label className={labelCls}>Surcharge Percentage (%)</label>
+                      <input type="number" step="0.1" value={posCard.surchargePercent} onChange={e => setPosCard({ ...posCard, surchargePercent: parseFloat(e.target.value) || 0 })} className={`${inputCls} max-w-xs`} placeholder="e.g. 1.5" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border border-blue-200 rounded-lg p-6 bg-blue-50/50">
+                <h3 className="font-semibold mb-2 text-blue-800">How Card Payments Work on POS</h3>
+                <ol className="text-sm text-blue-700 space-y-2 list-decimal list-inside">
+                  <li>Cashier selects <strong>&quot;Card&quot;</strong> as the payment method at checkout</li>
+                  <li>The card reader device processes the physical card (tap, chip, or swipe)</li>
+                  <li>Cashier enters the <strong>approval code</strong> and optionally the <strong>last 4 digits</strong> from the terminal</li>
+                  <li>Sale is recorded as a card payment with the reference details</li>
+                  <li>Receipt is printed showing card payment info</li>
+                </ol>
+                <p className="text-xs text-blue-600 mt-3">Note: The card reader device must be set up and paired independently. This system records the card transaction reference after the reader approves the payment.</p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
