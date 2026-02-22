@@ -2,16 +2,73 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CartProvider, useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
-import { ShoppingBag, Search, User, Heart, X, Plus, Minus, Menu, ChevronRight } from 'lucide-react';
+import { ShoppingBag, Search, User, Heart, X, Plus, Minus, Menu, ChevronRight, ChevronLeft, Mail } from 'lucide-react';
 
-// ─── Announcement Bar ───────────────────────────────────────────────────────
+// ─── Marquee Announcement Bar ────────────────────────────────────────────────
 function AnnouncementBar() {
+  const [navbarAds, setNavbarAds] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function loadNavbarAds() {
+      try {
+        const { data, error } = await supabase
+          .from('business_settings')
+          .select('value')
+          .eq('key', 'navbarAds')
+          .single();
+        if (!error && data?.value) {
+          const config = data.value as { enabled?: boolean; items?: string[] };
+          if (config.enabled && config.items && config.items.length > 0) {
+            setNavbarAds(config.items.filter((i: string) => i.trim()));
+            return;
+          }
+        }
+      } catch { /* table may not exist */ }
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.navbarAds?.enabled && parsed.navbarAds?.items?.length > 0) {
+            setNavbarAds(parsed.navbarAds.items.filter((i: string) => i.trim()));
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    loadNavbarAds();
+  }, []);
+
+  const defaultItems = [
+    'FREE DELIVERY ON ORDERS OVER KES 2,000',
+    'FRESHLY BAKED DAILY',
+    'ORDER BY 5PM FOR NEXT-DAY DELIVERY',
+    'CUSTOM CAKES — ORDER 48 HRS IN ADVANCE',
+    'WHOLESALE ORDERS AVAILABLE',
+  ];
+
+  const marqueeItems = navbarAds.length > 0 ? navbarAds : defaultItems;
+  const marqueeText = marqueeItems.map(item => `  •  ${item}`).join('');
+
   return (
-    <div className="bg-orange-600 text-white text-xs py-2.5 text-center font-medium tracking-wide">
-      🍞 FREE DELIVERY ON ORDERS OVER KES 2,000 &nbsp;•&nbsp; FRESHLY BAKED DAILY &nbsp;•&nbsp; ORDER BY 5PM FOR NEXT-DAY DELIVERY &nbsp;•&nbsp; 🎂 CUSTOM CAKES — ORDER 48 HRS IN ADVANCE
+    <div className="bg-orange-600 text-white text-xs py-2.5 font-medium tracking-wide overflow-hidden whitespace-nowrap">
+      <div className="inline-flex animate-marquee">
+        <span className="inline-block">{marqueeText}{marqueeText}</span>
+      </div>
+      <style jsx>{`
+        @keyframes marquee {
+          0% { transform: translateX(0%); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+          animation: marquee 30s linear infinite;
+        }
+        .animate-marquee:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
     </div>
   );
 }
@@ -198,7 +255,7 @@ function CartDrawer() {
               Buy <strong>KES {remaining.toLocaleString()}</strong> more to enjoy <strong>FREE delivery</strong>
             </p>
           ) : (
-            <p className="text-xs text-green-700 font-semibold mb-1.5">🎉 You qualify for FREE delivery!</p>
+            <p className="text-xs text-green-700 font-semibold mb-1.5">You qualify for FREE delivery!</p>
           )}
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-orange-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
@@ -271,8 +328,171 @@ function CartDrawer() {
   );
 }
 
+// ─── Newsletter Modal ────────────────────────────────────────────────────────
+function NewsletterModal() {
+  const [show, setShow] = useState(false);
+  const [email, setEmail] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [dontShow, setDontShow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [config, setConfig] = useState({
+    enabled: true,
+    title: 'Subscribe Now',
+    subtitle: 'Newsletter',
+    description: 'Get 15% off your first order when you subscribe to our newsletter. Stay updated with exclusive offers and new arrivals.',
+    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop',
+    discountCode: 'WELCOME15',
+    delaySeconds: 5,
+  });
+
+  useEffect(() => {
+    // Load config from DB or localStorage
+    async function loadConfig() {
+      try {
+        const { data, error } = await supabase
+          .from('business_settings')
+          .select('value')
+          .eq('key', 'newsletterModal')
+          .single();
+        if (!error && data?.value) {
+          setConfig(prev => ({ ...prev, ...(data.value as Record<string, unknown>) }));
+          return;
+        }
+      } catch { /* ignore */ }
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.newsletterModal) setConfig(prev => ({ ...prev, ...parsed.newsletterModal }));
+        }
+      } catch { /* ignore */ }
+    }
+    loadConfig();
+  }, []);
+
+  useEffect(() => {
+    if (!config.enabled) return;
+    // Check if user has already dismissed
+    const dismissed = localStorage.getItem('snackoh_newsletter_dismissed');
+    if (dismissed === 'true') return;
+    const alreadySubscribed = localStorage.getItem('snackoh_newsletter_subscribed');
+    if (alreadySubscribed === 'true') return;
+
+    const timer = setTimeout(() => {
+      setShow(true);
+    }, (config.delaySeconds || 5) * 1000);
+
+    return () => clearTimeout(timer);
+  }, [config.enabled, config.delaySeconds]);
+
+  const handleSubscribe = async () => {
+    if (!email || !email.includes('@')) return;
+    setLoading(true);
+    try {
+      await supabase.from('newsletter_subscribers').insert({
+        email,
+        source: 'modal',
+        discount_code: config.discountCode,
+      });
+    } catch {
+      // Table may not exist, save locally
+    }
+    localStorage.setItem('snackoh_newsletter_subscribed', 'true');
+    setSubmitted(true);
+    setLoading(false);
+  };
+
+  const handleClose = () => {
+    if (dontShow) {
+      localStorage.setItem('snackoh_newsletter_dismissed', 'true');
+    }
+    setShow(false);
+  };
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50" onClick={handleClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col sm:flex-row" onClick={e => e.stopPropagation()}>
+        {/* Image side */}
+        <div className="sm:w-1/2 h-48 sm:h-auto relative hidden sm:block">
+          <img src={config.image} alt="Newsletter" className="w-full h-full object-cover" />
+        </div>
+        {/* Content side */}
+        <div className="sm:w-1/2 p-6 relative">
+          <button onClick={handleClose} className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500">
+            <X size={16} />
+          </button>
+
+          {submitted ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Mail size={20} className="text-green-600" />
+              </div>
+              <h3 className="text-lg font-black text-gray-900 mb-2">Thank You!</h3>
+              <p className="text-sm text-gray-600 mb-3">You&apos;re now subscribed. Use code <strong className="text-orange-600">{config.discountCode}</strong> for your discount.</p>
+              <button onClick={handleClose} className="px-5 py-2 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700">
+                Start Shopping
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">{config.subtitle}</p>
+              <h3 className="text-xl font-black text-gray-900 mb-2">{config.title}</h3>
+              <p className="text-sm text-gray-600 mb-4 leading-relaxed">{config.description}</p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Email Address <span className="text-red-500">*</span></label>
+                  <input
+                    type="email"
+                    placeholder="Enter Your Email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none"
+                  />
+                </div>
+                <button
+                  onClick={handleSubscribe}
+                  disabled={loading || !email}
+                  className="w-full py-2.5 bg-orange-600 text-white font-bold text-sm rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? 'Subscribing...' : 'Subscribe'}
+                </button>
+              </div>
+
+              <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                <input type="checkbox" checked={dontShow} onChange={e => setDontShow(e.target.checked)}
+                  className="accent-gray-600 w-3.5 h-3.5" />
+                <span className="text-xs text-gray-500">Don&apos;t show this popup again</span>
+              </label>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Footer ──────────────────────────────────────────────────────────────────
 function Footer() {
+  const [footerEmail, setFooterEmail] = useState('');
+  const [footerSubscribed, setFooterSubscribed] = useState(false);
+
+  const handleFooterSubscribe = async () => {
+    if (!footerEmail || !footerEmail.includes('@')) return;
+    try {
+      await supabase.from('newsletter_subscribers').insert({
+        email: footerEmail,
+        source: 'footer',
+      });
+    } catch { /* table may not exist */ }
+    localStorage.setItem('snackoh_newsletter_subscribed', 'true');
+    setFooterSubscribed(true);
+    setTimeout(() => setFooterSubscribed(false), 5000);
+    setFooterEmail('');
+  };
+
   return (
     <footer className="bg-gray-900 text-gray-300">
       <div className="max-w-7xl mx-auto px-6 py-14">
@@ -283,12 +503,12 @@ function Footer() {
             <p className="text-sm leading-relaxed text-gray-400 mb-4">
               Artisan baked goods crafted with love. From our oven to your table, fresh daily.
             </p>
-            <p className="text-xs text-gray-500">📍 Nairobi, Kenya</p>
-            <p className="text-xs text-gray-500 mt-1">📞 0733 67 52 67 (Orders)</p>
-            <p className="text-xs text-gray-500 mt-1">📞 0722 587 222 (Feedback)</p>
-            <p className="text-xs text-gray-500 mt-1">✉️ sales@snackoh-bakers.com</p>
+            <p className="text-xs text-gray-500">Nairobi, Kenya</p>
+            <p className="text-xs text-gray-500 mt-1">0733 67 52 67 (Orders)</p>
+            <p className="text-xs text-gray-500 mt-1">0722 587 222 (Feedback)</p>
+            <p className="text-xs text-gray-500 mt-1">sales@snackoh-bakers.com</p>
             <div className="flex gap-3 mt-4">
-              {['𝕏', 'f', '▶', 'in'].map(s => (
+              {['\u{1D54F}', 'f', '\u25B6', 'in'].map(s => (
                 <button key={s} className="w-8 h-8 bg-gray-800 rounded-full text-xs font-bold flex items-center justify-center hover:bg-orange-600 transition-colors">
                   {s}
                 </button>
@@ -333,20 +553,22 @@ function Footer() {
         <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-orange-600 text-white px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
-              🎁 Get 10% Off
+              Get 10% Off
             </div>
             <span className="text-xs text-gray-500">Subscribe to our newsletter for the latest updates and offers</span>
           </div>
           <div className="flex gap-2">
-            <input type="email" placeholder="Your email address"
+            <input type="email" placeholder="Your email address" value={footerEmail}
+              onChange={e => setFooterEmail(e.target.value)}
               className="px-4 py-2 bg-gray-800 text-white text-xs rounded-lg outline-none placeholder-gray-500 w-52 focus:ring-2 focus:ring-orange-500" />
-            <button className="px-4 py-2 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-700">
-              SUBSCRIBE
+            <button onClick={handleFooterSubscribe}
+              className="px-4 py-2 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-700">
+              {footerSubscribed ? 'SUBSCRIBED!' : 'SUBSCRIBE'}
             </button>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6 pb-5 flex flex-col md:flex-row items-center justify-between gap-3">
-          <p className="text-xs text-gray-600">© {new Date().getFullYear()} Snackoh Bakers · All rights reserved</p>
+          <p className="text-xs text-gray-600">&copy; {new Date().getFullYear()} Snackoh Bakers &middot; All rights reserved</p>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-600">We accept:</span>
             <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-10 object-contain" />
@@ -376,6 +598,7 @@ export default function WebsiteLayout({ children }: { children: React.ReactNode 
         <main className="flex-1">{children}</main>
         <Footer />
         <CartDrawer />
+        <NewsletterModal />
       </div>
     </CartProvider>
   );

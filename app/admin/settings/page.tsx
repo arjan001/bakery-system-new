@@ -5,7 +5,16 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions';
+
+interface NewsletterSubscriber {
+  id: string;
+  email: string;
+  source: string;
+  discount_code?: string;
+  subscribed_at: string;
+  is_active: boolean;
+}
 
 interface OfferForm {
   id?: string;
@@ -136,6 +145,33 @@ export default function SettingsPage() {
   const [offerRotation, setOfferRotation] = useState({ enabled: true, interval: 5 });
   const [offerUploading, setOfferUploading] = useState(false);
 
+  // ── Navbar Ads (Marquee) ──
+  const [navbarAds, setNavbarAds] = useState({
+    enabled: true,
+    items: [
+      'FREE DELIVERY ON ORDERS OVER KES 2,000',
+      'FRESHLY BAKED DAILY',
+      'ORDER BY 5PM FOR NEXT-DAY DELIVERY',
+      'CUSTOM CAKES — ORDER 48 HRS IN ADVANCE',
+      'WHOLESALE ORDERS AVAILABLE',
+    ],
+  });
+  const [newNavbarItem, setNewNavbarItem] = useState('');
+
+  // ── Newsletter Modal ──
+  const [newsletterModal, setNewsletterModal] = useState({
+    enabled: true,
+    title: 'Subscribe Now',
+    subtitle: 'Newsletter',
+    description: 'Get 15% off your first order when you subscribe to our newsletter. Stay updated with exclusive offers and new arrivals.',
+    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop',
+    discountCode: 'WELCOME15',
+    delaySeconds: 5,
+  });
+  const [newsletterImageUploading, setNewsletterImageUploading] = useState(false);
+  const [subscribers, setSubscribers] = useState<NewsletterSubscriber[]>([]);
+  const [subscribersLoading, setSubscribersLoading] = useState(false);
+
   // ── M-Pesa API Settings ──
   const [mpesaApi, setMpesaApi] = useState({
     mpesa_consumer_key: '',
@@ -188,6 +224,100 @@ export default function SettingsPage() {
     if (activeTab === 'offers') loadOffers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // ── Load Navbar Ads settings ──
+  useEffect(() => {
+    if (activeTab === 'navbar-ads') {
+      async function loadNavbarAds() {
+        try {
+          const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'navbarAds').single();
+          if (!error && data?.value) {
+            setNavbarAds(prev => ({ ...prev, ...(data.value as Record<string, unknown>) }));
+            return;
+          }
+        } catch { /* table may not exist */ }
+        try {
+          const saved = localStorage.getItem('snackoh_settings');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.navbarAds) setNavbarAds(prev => ({ ...prev, ...parsed.navbarAds }));
+          }
+        } catch { /* ignore */ }
+      }
+      loadNavbarAds();
+    }
+  }, [activeTab]);
+
+  // ── Load Newsletter Modal settings & subscribers ──
+  useEffect(() => {
+    if (activeTab === 'newsletter') {
+      async function loadNewsletterSettings() {
+        try {
+          const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'newsletterModal').single();
+          if (!error && data?.value) {
+            setNewsletterModal(prev => ({ ...prev, ...(data.value as Record<string, unknown>) }));
+            return;
+          }
+        } catch { /* table may not exist */ }
+        try {
+          const saved = localStorage.getItem('snackoh_settings');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.newsletterModal) setNewsletterModal(prev => ({ ...prev, ...parsed.newsletterModal }));
+          }
+        } catch { /* ignore */ }
+      }
+      async function loadSubscribers() {
+        setSubscribersLoading(true);
+        try {
+          const { data, error } = await supabase.from('newsletter_subscribers').select('*').order('subscribed_at', { ascending: false });
+          if (!error && data) setSubscribers(data as NewsletterSubscriber[]);
+        } catch { /* table may not exist */ }
+        setSubscribersLoading(false);
+      }
+      loadNewsletterSettings();
+      loadSubscribers();
+    }
+  }, [activeTab]);
+
+  const saveNavbarAds = async () => {
+    setSaving(true);
+    const settingsData = { ...JSON.parse(localStorage.getItem('snackoh_settings') || '{}'), navbarAds };
+    localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
+    try {
+      await supabase.from('business_settings').upsert(
+        { key: 'navbarAds', value: navbarAds, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      );
+    } catch { /* table may not exist */ }
+    setSaving(false);
+    setSavedMsg('Navbar ads saved!');
+    setTimeout(() => setSavedMsg(''), 3000);
+  };
+
+  const saveNewsletterModal = async () => {
+    setSaving(true);
+    const settingsData = { ...JSON.parse(localStorage.getItem('snackoh_settings') || '{}'), newsletterModal };
+    localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
+    try {
+      await supabase.from('business_settings').upsert(
+        { key: 'newsletterModal', value: newsletterModal, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      );
+    } catch { /* table may not exist */ }
+    setSaving(false);
+    setSavedMsg('Newsletter modal settings saved!');
+    setTimeout(() => setSavedMsg(''), 3000);
+  };
+
+  const deleteSubscriber = async (id: string) => {
+    try {
+      await supabase.from('newsletter_subscribers').delete().eq('id', id);
+      setSubscribers(prev => prev.filter(s => s.id !== id));
+      setSavedMsg('Subscriber removed');
+      setTimeout(() => setSavedMsg(''), 3000);
+    } catch { setSavedMsg('Failed to remove subscriber'); }
+  };
 
   // ── M-Pesa API: Load settings ──
   const loadMpesaApiSettings = async () => {
@@ -423,7 +553,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, receipt, paymentDetails, posCard, security, backup };
+    const settingsData = { general, receipt, paymentDetails, posCard, security, backup, navbarAds, newsletterModal };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -458,6 +588,8 @@ export default function SettingsPage() {
   const tabs: { key: SettingsTab; label: string; icon: string; tip: string }[] = [
     { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
+    { key: 'navbar-ads', label: 'Navbar Ads', icon: '📢', tip: 'Scrolling marquee text on customer website navbar' },
+    { key: 'newsletter', label: 'Newsletter', icon: '📧', tip: 'Newsletter modal settings & subscriber management' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
     { key: 'mpesa-api', label: 'M-Pesa API', icon: '📱', tip: 'M-Pesa Daraja API credentials & integration settings' },
@@ -745,6 +877,223 @@ export default function SettingsPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── NAVBAR ADS (Marquee) ── */}
+      {activeTab === 'navbar-ads' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-2">Navbar Marquee Text</h3>
+            <p className="text-xs text-muted-foreground mb-4">Configure the scrolling text that appears on the announcement bar at the top of the customer website. These items scroll infinitely from right to left.</p>
+            <label className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-medium">Enable Navbar Ads</p>
+                <p className="text-xs text-muted-foreground">Show scrolling marquee on customer site</p>
+              </div>
+              <button type="button" onClick={() => setNavbarAds({ ...navbarAds, enabled: !navbarAds.enabled })} className={`w-10 h-5 rounded-full transition-colors ${navbarAds.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${navbarAds.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </label>
+
+            <div className="space-y-2 mb-4">
+              {navbarAds.items.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-6 shrink-0">{idx + 1}.</span>
+                  <input type="text" value={item}
+                    onChange={e => {
+                      const newItems = [...navbarAds.items];
+                      newItems[idx] = e.target.value;
+                      setNavbarAds({ ...navbarAds, items: newItems });
+                    }}
+                    className={`${inputCls} flex-1`} />
+                  <button onClick={() => {
+                    const newItems = navbarAds.items.filter((_, i) => i !== idx);
+                    setNavbarAds({ ...navbarAds, items: newItems });
+                  }} className="px-2 py-1 text-red-500 hover:bg-red-50 rounded text-xs font-medium">Remove</button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <input type="text" placeholder="Add new marquee item..." value={newNavbarItem}
+                onChange={e => setNewNavbarItem(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newNavbarItem.trim()) {
+                    setNavbarAds({ ...navbarAds, items: [...navbarAds.items, newNavbarItem.trim()] });
+                    setNewNavbarItem('');
+                  }
+                }}
+                className={inputCls} />
+              <button onClick={() => {
+                if (newNavbarItem.trim()) {
+                  setNavbarAds({ ...navbarAds, items: [...navbarAds.items, newNavbarItem.trim()] });
+                  setNewNavbarItem('');
+                }
+              }} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium text-sm shrink-0">
+                + Add
+              </button>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Preview</h3>
+            <div className="bg-orange-600 text-white text-xs py-2.5 font-medium tracking-wide overflow-hidden whitespace-nowrap rounded-lg">
+              <div className="inline-flex" style={{ animation: 'marquee 15s linear infinite' }}>
+                <span className="inline-block">
+                  {navbarAds.items.map(item => `  •  ${item}`).join('')}
+                  {navbarAds.items.map(item => `  •  ${item}`).join('')}
+                </span>
+              </div>
+              <style>{`@keyframes marquee { 0% { transform: translateX(0%); } 100% { transform: translateX(-50%); } }`}</style>
+            </div>
+          </div>
+
+          <button onClick={saveNavbarAds} disabled={saving}
+            className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save Navbar Ads'}
+          </button>
+        </div>
+      )}
+
+      {/* ── NEWSLETTER MODAL ── */}
+      {activeTab === 'newsletter' && (
+        <div className="space-y-6">
+          {/* Modal Configuration */}
+          <div className="max-w-2xl border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-2">Newsletter Popup Modal</h3>
+            <p className="text-xs text-muted-foreground mb-4">Configure the newsletter subscription modal that appears on the customer website. Visitors can subscribe for a discount code.</p>
+
+            <label className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-medium">Enable Newsletter Popup</p>
+                <p className="text-xs text-muted-foreground">Show popup to first-time visitors</p>
+              </div>
+              <button type="button" onClick={() => setNewsletterModal({ ...newsletterModal, enabled: !newsletterModal.enabled })} className={`w-10 h-5 rounded-full transition-colors ${newsletterModal.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${newsletterModal.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </label>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className={labelCls}>Subtitle (small text)</label><input type="text" value={newsletterModal.subtitle} onChange={e => setNewsletterModal({ ...newsletterModal, subtitle: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Title (large heading)</label><input type="text" value={newsletterModal.title} onChange={e => setNewsletterModal({ ...newsletterModal, title: e.target.value })} className={inputCls} /></div>
+              <div className="col-span-2"><label className={labelCls}>Description</label><textarea value={newsletterModal.description} onChange={e => setNewsletterModal({ ...newsletterModal, description: e.target.value })} className={`${inputCls} h-20 resize-none`} /></div>
+              <div><label className={labelCls}>Discount Code</label><input type="text" value={newsletterModal.discountCode} onChange={e => setNewsletterModal({ ...newsletterModal, discountCode: e.target.value })} placeholder="e.g. WELCOME15" className={inputCls} /></div>
+              <div><label className={labelCls}>Popup Delay (seconds)</label><input type="number" min={1} max={60} value={newsletterModal.delaySeconds} onChange={e => setNewsletterModal({ ...newsletterModal, delaySeconds: parseInt(e.target.value) || 5 })} className={inputCls} /></div>
+              <div className="col-span-2"><label className={labelCls}>Modal Image URL</label><input type="text" value={newsletterModal.image} onChange={e => setNewsletterModal({ ...newsletterModal, image: e.target.value })} className={inputCls} /></div>
+              <div className="col-span-2">
+                <label className={labelCls}>Or Upload Modal Image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={newsletterImageUploading}
+                  className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:opacity-90 file:cursor-pointer disabled:opacity-60"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setNewsletterImageUploading(true);
+                    setSavedMsg('Uploading newsletter image...');
+                    try {
+                      const ext = file.name.split('.').pop() || 'jpg';
+                      const fileName = `newsletter-${Date.now()}.${ext}`;
+                      const { error: uploadError } = await supabase.storage.from('offers').upload(fileName, file, { upsert: true });
+                      if (uploadError) throw uploadError;
+                      const { data: urlData } = supabase.storage.from('offers').getPublicUrl(fileName);
+                      if (urlData?.publicUrl) {
+                        setNewsletterModal(prev => ({ ...prev, image: urlData.publicUrl }));
+                        setSavedMsg('Newsletter image uploaded.');
+                      }
+                    } catch (err) {
+                      console.error('Newsletter image upload error:', err);
+                      setSavedMsg('Upload failed. You can paste a URL instead.');
+                    }
+                    setNewsletterImageUploading(false);
+                    setTimeout(() => setSavedMsg(''), 4000);
+                  }}
+                />
+              </div>
+              {newsletterModal.image && (
+                <div className="col-span-2">
+                  <div className="rounded-lg overflow-hidden h-32 bg-gray-100 w-48">
+                    <img src={newsletterModal.image} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button onClick={saveNewsletterModal} disabled={saving}
+              className="mt-4 px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save Newsletter Settings'}
+            </button>
+          </div>
+
+          {/* Modal Preview */}
+          <div className="max-w-2xl border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Modal Preview</h3>
+            <div className="bg-gray-100 rounded-xl p-6 flex justify-center">
+              <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full overflow-hidden flex">
+                {newsletterModal.image && (
+                  <div className="w-1/3 hidden sm:block">
+                    <img src={newsletterModal.image} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                )}
+                <div className="flex-1 p-5">
+                  <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-0.5">{newsletterModal.subtitle}</p>
+                  <h4 className="text-base font-black text-gray-900 mb-1">{newsletterModal.title}</h4>
+                  <p className="text-[11px] text-gray-600 mb-3 leading-relaxed">{newsletterModal.description}</p>
+                  <div className="bg-gray-100 rounded-lg px-3 py-2 text-xs text-gray-400 mb-2">Enter Your Email</div>
+                  <div className="bg-orange-600 text-white rounded-lg py-2 text-center text-xs font-bold">Subscribe</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Subscribers List */}
+          <div className="max-w-4xl border border-border rounded-lg p-6 bg-card">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold">Newsletter Subscribers</h3>
+                <p className="text-xs text-muted-foreground">All email subscribers from the modal and footer forms.</p>
+              </div>
+              <span className="text-xs font-bold text-muted-foreground">{subscribers.length} total</span>
+            </div>
+
+            {subscribersLoading ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Loading subscribers...</p>
+            ) : subscribers.length === 0 ? (
+              <div className="border border-dashed border-border rounded-lg p-8 text-center">
+                <p className="text-muted-foreground text-sm">No subscribers yet. The newsletter popup and footer form will collect emails here.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left text-xs font-bold text-muted-foreground py-2 px-2">Email</th>
+                      <th className="text-left text-xs font-bold text-muted-foreground py-2 px-2">Source</th>
+                      <th className="text-left text-xs font-bold text-muted-foreground py-2 px-2">Discount Code</th>
+                      <th className="text-left text-xs font-bold text-muted-foreground py-2 px-2">Date</th>
+                      <th className="text-right text-xs font-bold text-muted-foreground py-2 px-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subscribers.map(sub => (
+                      <tr key={sub.id} className="border-b border-border/50 hover:bg-secondary/50">
+                        <td className="py-2 px-2 font-medium">{sub.email}</td>
+                        <td className="py-2 px-2"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${sub.source === 'modal' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{sub.source || 'unknown'}</span></td>
+                        <td className="py-2 px-2 font-mono text-xs">{sub.discount_code || '-'}</td>
+                        <td className="py-2 px-2 text-xs text-muted-foreground">{sub.subscribed_at ? new Date(sub.subscribed_at).toLocaleDateString() : '-'}</td>
+                        <td className="py-2 px-2 text-right">
+                          <button onClick={() => deleteSubscriber(sub.id)} className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-xs font-medium">Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
