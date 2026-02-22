@@ -154,7 +154,7 @@ export function Header() {
         .from('orders')
         .select('id, order_number, customer_name, total_amount, created_at, status, payment_method')
         .eq('source', 'Online')
-        .in('status', ['Pending', 'On Hold'])
+        .in('status', ['Pending', 'On Hold', 'Confirmed'])
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -186,7 +186,9 @@ export function Header() {
         { event: 'INSERT', schema: 'public', table: 'orders' },
         (payload) => {
           const r = payload.new as Record<string, unknown>;
-          if ((r.source as string) === 'Online') {
+          const source = (r.source as string) || '';
+          // Alert for Online orders (WhatsApp, M-Pesa, Card) — NOT POS orders
+          if (source === 'Online') {
             const newNotif: OnlineOrderNotif = {
               id: r.id as string,
               orderNumber: (r.order_number || '') as string,

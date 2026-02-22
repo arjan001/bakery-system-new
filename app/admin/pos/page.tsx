@@ -333,13 +333,61 @@ export default function POSPage() {
   const completeSale = async (method: string, paid: number, change: number, mpesaRef?: string) => {
     const rNo = genReceiptNo();
     const receipt: ReceiptData = { receiptNo: rNo, date: new Date().toLocaleString(), cashier: loggedCashier, customer: selectedCustomer.name, items: [...cartItems], subtotal, tax, total, paid, change, method, mpesaRef };
+    let posSaleId: string | null = null;
     try {
-      await supabase.from('pos_sales').insert({
+      const { data: saleData } = await supabase.from('pos_sales').insert({
         receipt_number: rNo, customer_name: selectedCustomer.name, sale_type: saleType,
         payment_method: method, mpesa_reference: mpesaRef || null, mpesa_phone: method === 'M-Pesa' ? mpesaPhone : null,
         subtotal, tax, total, amount_paid: paid, change_amount: change, cashier_name: loggedCashier, status: 'Completed',
-      });
+      }).select('id').single();
+      if (saleData) posSaleId = saleData.id;
     } catch { /* continue */ }
+
+    // Also save POS sale items
+    if (posSaleId) {
+      try {
+        await supabase.from('pos_sale_items').insert(
+          cartItems.map(item => ({
+            sale_id: posSaleId,
+            product_name: item.name,
+            sku: item.sku,
+            quantity: item.quantity,
+            unit_price: item.price,
+            total: item.price * item.quantity,
+          }))
+        );
+      } catch { /* continue */ }
+    }
+
+    // Save as regular order in orders table for unified order management
+    try {
+      const orderNumber = `POS-${rNo}`;
+      const { data: orderData } = await supabase.from('orders').insert({
+        order_number: orderNumber,
+        customer_name: selectedCustomer.name,
+        customer_phone: selectedCustomer.phone || '',
+        status: 'Delivered',
+        total_amount: total,
+        payment_status: method === 'Credit' ? 'Unpaid' : 'Paid',
+        payment_method: method,
+        source: 'Regular',
+        fulfillment: 'Pickup',
+        delivery_notes: `POS Sale | Receipt: ${rNo} | Cashier: ${loggedCashier}`,
+        pos_sale_id: posSaleId,
+      }).select('id').single();
+
+      if (orderData) {
+        await supabase.from('order_items').insert(
+          cartItems.map(item => ({
+            order_id: orderData.id,
+            product_name: item.name,
+            quantity: item.quantity,
+            unit_price: item.price,
+            total: item.price * item.quantity,
+          }))
+        );
+      }
+    } catch { /* continue — order table may not have the new columns yet */ }
     setProducts(products.map(p => { const ci = cartItems.find(i => i.id === p.id); return ci ? { ...p, stock: Math.max(0, p.stock - ci.quantity) } : p; }));
     setTotalSalesCount(prev => prev + 1);
     setTotalSalesAmount(prev => prev + total);
