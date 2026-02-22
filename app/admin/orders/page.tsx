@@ -19,7 +19,7 @@ interface Order {
   customerPhone: string;
   items: OrderItem[];
   total: number;
-  status: 'Pending' | 'Confirmed' | 'Processing' | 'Ready' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Rejected';
+  status: 'Pending' | 'Confirmed' | 'Processing' | 'Ready' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Rejected' | 'On Hold';
   source: 'Regular' | 'Online' | 'OnCall';
   orderDate: string;
   dueDate: string;
@@ -230,6 +230,7 @@ export default function OrdersPage() {
 
   const getStatusColor = (s: Order['status']) => {
     switch (s) {
+      case 'On Hold':    return 'bg-amber-100 text-amber-800';
       case 'Pending':    return 'bg-yellow-100 text-yellow-800';
       case 'Confirmed':  return 'bg-blue-100 text-blue-800';
       case 'Processing': return 'bg-indigo-100 text-indigo-800';
@@ -313,9 +314,10 @@ export default function OrdersPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         {[
           { label: 'Total Orders', value: orders.length, color: '' },
+          { label: 'On Hold', value: orders.filter(o => o.status === 'On Hold').length, color: 'text-amber-600' },
           { label: 'Pending', value: orders.filter(o => o.status === 'Pending').length, color: 'text-yellow-600' },
           { label: 'Online (new)', value: pendingOnline, color: 'text-blue-600' },
           { label: 'Delivered', value: orders.filter(o => o.status === 'Delivered').length, color: 'text-green-600' },
@@ -383,7 +385,7 @@ export default function OrdersPage() {
           <div className="mb-4">
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none">
-              {['All', 'Pending', 'Confirmed', 'Processing', 'Ready', 'Shipped', 'Delivered', 'Cancelled'].map(s => (
+              {['All', 'On Hold', 'Pending', 'Confirmed', 'Processing', 'Ready', 'Shipped', 'Delivered', 'Cancelled'].map(s => (
                 <option key={s}>{s}</option>
               ))}
             </select>
@@ -538,7 +540,7 @@ export default function OrdersPage() {
                 <p className="text-sm font-semibold text-muted-foreground">On-Call Orders History</p>
                 <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
                   className="px-3 py-1.5 border border-border rounded-lg text-xs focus:ring-2 focus:ring-primary/50 outline-none">
-                  {['All', 'Pending', 'Processing', 'Ready', 'Delivered', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
+                  {['All', 'On Hold', 'Pending', 'Processing', 'Ready', 'Delivered', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
               <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
@@ -619,7 +621,7 @@ export default function OrdersPage() {
               <label className="block text-xs text-muted-foreground mb-1">Status</label>
               <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as Order['status'] })}
                 className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none">
-                {['Pending','Confirmed','Processing','Ready','Shipped','Delivered','Cancelled'].map(s => <option key={s}>{s}</option>)}
+                {['On Hold','Pending','Confirmed','Processing','Ready','Shipped','Delivered','Cancelled'].map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
             <div>

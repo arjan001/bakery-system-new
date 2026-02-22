@@ -4,18 +4,20 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
-import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle } from 'lucide-react';
+import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle, MessageCircle, Clock } from 'lucide-react';
 
-type PaymentMethod = 'card' | 'mpesa';
+type PaymentMethod = 'card' | 'mpesa' | 'whatsapp';
 type FulfillmentType = 'ship' | 'pickup';
 type MpesaState = 'idle' | 'sending' | 'waiting' | 'checking' | 'done' | 'failed';
+
+const WHATSAPP_NUMBER = '254733675267';
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCart();
 
   const [fulfillment, setFulfillment] = useState<FulfillmentType>('ship');
   const [payment, setPayment] = useState<PaymentMethod>('mpesa');
-  const [step, setStep] = useState<'form' | 'success'>('form');
+  const [step, setStep] = useState<'form' | 'success' | 'whatsapp-success'>('form');
 
   // Contact
   const [email, setEmail] = useState('');
@@ -36,6 +38,9 @@ export default function CheckoutPage() {
   const [mpesaMsg, setMpesaMsg] = useState('');
   const [mpesaCheckoutId, setMpesaCheckoutId] = useState('');
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // WhatsApp
+  const [whatsappOrderNumber, setWhatsappOrderNumber] = useState('');
 
   const delivery = total >= 2000 ? 0 : 200;
   const orderTotal = total + delivery;
@@ -140,8 +145,103 @@ export default function CheckoutPage() {
     }, 3000);
   }, []);
 
+  const handleWhatsAppCheckout = async () => {
+    const orderNumber = `WA-${Date.now().toString(36).toUpperCase()}`;
+    const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
+    const customerPhone = form.phone || email;
+
+    // Save order to Supabase with "On Hold" status
+    try {
+      const { error: orderError } = await supabase.from('orders').insert({
+        order_number: orderNumber,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        status: 'On Hold',
+        total_amount: orderTotal,
+        payment_status: 'Unpaid',
+        payment_method: 'WhatsApp',
+        delivery_notes: fulfillment === 'ship'
+          ? `Ship to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county} ${form.postalCode}`
+          : 'Pickup from bakery',
+      });
+      if (orderError) console.error('Order save error:', orderError);
+
+      // Save order items
+      const orderItems = items.map(item => ({
+        order_id: orderNumber,
+        product_name: item.name,
+        quantity: item.quantity,
+        unit_price: item.price,
+        total: item.price * item.quantity,
+      }));
+
+      // Try to get the order ID to save items
+      const { data: savedOrder } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_number', orderNumber)
+        .single();
+
+      if (savedOrder) {
+        await supabase.from('order_items').insert(
+          items.map(item => ({
+            order_id: savedOrder.id,
+            product_name: item.name,
+            quantity: item.quantity,
+            unit_price: item.price,
+            total: item.price * item.quantity,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Order save error:', err);
+    }
+
+    // Build WhatsApp message
+    const itemLines = items.map(item =>
+      `- ${item.name} x${item.quantity} = KES ${(item.price * item.quantity).toLocaleString()}`
+    ).join('\n');
+
+    const deliveryInfo = fulfillment === 'ship'
+      ? `Delivery to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county}`
+      : 'Pickup from bakery';
+
+    const message = [
+      `*NEW ORDER - ${orderNumber}*`,
+      ``,
+      `*Customer:* ${customerName}`,
+      `*Contact:* ${customerPhone}`,
+      `*Email:* ${email}`,
+      ``,
+      `*Order Items:*`,
+      itemLines,
+      ``,
+      `*Subtotal:* KES ${total.toLocaleString()}`,
+      `*Delivery:* ${delivery === 0 ? 'FREE' : 'KES ' + delivery}`,
+      `*Total:* KES ${orderTotal.toLocaleString()}`,
+      ``,
+      `*Fulfillment:* ${deliveryInfo}`,
+      ``,
+      `_Order placed on hold - awaiting payment confirmation._`,
+    ].join('\n');
+
+    const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+
+    setWhatsappOrderNumber(orderNumber);
+    clearCart();
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    setStep('whatsapp-success');
+  };
+
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (payment === 'whatsapp') {
+      await handleWhatsAppCheckout();
+      return;
+    }
+
     if (payment === 'mpesa' && mpesaState !== 'done') {
       if (mpesaState === 'idle') handleMpesaPush();
       return;
@@ -168,6 +268,35 @@ export default function CheckoutPage() {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setStep('success');
   };
+
+  if (step === 'whatsapp-success') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock size={32} className="text-green-600" />
+          </div>
+          <h1 className="text-3xl font-black text-gray-900 mb-2">Order Placed on Hold</h1>
+          <p className="text-gray-600 mb-2">
+            Your order <strong className="text-orange-600">{whatsappOrderNumber}</strong> has been received and is on hold pending payment review.
+          </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-left">
+            <p className="text-sm font-bold text-amber-800 mb-2">What happens next?</p>
+            <ol className="text-xs text-amber-700 space-y-1.5 list-decimal list-inside">
+              <li>Complete your WhatsApp message to send the order details</li>
+              <li>Our team will review your order and confirm the total</li>
+              <li>Make payment via M-Pesa or bank transfer as instructed</li>
+              <li>Once payment is received, your order will be confirmed and processed</li>
+            </ol>
+          </div>
+          <p className="text-xs text-gray-400 mb-6">A confirmation will be sent to <strong>{email}</strong> once your order is approved.</p>
+          <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700">
+            Continue Shopping
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (step === 'success') {
     return (
@@ -338,13 +467,14 @@ export default function CheckoutPage() {
               {/* Payment tabs */}
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 {[
-                  { id: 'mpesa', label: 'M-Pesa', icon: Smartphone },
-                  { id: 'card', label: 'Credit / Debit Card', icon: CreditCard },
+                  { id: 'mpesa' as const, label: 'M-Pesa', icon: Smartphone },
+                  { id: 'whatsapp' as const, label: 'Checkout via WhatsApp', icon: MessageCircle },
+                  { id: 'card' as const, label: 'Credit / Debit Card', icon: CreditCard },
                 ].map((opt, i) => (
                   <div key={opt.id}>
-                    <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? 'bg-green-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                    <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? (opt.id === 'whatsapp' ? 'bg-green-50' : opt.id === 'mpesa' ? 'bg-green-50' : 'bg-blue-50') : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
                       <input type="radio" name="payment" value={opt.id} checked={payment === opt.id}
-                        onChange={() => { setPayment(opt.id as PaymentMethod); setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="accent-orange-600" />
+                        onChange={() => { setPayment(opt.id); setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="accent-orange-600" />
                       <opt.icon size={16} className="text-gray-500" />
                       <span className="text-sm font-semibold text-gray-800 flex-1">{opt.label}</span>
                       {opt.id === 'card' && (
@@ -356,6 +486,9 @@ export default function CheckoutPage() {
                       )}
                       {opt.id === 'mpesa' && (
                         <span className="text-[10px] font-black px-2 py-0.5 bg-green-600 text-white rounded">MPESA</span>
+                      )}
+                      {opt.id === 'whatsapp' && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-green-500 text-white rounded">WHATSAPP</span>
                       )}
                     </label>
 
@@ -405,8 +538,8 @@ export default function CheckoutPage() {
                         {mpesaState !== 'idle' && (
                           <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : mpesaState === 'checking' ? 'bg-blue-50 text-blue-800 animate-pulse' : mpesaState === 'failed' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
                             {mpesaState === 'sending' && 'Sending STK push...'}
-                            {mpesaState === 'waiting' && `📱 ${mpesaMsg}`}
-                            {mpesaState === 'checking' && `🔎 ${mpesaMsg}`}
+                            {mpesaState === 'waiting' && mpesaMsg}
+                            {mpesaState === 'checking' && mpesaMsg}
                             {mpesaState === 'done' && 'Payment confirmed!'}
                             {mpesaState === 'failed' && mpesaMsg}
                           </div>
@@ -425,6 +558,26 @@ export default function CheckoutPage() {
                         </div>
                       </div>
                     )}
+
+                    {/* WhatsApp fields */}
+                    {payment === 'whatsapp' && opt.id === 'whatsapp' && (
+                      <div className="px-4 pb-4 space-y-3 bg-green-50/50 border-t border-gray-100">
+                        <div className="bg-green-50 rounded-lg p-3 text-xs text-green-800">
+                          <p className="font-bold mb-0.5">How WhatsApp checkout works:</p>
+                          <p>1. Click &quot;Place Order via WhatsApp&quot; below</p>
+                          <p>2. Your order details will be sent to our team on WhatsApp</p>
+                          <p>3. Our team will review and confirm your order</p>
+                          <p>4. Make payment as instructed (M-Pesa / Bank Transfer)</p>
+                          <p>5. Once payment is verified, your order will be processed</p>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                          <p className="font-semibold flex items-center gap-1.5">
+                            <Clock size={12} /> Order will be placed on hold
+                          </p>
+                          <p className="mt-1">Your order will be saved and placed on hold until payment is received and confirmed by our admin team.</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -433,13 +586,24 @@ export default function CheckoutPage() {
             {/* Place order button */}
             <button type="submit"
               disabled={payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking')}
-              className="w-full py-4 bg-green-600 text-white font-black text-base rounded-xl hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-              <Lock size={16} />
-              {payment === 'mpesa' && mpesaState === 'idle' ? `Send M-Pesa Request — KES ${orderTotal.toLocaleString()}` :
-               payment === 'mpesa' && mpesaState === 'done' ? 'Confirm Order' :
-               payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting') ? 'Waiting for payment...' :
-               payment === 'mpesa' && mpesaState === 'checking' ? 'Verifying payment...' :
-               `Pay KES ${orderTotal.toLocaleString()}`}
+              className={`w-full py-4 font-black text-base rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
+                payment === 'whatsapp'
+                  ? 'bg-green-500 text-white hover:bg-green-600'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}>
+              {payment === 'whatsapp' ? (
+                <><MessageCircle size={16} /> Place Order via WhatsApp — KES {orderTotal.toLocaleString()}</>
+              ) : payment === 'mpesa' && mpesaState === 'idle' ? (
+                <><Lock size={16} /> Send M-Pesa Request — KES {orderTotal.toLocaleString()}</>
+              ) : payment === 'mpesa' && mpesaState === 'done' ? (
+                <><Lock size={16} /> Confirm Order</>
+              ) : payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting') ? (
+                <><Lock size={16} /> Waiting for payment...</>
+              ) : payment === 'mpesa' && mpesaState === 'checking' ? (
+                <><Lock size={16} /> Verifying payment...</>
+              ) : (
+                <><Lock size={16} /> Pay KES {orderTotal.toLocaleString()}</>
+              )}
             </button>
 
             {/* Footer links */}
