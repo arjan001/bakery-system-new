@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/lib/cart-context';
 import { products, getBestSellers, CIRCLE_CATEGORIES } from '@/lib/products';
-import { ShoppingBag, Star, ChevronRight, ChevronLeft, Truck, Clock, Shield, Users, Store } from 'lucide-react';
+import { ShoppingBag, Star, ChevronRight, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Offer, getOnOffer } from '@/lib/products';
 
@@ -177,101 +177,95 @@ function PromoBannerCarousel() {
   if (slides.length === 0) return null;
   const slide = slides[current];
 
+  // Side cards for right column
+  const sideCards = [
+    { title: 'Freshly Baked Breads', desc: 'Artisan loaves baked fresh every morning. White, brown, sourdough & more.', image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', href: '/shop?category=Bread' },
+    { title: 'Custom Cakes & Pastries', desc: 'Handcrafted cakes for every occasion. Order 48hrs in advance.', image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', href: '/shop?category=Cake' },
+  ];
+
   return (
-    <section className="bg-gray-950 text-white">
-      <div className="max-w-7xl mx-auto px-6 py-16 md:py-24 grid lg:grid-cols-[1.1fr,0.9fr] gap-10 items-center">
-        {/* Left: Text details */}
-        <div>
-          <div className="inline-flex items-center gap-2 bg-orange-500/15 text-orange-300 text-xs font-bold px-4 py-1.5 rounded-full mb-6 border border-orange-500/30">
-            {slide.badge}
-          </div>
-
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-4">
-            {slide.title.split(' ').map((word, i) => (
-              <span key={i}>
-                {i > 0 && ' '}
-                {i % 4 === 1 ? <span className="text-orange-400">{word}</span> : word}
-              </span>
-            ))}
-          </h1>
-
-          <p className="text-white/70 text-base leading-relaxed mb-4 max-w-lg line-clamp-4">
-            {slide.description}
-          </p>
-
-          {slide.discountText && (
-            <p className="text-orange-300 font-bold text-sm mb-6">{slide.discountText}</p>
-          )}
-
-          <div className="flex flex-wrap gap-3 mb-8">
-            <Link href={slide.link}
-              className="px-8 py-3.5 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors inline-flex items-center gap-2">
-              SHOP NOW <ChevronRight size={15} />
-            </Link>
-            <Link href="/shop"
-              className="px-8 py-3.5 border-2 border-white/30 text-white font-bold text-sm rounded-full hover:border-orange-400 hover:text-orange-400 transition-colors">
-              View All Products
-            </Link>
-          </div>
-
-          <div className="flex flex-wrap gap-5">
-            {[
-              { icon: Truck, label: 'Same-Day Delivery' },
-              { icon: Clock, label: 'Baked Fresh Daily' },
-              { icon: Shield, label: 'Quality Guaranteed' },
-            ].map(b => (
-              <div key={b.label} className="flex items-center gap-2 text-xs text-white/60 font-medium">
-                <b.icon size={14} className="text-orange-400" /> {b.label}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: Offer image */}
-        <div className="relative">
-          <div className="relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-gray-900">
+    <section className="bg-white">
+      <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr,0.45fr] gap-4 items-stretch">
+          {/* Left: Main hero banner */}
+          <div className="relative rounded-2xl overflow-hidden group cursor-pointer min-h-[320px] sm:min-h-[400px] lg:min-h-[480px]">
+            <Link href={slide.link} className="absolute inset-0 z-10" />
             <img
               src={slide.image}
               alt={slide.title}
-              className="w-full h-[320px] sm:h-[380px] lg:h-[440px] object-cover transition-opacity duration-700"
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
               key={slide.id}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
-            <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-center justify-between gap-2">
-              <span className="px-3 py-1 bg-black/60 text-white text-xs font-bold rounded-full">{slide.badge}</span>
-              {slide.discountText && (
-                <span className="px-3 py-1 bg-orange-600 text-white text-xs font-bold rounded-full">{slide.discountText}</span>
-              )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+
+            {/* Badge */}
+            <div className="absolute top-4 left-4 z-20">
+              <span className="inline-flex items-center gap-1.5 bg-orange-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider">
+                {slide.badge}
+              </span>
             </div>
+
+            {/* Text overlay at bottom */}
+            <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10 z-20">
+              <h1 className="text-3xl md:text-4xl lg:text-5xl font-black leading-tight text-white mb-3">
+                {slide.title.split(' ').map((word, i) => (
+                  <span key={i}>
+                    {i > 0 && ' '}
+                    {i % 4 === 1 ? <span className="text-orange-400">{word}</span> : word}
+                  </span>
+                ))}
+              </h1>
+              <p className="text-white/80 text-sm md:text-base leading-relaxed mb-4 max-w-lg line-clamp-2">
+                {slide.description}
+              </p>
+              {slide.discountText && (
+                <p className="text-orange-300 font-bold text-sm mb-4">{slide.discountText}</p>
+              )}
+              <span className="inline-flex items-center gap-2 px-6 py-3 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors">
+                SHOP NOW <ChevronRight size={15} />
+              </span>
+            </div>
+
+            {/* Carousel controls */}
+            {slides.length > 1 && (
+              <>
+                <button onClick={(e) => { e.preventDefault(); goTo(current - 1); }}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
+                  <ChevronLeft size={20} />
+                </button>
+                <button onClick={(e) => { e.preventDefault(); goTo(current + 1); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
+                  <ChevronRight size={20} />
+                </button>
+                <div className="absolute bottom-4 right-6 z-30 flex gap-1.5">
+                  {slides.map((s, i) => (
+                    <button key={s.id} onClick={(e) => { e.preventDefault(); setCurrent(i); }}
+                      className={`h-2 rounded-full transition-all duration-300 ${i === current ? 'w-6 bg-orange-500' : 'w-2 bg-white/50 hover:bg-white/70'}`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
-          {slides.length > 1 && (
-            <>
-              <button onClick={() => goTo(current - 1)}
-                className="absolute -left-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
-                <ChevronLeft size={20} />
-              </button>
-              <button onClick={() => goTo(current + 1)}
-                className="absolute -right-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors">
-                <ChevronRight size={20} />
-              </button>
-            </>
-          )}
-
-          {slides.length > 1 && (
-            <div className="mt-4 flex items-center justify-between">
-              <div className="flex gap-2">
-                {slides.map((s, i) => (
-                  <button key={s.id} onClick={() => setCurrent(i)}
-                    className={`h-2 rounded-full transition-all duration-300 ${i === current ? 'w-8 bg-orange-500' : 'w-2 bg-white/40 hover:bg-white/60'}`}
-                  />
-                ))}
-              </div>
-              <div className="px-3 py-1 bg-white/10 rounded-full text-white/70 text-xs font-medium">
-                {current + 1} / {slides.length}
-              </div>
-            </div>
-          )}
+          {/* Right: Two stacked promotional cards */}
+          <div className="flex flex-col gap-4">
+            {sideCards.map(card => (
+              <Link key={card.title} href={card.href}
+                className="relative rounded-2xl overflow-hidden group flex-1 min-h-[150px] lg:min-h-0 block">
+                <img src={card.image} alt={card.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+                <div className="absolute bottom-0 left-0 right-0 p-4 md:p-5">
+                  <h3 className="text-white font-black text-sm md:text-base mb-1">{card.title}</h3>
+                  <p className="text-white/70 text-xs leading-relaxed line-clamp-2">{card.desc}</p>
+                  <span className="inline-flex items-center gap-1 text-orange-400 text-xs font-bold mt-2 group-hover:text-orange-300 transition-colors uppercase tracking-wider">
+                    Shop Now <ChevronRight size={12} />
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     </section>
@@ -280,6 +274,43 @@ function PromoBannerCarousel() {
 
 export default function HomePage() {
   const bestSellers = getBestSellers();
+  const [freshProducts, setFreshProducts] = useState<(typeof products)[0][]>([]);
+
+  // Fetch products from database with fallback to hardcoded list
+  useEffect(() => {
+    async function loadFreshProducts() {
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('in_stock', true)
+          .order('created_at', { ascending: false })
+          .limit(8);
+        if (!error && data && data.length > 0) {
+          setFreshProducts(data.map((p: Record<string, unknown>) => ({
+            id: String(p.id),
+            name: String(p.name || p.product_name || ''),
+            price: Number(p.price) || 0,
+            originalPrice: p.original_price ? Number(p.original_price) : undefined,
+            image: String(p.image || p.image_url || 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop'),
+            category: String(p.category || ''),
+            description: String(p.description || ''),
+            details: String(p.details || ''),
+            inStock: p.in_stock !== false,
+            stock: Number(p.stock) || 0,
+            tags: Array.isArray(p.tags) ? p.tags as string[] : [],
+            isNew: Boolean(p.is_new),
+            isSale: Boolean(p.is_sale),
+            isBestSeller: Boolean(p.is_best_seller),
+          })));
+          return;
+        }
+      } catch { /* table may not exist yet */ }
+      // Fallback to hardcoded products
+      setFreshProducts(products.filter(p => p.inStock).slice(0, 8));
+    }
+    loadFreshProducts();
+  }, []);
 
   return (
     <div className="bg-white">
@@ -397,7 +428,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
               { label: 'BIRTHDAYS', image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', href: '/shop?category=Cake' },
-              { label: 'THANK YOU', image: 'https://images.unsplash.com/photo-1499638673689-79a0b0a1bcea?w=600&q=80&fit=crop', href: '/shop?category=Cookies' },
+              { label: 'THANK YOU', image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop', href: '/shop?category=Cookies' },
               { label: 'CELEBRATIONS', image: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=600&q=80&fit=crop', href: '/shop?category=Cake' },
             ].map(item => (
               <Link key={item.label} href={item.href}
@@ -416,17 +447,26 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ─── SECOND BEST SELLERS (all products preview) ──────────────────── */}
+      {/* ─── FRESH TODAY (products from database) ─────────────────────── */}
       <section className="py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex items-end justify-between mb-8">
-            <h2 className="text-3xl font-black text-gray-900">Fresh Today</h2>
+            <div>
+              <p className="text-xs text-orange-600 font-bold tracking-widest uppercase mb-1">Baked Today</p>
+              <h2 className="text-3xl font-black text-gray-900">Fresh Today</h2>
+            </div>
             <Link href="/shop" className="text-sm font-bold text-gray-600 hover:text-orange-600 flex items-center gap-1">
               View all <ChevronRight size={14} />
             </Link>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-            {products.filter(p => p.inStock).slice(2, 10).map(p => <HomeProductCard key={p.id} product={p} />)}
+            {freshProducts.map(p => <HomeProductCard key={p.id} product={p} />)}
+          </div>
+          <div className="mt-10 text-center">
+            <Link href="/shop"
+              className="inline-flex items-center gap-2 px-8 py-3.5 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors">
+              Shop More <ChevronRight size={15} />
+            </Link>
           </div>
         </div>
       </section>
@@ -442,6 +482,45 @@ export default function HomePage() {
             className="shrink-0 px-6 py-3 bg-white text-orange-600 font-black text-sm rounded-full hover:bg-gray-100 transition-colors">
             SHOP NOW
           </Link>
+        </div>
+      </section>
+
+      {/* ─── ABOUT US ──────────────────────────────────────────────────── */}
+      <section id="about" className="py-16">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <p className="text-xs text-orange-600 font-bold tracking-widest uppercase mb-2">About Snackoh Bakers</p>
+              <h2 className="text-3xl font-black text-gray-900 mb-6">Committed to Health, Quality &amp; Freshness</h2>
+              <div className="space-y-4 text-sm text-gray-600 leading-relaxed">
+                <p>
+                  At Snackoh Bakers, we believe that every bite should be a testament to quality. Our bakery is built on a foundation of health-conscious baking, using premium ingredients sourced from trusted suppliers to ensure every product meets the highest standards.
+                </p>
+                <p>
+                  We are committed to maintaining strict quality control at every step — from selecting the finest flours and natural ingredients to our carefully monitored baking processes. Freshness is not just a promise; it&apos;s our daily practice. Every loaf, pastry, and cake is baked fresh to order.
+                </p>
+                <p>
+                  Whether you&apos;re a <strong className="text-gray-800">retail customer</strong> looking for your daily bread or a <strong className="text-gray-800">wholesale partner</strong> stocking your shelves, we serve both with the same dedication to excellence. We supply shops, restaurants, hotels, events, and corporate clients across Nairobi.
+                </p>
+              </div>
+              <div className="mt-6 p-4 bg-orange-50 border border-orange-100 rounded-xl">
+                <p className="text-sm font-bold text-gray-800 mb-1">Interested in wholesale orders?</p>
+                <p className="text-xs text-gray-600 mb-3">We offer competitive bulk pricing for businesses. Get in touch with our sales team for a custom quote.</p>
+                <Link href="/contact"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 text-white font-bold text-xs rounded-full hover:bg-orange-700 transition-colors">
+                  Contact Us <ChevronRight size={12} />
+                </Link>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-2xl overflow-hidden aspect-[3/4]">
+                <img src="https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80&fit=crop" alt="Fresh breads" className="w-full h-full object-cover" />
+              </div>
+              <div className="rounded-2xl overflow-hidden aspect-[3/4] mt-8">
+                <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&q=80&fit=crop" alt="Cakes and pastries" className="w-full h-full object-cover" />
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
