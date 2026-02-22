@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
 
     if (!config.consumer_key || !config.consumer_secret) {
       return NextResponse.json(
-        { success: false, message: 'M-Pesa API credentials are not configured. Please set them in Admin Settings.' },
+        { success: false, message: 'M-Pesa API credentials are not configured. Please set MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET in your environment variables or configure them in Admin Settings > M-Pesa API.' },
         { status: 500 }
       );
     }

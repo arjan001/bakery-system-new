@@ -12,6 +12,8 @@ interface OnlineOrderNotif {
   customerName: string;
   total: number;
   createdAt: string;
+  status: string;
+  paymentMethod: string;
 }
 
 export function Header() {
@@ -36,11 +38,11 @@ export function Header() {
     const fetchPendingOnline = async () => {
       const { data } = await supabase
         .from('orders')
-        .select('id, order_number, customer_name, total_amount, created_at')
+        .select('id, order_number, customer_name, total_amount, created_at, status, payment_method')
         .eq('source', 'Online')
-        .eq('status', 'Pending')
+        .in('status', ['Pending', 'On Hold'])
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(20);
 
       if (data) {
         setNotifications(data.map((r: Record<string, unknown>) => ({
@@ -49,6 +51,8 @@ export function Header() {
           customerName: (r.customer_name || '') as string,
           total: (r.total_amount || 0) as number,
           createdAt: (r.created_at || '') as string,
+          status: (r.status || 'Pending') as string,
+          paymentMethod: (r.payment_method || '') as string,
         })));
       }
     };
@@ -71,15 +75,35 @@ export function Header() {
               customerName: (r.customer_name || '') as string,
               total: (r.total_amount || 0) as number,
               createdAt: (r.created_at || new Date().toISOString()) as string,
+              status: (r.status || 'Pending') as string,
+              paymentMethod: (r.payment_method || '') as string,
             };
-            setNotifications(prev => [newNotif, ...prev.slice(0, 9)]);
+            setNotifications(prev => [newNotif, ...prev.slice(0, 19)]);
             // Ring the bell
             setRinging(true);
             setTimeout(() => setRinging(false), 3000);
+            // Play notification sound
+            try {
+              const audio = new Audio('/notification.mp3');
+              audio.volume = 0.5;
+              audio.play().catch(() => {});
+            } catch {}
+            // Show browser notification if permitted
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification('New Online Order', {
+                body: `${newNotif.customerName} - ${newNotif.orderNumber} - KES ${newNotif.total.toLocaleString()}`,
+                icon: '/favicon.ico',
+              });
+            }
           }
         }
       )
       .subscribe();
+
+    // Request browser notification permission
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
 
     return () => { supabase.removeChannel(channel); };
   }, []);
@@ -187,13 +211,23 @@ export function Header() {
                 <div className="max-h-72 overflow-y-auto divide-y divide-border">
                   {notifications.map(n => (
                     <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-                        <ShoppingBag size={14} className="text-blue-600" />
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${n.status === 'On Hold' ? 'bg-amber-100' : 'bg-blue-100'}`}>
+                        <ShoppingBag size={14} className={n.status === 'On Hold' ? 'text-amber-600' : 'text-blue-600'} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate">{n.customerName}</p>
                         <p className="text-xs text-muted-foreground">{n.orderNumber} &bull; KES {n.total.toLocaleString()}</p>
-                        <p className="text-xs text-muted-foreground">{timeAgo(n.createdAt)}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${n.status === 'On Hold' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {n.status}
+                          </span>
+                          {n.paymentMethod && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-gray-100 text-gray-600">
+                              {n.paymentMethod}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">{timeAgo(n.createdAt)}</span>
+                        </div>
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
                         <Link

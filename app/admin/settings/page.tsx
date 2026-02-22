@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'posCard' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions';
 
 interface OfferForm {
   id?: string;
@@ -460,6 +460,7 @@ export default function SettingsPage() {
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
+    { key: 'mpesa-api', label: 'M-Pesa API', icon: '📱', tip: 'M-Pesa Daraja API credentials & integration settings' },
     { key: 'posCard', label: 'POS Card', icon: '💳', tip: 'Card reader setup & POS card payment settings' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
@@ -951,6 +952,186 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── M-PESA API SETTINGS ── */}
+      {activeTab === 'mpesa-api' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-blue-200 rounded-lg p-6 bg-blue-50/50">
+            <h3 className="font-semibold mb-2 text-blue-800">M-Pesa Daraja API Integration</h3>
+            <p className="text-sm text-blue-700">
+              These credentials are used for STK Push (Lipa Na M-Pesa Online) payments. The primary source is your <strong>environment variables</strong> (set on Netlify or in <code>.env.local</code>). You can also save a backup copy to the database below.
+            </p>
+          </div>
+
+          {mpesaApiLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading M-Pesa settings...</div>
+          ) : (
+            <>
+              {/* Current Configuration Status */}
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold">Current Configuration</h3>
+                  <button onClick={loadMpesaApiSettings} className="text-xs text-primary hover:underline font-medium">Refresh</button>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">Values currently loaded from environment variables or database backup. Sensitive values are masked.</p>
+                <div className="space-y-2">
+                  {[
+                    { key: 'mpesa_consumer_key', label: 'Consumer Key' },
+                    { key: 'mpesa_consumer_secret', label: 'Consumer Secret' },
+                    { key: 'mpesa_shortcode', label: 'Shortcode' },
+                    { key: 'mpesa_passkey', label: 'Passkey' },
+                    { key: 'mpesa_callback_url', label: 'Callback URL' },
+                    { key: 'mpesa_env', label: 'Environment' },
+                  ].map(item => (
+                    <div key={item.key} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                      <span className="text-sm font-medium">{item.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-mono ${mpesaApiMasked[item.key] ? 'text-green-700' : 'text-red-500'}`}>
+                          {mpesaApiMasked[item.key] || 'Not set'}
+                        </span>
+                        {mpesaApiSource[item.key] && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                            mpesaApiSource[item.key] === 'env' ? 'bg-green-100 text-green-700' :
+                            mpesaApiSource[item.key] === 'db' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>
+                            {mpesaApiSource[item.key] === 'env' ? 'ENV' : mpesaApiSource[item.key] === 'db' ? 'DB' : '—'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Test Connection */}
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-2">Test Connection</h3>
+                <p className="text-xs text-muted-foreground mb-4">Send a test STK push to verify your M-Pesa credentials are working correctly.</p>
+                <button
+                  onClick={testMpesaConnection}
+                  disabled={mpesaApiTesting}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm disabled:opacity-50"
+                >
+                  {mpesaApiTesting ? 'Testing...' : 'Test M-Pesa Connection'}
+                </button>
+                {mpesaApiTestResult && (
+                  <div className={`mt-3 p-3 rounded-lg text-sm ${mpesaApiTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                    {mpesaApiTestResult.message}
+                  </div>
+                )}
+              </div>
+
+              {/* Update / Override Settings (DB Backup) */}
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-2">Update Settings (Database Backup)</h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Override or set M-Pesa credentials via the database. These act as a backup when environment variables are not set. Leave fields empty to keep current values.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Consumer Key</label>
+                      <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_consumer_key}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_consumer_key: e.target.value })}
+                        placeholder="Leave empty to keep current" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Consumer Secret</label>
+                      <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_consumer_secret}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_consumer_secret: e.target.value })}
+                        placeholder="Leave empty to keep current" className={inputCls} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Shortcode (Business Short Code)</label>
+                      <input type="text" value={mpesaApi.mpesa_shortcode}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_shortcode: e.target.value })}
+                        placeholder="e.g. 174379" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Passkey</label>
+                      <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_passkey}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_passkey: e.target.value })}
+                        placeholder="Leave empty to keep current" className={inputCls} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Callback URL</label>
+                      <input type="text" value={mpesaApi.mpesa_callback_url}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_callback_url: e.target.value })}
+                        placeholder="Auto-detected from site URL" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Environment</label>
+                      <select value={mpesaApi.mpesa_env} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_env: e.target.value })} className={inputCls}>
+                        <option value="">Keep current</option>
+                        <option value="sandbox">Sandbox (Testing)</option>
+                        <option value="production">Production (Live)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={showMpesaSecrets} onChange={e => setShowMpesaSecrets(e.target.checked)}
+                      className="accent-orange-600 w-4 h-4" />
+                    <span className="text-sm text-muted-foreground">Show secret values</span>
+                  </label>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={saveMpesaApiSettings}
+                      disabled={mpesaApiSaving}
+                      className="px-5 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium text-sm disabled:opacity-50"
+                    >
+                      {mpesaApiSaving ? 'Saving...' : 'Save to Database'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* B2C Settings (Optional) */}
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-2">B2C Configuration (Optional)</h3>
+                <p className="text-xs text-muted-foreground mb-4">For business-to-customer payments (refunds, disbursements). Leave empty if not used.</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>B2C Shortcode</label>
+                      <input type="text" value={mpesaApi.mpesa_b2c_shortcode}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_shortcode: e.target.value })}
+                        placeholder="Leave empty if not used" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Initiator Name</label>
+                      <input type="text" value={mpesaApi.mpesa_b2c_initiator_name}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_initiator_name: e.target.value })}
+                        placeholder="Leave empty if not used" className={inputCls} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>B2C Consumer Key</label>
+                      <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_key}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_key: e.target.value })}
+                        placeholder="Leave empty if not used" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>B2C Consumer Secret</label>
+                      <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_secret}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_secret: e.target.value })}
+                        placeholder="Leave empty if not used" className={inputCls} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
