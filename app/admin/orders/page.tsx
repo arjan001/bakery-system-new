@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { ShoppingBag, Globe, PhoneCall, CheckCircle, XCircle, CreditCard, Truck, Clock, Eye, MapPin, ExternalLink } from 'lucide-react';
+import { ShoppingBag, Globe, PhoneCall, CheckCircle, XCircle, CreditCard, Truck, Clock, Eye, MapPin, ExternalLink, Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
 interface OrderItem {
@@ -62,6 +62,18 @@ export default function OrdersPage() {
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [filterOnlineStatus, setFilterOnlineStatus] = useState<string>('All');
   const [rejectReason, setRejectReason] = useState('');
+
+  // Enhanced datatable states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const itemsPerPage = 10;
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
   const [confirmPayment, setConfirmPayment] = useState<Order['paymentStatus']>('Pay on Delivery');
   const [confirmFulfillment, setConfirmFulfillment] = useState<Order['fulfillment']>('Delivery');
 
@@ -339,13 +351,118 @@ export default function OrdersPage() {
     }
   };
 
-  const filteredRegular = regularOrders.filter(o => filterStatus === 'All' || o.status === filterStatus);
-  const filteredOnline  = onlineOrders.filter(o => filterOnlineStatus === 'All' || o.status === filterOnlineStatus);
-  const filteredOnCall  = onCallOrders.filter(o => filterStatus === 'All' || o.status === filterStatus);
+  const filteredRegular = regularOrders.filter(o => {
+    const matchesStatus = filterStatus === 'All' || o.status === filterStatus;
+    if (!matchesStatus) return false;
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return o.orderNumber.toLowerCase().includes(term) || o.customerName.toLowerCase().includes(term) || o.customerPhone.toLowerCase().includes(term);
+  });
+  const filteredOnline  = onlineOrders.filter(o => {
+    const matchesStatus = filterOnlineStatus === 'All' || o.status === filterOnlineStatus;
+    if (!matchesStatus) return false;
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return o.orderNumber.toLowerCase().includes(term) || o.customerName.toLowerCase().includes(term) || o.customerPhone.toLowerCase().includes(term);
+  });
+  const filteredOnCall  = onCallOrders.filter(o => {
+    const matchesStatus = filterStatus === 'All' || o.status === filterStatus;
+    if (!matchesStatus) return false;
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return o.orderNumber.toLowerCase().includes(term) || o.customerName.toLowerCase().includes(term) || o.customerPhone.toLowerCase().includes(term);
+  });
+
+  // Pagination per tab
+  const getPagedData = (data: Order[]) => {
+    const totalPages = Math.ceil(data.length / itemsPerPage);
+    const paged = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    return { paged, totalPages, total: data.length };
+  };
+
+  // Reset page on filter/search/tab change
+  useEffect(() => { setCurrentPage(1); setSelectedIds(new Set()); }, [searchTerm, filterStatus, filterOnlineStatus, activeTab]);
+
+  // Select all logic for current page
+  const getCurrentPageItems = () => {
+    if (activeTab === 'regular') return getPagedData(filteredRegular).paged;
+    if (activeTab === 'online') return getPagedData(filteredOnline).paged;
+    return getPagedData(filteredOnCall).paged;
+  };
+  const currentPageItems = getCurrentPageItems();
+  const allPageSelected = currentPageItems.length > 0 && currentPageItems.every(o => selectedIds.has(o.id));
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      setSelectedIds(prev => { const n = new Set(prev); currentPageItems.forEach(o => n.delete(o.id)); return n; });
+    } else {
+      setSelectedIds(prev => { const n = new Set(prev); currentPageItems.forEach(o => n.add(o.id)); return n; });
+    }
+  };
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} selected order(s)?`)) return;
+    const ids = Array.from(selectedIds);
+    try {
+      for (const id of ids) await supabase.from('order_items').delete().eq('order_id', id);
+      const { error } = await supabase.from('orders').delete().in('id', ids);
+      if (error) throw error;
+      setOrders(prev => prev.filter(o => !selectedIds.has(o.id)));
+      setSelectedIds(new Set());
+      showToast(`${ids.length} order(s) deleted`, 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Failed to delete: ${msg}`, 'error');
+    }
+  };
+
+  // Pagination component
+  const PaginationBar = ({ data }: { data: Order[] }) => {
+    const { totalPages, total } = getPagedData(data);
+    if (totalPages <= 1) return null;
+    return (
+      <div className="flex items-center justify-between mt-4">
+        <p className="text-sm text-muted-foreground">
+          Showing {((currentPage - 1) * itemsPerPage) + 1}&ndash;{Math.min(currentPage * itemsPerPage, total)} of {total}
+        </p>
+        <div className="flex gap-1 items-center">
+          <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+            className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+            <ChevronLeft size={16} />
+          </button>
+          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+            let page: number;
+            if (totalPages <= 7) page = i + 1;
+            else if (currentPage <= 4) page = i + 1;
+            else if (currentPage >= totalPages - 3) page = totalPages - 6 + i;
+            else page = currentPage - 3 + i;
+            return (
+              <button key={page} onClick={() => setCurrentPage(page)}
+                className={`px-3 py-1.5 text-sm rounded-lg ${currentPage === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-secondary'}`}>
+                {page}
+              </button>
+            );
+          })}
+          <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+            className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // ── Shared Order Row renderer ──
   const OrderRow = ({ order }: { order: Order }) => (
-    <tr className="border-b border-border hover:bg-secondary/50 transition-colors">
+    <tr className={`border-b border-border hover:bg-secondary/50 transition-colors ${selectedIds.has(order.id) ? 'bg-primary/5' : ''}`}>
+      <td className="px-3 py-3 text-center">
+        <button type="button" onClick={() => toggleSelect(order.id)} className="text-muted-foreground hover:text-foreground">
+          {selectedIds.has(order.id) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
+        </button>
+      </td>
       <td className="px-4 py-3 font-mono text-xs font-semibold">{order.orderNumber}</td>
       <td className="px-4 py-3">
         <p className="font-medium text-sm">{order.customerName}</p>
@@ -428,6 +545,11 @@ export default function OrdersPage() {
   const TableHead = () => (
     <thead className="bg-secondary border-b border-border">
       <tr>
+        <th className="px-3 py-3 text-center w-10">
+          <button type="button" onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
+            {allPageSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+          </button>
+        </th>
         <th className="px-4 py-3 text-left font-semibold text-sm">Order #</th>
         <th className="px-4 py-3 text-left font-semibold text-sm">Customer</th>
         <th className="px-4 py-3 text-left font-semibold text-sm">Items</th>
@@ -458,6 +580,15 @@ export default function OrdersPage() {
 
   return (
     <div className="p-8">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[60] px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="mb-1">Order Management</h1>
         <p className="text-muted-foreground">Regular orders, online orders, and on-call orders &mdash; all in one place</p>
@@ -532,24 +663,37 @@ export default function OrdersPage() {
       {/* ── REGULAR ORDERS TAB ── */}
       {activeTab === 'regular' && (
         <div>
-          <div className="mb-4">
+          <div className="mb-4 flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input type="text" placeholder="Search orders, customers..." value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
+            </div>
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none">
               {['All', 'On Hold', 'Pending', 'Confirmed', 'Processing', 'Ready', 'Shipped', 'Delivered', 'Cancelled'].map(s => (
                 <option key={s}>{s}</option>
               ))}
             </select>
+            {selectedIds.size > 0 && (
+              <button onClick={handleBulkDelete}
+                className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
+                <Trash2 size={14} /> Delete {selectedIds.size}
+              </button>
+            )}
           </div>
           <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
             <table className="w-full text-sm">
               <TableHead />
               <tbody>
                 {filteredRegular.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">No regular orders found</td></tr>
-                ) : filteredRegular.map(o => <OrderRow key={o.id} order={o} />)}
+                  <tr><td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">No regular orders found</td></tr>
+                ) : getPagedData(filteredRegular).paged.map(o => <OrderRow key={o.id} order={o} />)}
               </tbody>
             </table>
           </div>
+          <PaginationBar data={filteredRegular} />
         </div>
       )}
 
@@ -567,8 +711,14 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* Status filter */}
-          <div className="mb-4">
+          {/* Status filter & search */}
+          <div className="mb-4 flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input type="text" placeholder="Search orders, customers..." value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
+            </div>
             <select value={filterOnlineStatus} onChange={e => setFilterOnlineStatus(e.target.value)}
               className="px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none">
               {['All', 'Pending', 'Confirmed', 'Processing', 'Ready', 'Shipped', 'Delivered', 'Rejected', 'Cancelled'].map(s => (
@@ -586,14 +736,17 @@ export default function OrdersPage() {
               </p>
             </div>
           ) : (
+            <>
             <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
               <table className="w-full text-sm">
                 <OnlineTableHead />
                 <tbody>
-                  {filteredOnline.map(o => <OnlineOrderRow key={o.id} order={o} />)}
+                  {getPagedData(filteredOnline).paged.map(o => <OnlineOrderRow key={o.id} order={o} />)}
                 </tbody>
               </table>
             </div>
+            <PaginationBar data={filteredOnline} />
+            </>
           )}
         </div>
       )}
@@ -626,19 +779,30 @@ export default function OrdersPage() {
             <>
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-muted-foreground">On-Call Orders History</p>
-                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                  className="px-3 py-1.5 border border-border rounded-lg text-xs focus:ring-2 focus:ring-primary/50 outline-none">
-                  {['All', 'On Hold', 'Pending', 'Processing', 'Ready', 'Delivered', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
-                </select>
+                <div className="flex gap-2 items-center">
+                  <div className="relative max-w-[200px]">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type="text" placeholder="Search..." value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 border border-border rounded-lg text-xs focus:ring-2 focus:ring-primary/50 outline-none" />
+                  </div>
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="px-3 py-1.5 border border-border rounded-lg text-xs focus:ring-2 focus:ring-primary/50 outline-none">
+                    {['All', 'On Hold', 'Pending', 'Processing', 'Ready', 'Delivered', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
                 <table className="w-full text-sm">
                   <TableHead />
                   <tbody>
-                    {filteredOnCall.map(o => <OrderRow key={o.id} order={o} />)}
+                    {filteredOnCall.length === 0 ? (
+                      <tr><td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">No on-call orders found</td></tr>
+                    ) : getPagedData(filteredOnCall).paged.map(o => <OrderRow key={o.id} order={o} />)}
                   </tbody>
                 </table>
               </div>
+              <PaginationBar data={filteredOnCall} />
             </>
           )}
 

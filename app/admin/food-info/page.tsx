@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface RecipeOption {
   id: string;
@@ -26,7 +27,6 @@ interface FoodInfo {
   carbs: number;
   shelf_life_days: number;
   certification: string;
-  // Inventory management fields
   currentStock: number;
   stockUnit: string;
   moq: number;
@@ -55,9 +55,23 @@ function generateProductCode(name: string): string {
 export default function FoodInfoPage() {
   const [items, setItems] = useState<FoodInfo[]>([]);
   const [recipes, setRecipes] = useState<RecipeOption[]>([]);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Datatable states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const itemsPerPage = 10;
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const fetchItems = useCallback(async () => {
-    const { data } = await supabase.from('food_info').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('food_info').select('*').order('created_at', { ascending: false });
+    if (error) { showToast('Failed to load products: ' + error.message, 'error'); return; }
     if (data && data.length > 0) setItems(data.map((r: Record<string, unknown>) => ({
       id: r.id as string,
       productName: (r.product_name || '') as string,
@@ -150,10 +164,22 @@ export default function FoodInfoPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Only productName is truly required
+    if (!formData.productName.trim()) {
+      showToast('Product name is required', 'error');
+      setActiveTab('basic');
+      return;
+    }
+
+    // Auto-generate code if empty
+    const code = formData.code.trim() || generateProductCode(formData.productName);
+
+    setSaving(true);
     const recipe = recipes.find(r => r.id === formData.recipeId);
     const row = {
-      product_name: formData.productName,
-      code: formData.code,
+      product_name: formData.productName.trim(),
+      code,
       recipe_id: formData.recipeId || null,
       recipe_name: recipe?.name || null,
       allergens: formData.allergens,
@@ -173,14 +199,27 @@ export default function FoodInfoPage() {
       last_restocked: formData.lastRestocked || null,
       supplier: formData.supplier,
     };
+
     try {
-      if (editId) await supabase.from('food_info').update(row).eq('id', editId);
-      else await supabase.from('food_info').insert(row);
+      if (editId) {
+        const { error } = await supabase.from('food_info').update(row).eq('id', editId);
+        if (error) throw error;
+        showToast('Product updated successfully', 'success');
+      } else {
+        const { error } = await supabase.from('food_info').insert(row);
+        if (error) throw error;
+        showToast('Product created successfully', 'success');
+      }
       await fetchItems();
-    } catch { /* fallback */ }
-    setEditId(null);
-    resetForm();
-    setShowForm(false);
+      setEditId(null);
+      resetForm();
+      setShowForm(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Failed to save product: ${msg}`, 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const resetForm = () => {
@@ -200,17 +239,17 @@ export default function FoodInfoPage() {
       code: item.code,
       recipeId: item.recipeId || '',
       allergens: item.allergens,
-      calories: item.calories.toString(),
-      protein: item.protein.toString(),
-      fat: item.fat.toString(),
-      carbs: item.carbs.toString(),
-      shelf_life_days: item.shelf_life_days.toString(),
+      calories: item.calories ? item.calories.toString() : '',
+      protein: item.protein ? item.protein.toString() : '',
+      fat: item.fat ? item.fat.toString() : '',
+      carbs: item.carbs ? item.carbs.toString() : '',
+      shelf_life_days: item.shelf_life_days ? item.shelf_life_days.toString() : '',
       certification: item.certification,
-      currentStock: item.currentStock.toString(),
+      currentStock: item.currentStock ? item.currentStock.toString() : '',
       stockUnit: item.stockUnit || 'pieces',
-      moq: item.moq.toString(),
-      reorderLevel: item.reorderLevel.toString(),
-      maxStock: item.maxStock.toString(),
+      moq: item.moq ? item.moq.toString() : '',
+      reorderLevel: item.reorderLevel ? item.reorderLevel.toString() : '',
+      maxStock: item.maxStock ? item.maxStock.toString() : '',
       fifoEnabled: item.fifoEnabled,
       batchNumber: item.batchNumber || '',
       lastRestocked: item.lastRestocked || '',
@@ -221,10 +260,29 @@ export default function FoodInfoPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this product?')) {
-      await supabase.from('food_info').delete().eq('id', id);
-      setItems(items.filter(item => item.id !== id));
+    if (!confirm('Delete this product?')) return;
+    const { error } = await supabase.from('food_info').delete().eq('id', id);
+    if (error) {
+      showToast('Failed to delete: ' + error.message, 'error');
+      return;
     }
+    setItems(prev => prev.filter(item => item.id !== id));
+    setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    showToast('Product deleted', 'success');
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} selected product(s)?`)) return;
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from('food_info').delete().in('id', ids);
+    if (error) {
+      showToast('Failed to delete: ' + error.message, 'error');
+      return;
+    }
+    setItems(prev => prev.filter(item => !selectedIds.has(item.id)));
+    setSelectedIds(new Set());
+    showToast(`${ids.length} product(s) deleted`, 'success');
   };
 
   const toggleAllergen = (allergen: string) => {
@@ -236,11 +294,54 @@ export default function FoodInfoPage() {
     });
   };
 
-  // Compute inventory stats
+  // Filter and paginate
+  const filteredItems = items.filter(item => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      item.productName.toLowerCase().includes(term) ||
+      item.code.toLowerCase().includes(term) ||
+      item.recipeName.toLowerCase().includes(term) ||
+      item.supplier.toLowerCase().includes(term) ||
+      item.allergens.some(a => a.toLowerCase().includes(term))
+    );
+  });
+
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const paginatedItems = filteredItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // Reset to page 1 when search changes
+  useEffect(() => { setCurrentPage(1); }, [searchTerm]);
+
+  // Select all logic
+  const allPageSelected = paginatedItems.length > 0 && paginatedItems.every(item => selectedIds.has(item.id));
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      setSelectedIds(prev => {
+        const n = new Set(prev);
+        paginatedItems.forEach(item => n.delete(item.id));
+        return n;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const n = new Set(prev);
+        paginatedItems.forEach(item => n.add(item.id));
+        return n;
+      });
+    }
+  };
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
+  // Compute stats
   const lowStockCount = items.filter(i => i.currentStock > 0 && i.reorderLevel > 0 && i.currentStock <= i.reorderLevel).length;
   const outOfStockCount = items.filter(i => i.currentStock === 0).length;
 
-  // Calculate raw materials needed for the selected recipe
   const rawMaterialsSummary = selectedRecipe ? selectedRecipe.ingredients.map(ing => {
     const batchCost = ing.quantity * ing.costPerUnit;
     return { ...ing, batchCost };
@@ -250,6 +351,15 @@ export default function FoodInfoPage() {
 
   return (
     <div className="p-8">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[60] px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-2">Product & Inventory Management</h1>
         <p className="text-muted-foreground">Manage products, nutritional info, recipes, stock levels (MOQ, FIFO), and raw materials</p>
@@ -279,7 +389,28 @@ export default function FoodInfoPage() {
         </div>
       </div>
 
-      <div className="mb-6 flex justify-end">
+      {/* Search / Actions Bar */}
+      <div className="mb-4 flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex items-center gap-3 flex-1">
+          <div className="relative flex-1 max-w-sm">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search products, codes, recipes..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+            />
+          </div>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+            >
+              <Trash2 size={14} /> Delete {selectedIds.size} selected
+            </button>
+          )}
+        </div>
         <button
           onClick={() => { setEditId(null); resetForm(); setShowForm(true); }}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
@@ -288,7 +419,7 @@ export default function FoodInfoPage() {
         </button>
       </div>
 
-      {/* ── Add/Edit Product Modal ── */}
+      {/* Add/Edit Product Modal */}
       <Modal
         isOpen={showForm}
         onClose={() => { setShowForm(false); setEditId(null); resetForm(); }}
@@ -318,12 +449,13 @@ export default function FoodInfoPage() {
             ))}
           </div>
 
+          <p className="text-xs text-muted-foreground">Only Product Name is required. Fill other fields as needed &mdash; you can always edit later.</p>
+
           <div className="max-h-[60vh] overflow-y-auto space-y-4 pr-1">
 
-            {/* ── Tab 1: Product & Recipe ── */}
+            {/* Tab 1: Product & Recipe */}
             {activeTab === 'basic' && (
               <>
-                {/* Product Name & Auto-Generated Code */}
                 <div className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-5">
                   <p className="text-sm font-bold text-blue-900 mb-3">Product Information</p>
                   <div className="grid grid-cols-2 gap-4">
@@ -334,7 +466,6 @@ export default function FoodInfoPage() {
                         value={formData.productName}
                         onChange={(e) => handleProductNameChange(e.target.value)}
                         className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white"
-                        required
                         placeholder="e.g. White Bread Loaf"
                       />
                     </div>
@@ -347,7 +478,6 @@ export default function FoodInfoPage() {
                         value={formData.code}
                         onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                         className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white font-mono"
-                        required
                         placeholder="PRD-XXXX-000"
                       />
                       {!editId && formData.productName && (
@@ -397,15 +527,12 @@ export default function FoodInfoPage() {
                     ))}
                   </select>
 
-                  {/* Show recipe summary when selected */}
                   {selectedRecipe && (
                     <div className="mt-4 space-y-3">
                       <div className="bg-green-100 rounded-lg p-3">
                         <p className="text-sm font-semibold text-green-900">Recipe: {selectedRecipe.name}</p>
                         <p className="text-xs text-green-700">Output: {selectedRecipe.expectedOutput} {selectedRecipe.outputUnit} per batch</p>
                       </div>
-
-                      {/* Raw Materials Required */}
                       <div className="border border-green-200 rounded-lg overflow-hidden">
                         <div className="bg-green-100/50 px-3 py-2 border-b border-green-200">
                           <p className="text-xs font-bold text-green-900">Raw Materials Required (per batch)</p>
@@ -453,7 +580,7 @@ export default function FoodInfoPage() {
               </>
             )}
 
-            {/* ── Tab 2: Nutrition & Allergens ── */}
+            {/* Tab 2: Nutrition & Allergens */}
             {activeTab === 'nutrition' && (
               <>
                 <div className="rounded-xl border-2 border-red-200 bg-red-50/50 p-5">
@@ -501,10 +628,9 @@ export default function FoodInfoPage() {
               </>
             )}
 
-            {/* ── Tab 3: Inventory Management (MOQ, FIFO, Raw Materials) ── */}
+            {/* Tab 3: Inventory Management (MOQ, FIFO, Raw Materials) */}
             {activeTab === 'inventory' && (
               <>
-                {/* Stock Levels */}
                 <div className="rounded-xl border-2 border-amber-200 bg-amber-50/50 p-5">
                   <p className="text-sm font-bold text-amber-900 mb-1">Stock Levels & Reorder</p>
                   <p className="text-xs text-amber-600 mb-4">Set stock quantities and minimum order quantities (MOQ) for accurate inventory tracking.</p>
@@ -547,7 +673,6 @@ export default function FoodInfoPage() {
                   </div>
                 </div>
 
-                {/* FIFO & Batch Tracking */}
                 <div className="rounded-xl border-2 border-teal-200 bg-teal-50/50 p-5">
                   <p className="text-sm font-bold text-teal-900 mb-1">FIFO & Batch Tracking</p>
                   <p className="text-xs text-teal-600 mb-4">First In, First Out (FIFO) ensures oldest stock is used first, reducing waste and maintaining freshness.</p>
@@ -584,7 +709,6 @@ export default function FoodInfoPage() {
                   )}
                 </div>
 
-                {/* Raw Materials Monitoring Info */}
                 <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-5">
                   <p className="text-sm font-bold text-indigo-900 mb-2">Raw Materials Monitoring</p>
                   {selectedRecipe ? (
@@ -619,19 +743,24 @@ export default function FoodInfoPage() {
           <div className="flex gap-2 justify-end pt-4 border-t border-border">
             <button type="button" onClick={() => { setShowForm(false); setEditId(null); resetForm(); }}
               className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors">Cancel</button>
-            <button type="submit"
-              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">
-              {editId ? 'Update' : 'Create'} Product
+            <button type="submit" disabled={saving}
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+              {saving ? 'Saving...' : (editId ? 'Update' : 'Create')} {!saving && 'Product'}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* ── Product Table ── */}
+      {/* Product Table */}
       <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-secondary border-b border-border">
             <tr>
+              <th className="px-3 py-3 text-center w-10">
+                <button type="button" onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
+                  {allPageSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                </button>
+              </th>
               <th className="px-4 py-3 text-left font-semibold">Product</th>
               <th className="px-4 py-3 text-left font-semibold">Code</th>
               <th className="px-4 py-3 text-left font-semibold">Recipe</th>
@@ -645,16 +774,23 @@ export default function FoodInfoPage() {
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
+            {paginatedItems.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">No products found. Create your first product to get started.</td>
+                <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
+                  {searchTerm ? 'No products match your search.' : 'No products found. Create your first product to get started.'}
+                </td>
               </tr>
             ) : (
-              items.map((item) => {
+              paginatedItems.map((item) => {
                 const isLowStock = item.currentStock > 0 && item.reorderLevel > 0 && item.currentStock <= item.reorderLevel;
                 const isOutOfStock = item.currentStock === 0 && item.reorderLevel > 0;
                 return (
-                  <tr key={item.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                  <tr key={item.id} className={`border-b border-border hover:bg-secondary/50 transition-colors ${selectedIds.has(item.id) ? 'bg-primary/5' : ''}`}>
+                    <td className="px-3 py-3 text-center">
+                      <button type="button" onClick={() => toggleSelect(item.id)} className="text-muted-foreground hover:text-foreground">
+                        {selectedIds.has(item.id) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 font-medium">{item.productName}</td>
                     <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{item.code}</td>
                     <td className="px-4 py-3">
@@ -689,7 +825,7 @@ export default function FoodInfoPage() {
                         <span className="text-xs text-muted-foreground">--</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-center">{item.shelf_life_days}d</td>
+                    <td className="px-4 py-3 text-center">{item.shelf_life_days ? `${item.shelf_life_days}d` : '--'}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(item)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium">Edit</button>
@@ -703,6 +839,43 @@ export default function FoodInfoPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-muted-foreground">
+            Showing {((currentPage - 1) * itemsPerPage) + 1}&ndash;{Math.min(currentPage * itemsPerPage, filteredItems.length)} of {filteredItems.length} products
+          </p>
+          <div className="flex gap-1 items-center">
+            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+              className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+              <ChevronLeft size={16} />
+            </button>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let page: number;
+              if (totalPages <= 7) {
+                page = i + 1;
+              } else if (currentPage <= 4) {
+                page = i + 1;
+              } else if (currentPage >= totalPages - 3) {
+                page = totalPages - 6 + i;
+              } else {
+                page = currentPage - 3 + i;
+              }
+              return (
+                <button key={page} onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-1.5 text-sm rounded-lg ${currentPage === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-secondary'}`}>
+                  {page}
+                </button>
+              );
+            })}
+            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+              className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

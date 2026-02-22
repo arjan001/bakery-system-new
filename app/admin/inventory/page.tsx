@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Distributor {
   id: string;
@@ -35,12 +36,6 @@ interface InventoryTransaction {
   createdAt: string;
 }
 
-interface InventoryType {
-  id: string;
-  name: string;
-  description: string;
-}
-
 interface InventoryCategory {
   id: string;
   name: string;
@@ -57,10 +52,23 @@ export default function InventoryPage() {
   const [showStockModal, setShowStockModal] = useState<{ item: InventoryItem; type: 'intake' | 'output' } | null>(null);
   const [stockQty, setStockQty] = useState(0);
   const [stockRef, setStockRef] = useState('');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Datatable states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const fetchInventory = useCallback(async () => {
-    const { data } = await supabase.from('inventory_items').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('inventory_items').select('*').order('created_at', { ascending: false });
+    if (error) { showToast('Failed to load inventory: ' + error.message, 'error'); return; }
     if (data && data.length > 0) setInventory(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryItem['type'], category: (r.category || '') as string, quantity: (r.quantity || 0) as number, unit: (r.unit || 'kg') as string, unitCost: (r.unit_cost || 0) as number, reorderLevel: (r.reorder_level || 0) as number, reorderQty: (r.reorder_qty || 0) as number, autoReorder: Boolean(r.auto_reorder), supplier: (r.supplier || '') as string, distributorId: (r.distributor_id || '') as string, lastRestocked: (r.last_restocked || '') as string })));
+    else setInventory([]);
   }, []);
 
   const fetchDistributors = useCallback(async () => {
@@ -87,18 +95,14 @@ export default function InventoryPage() {
 
   useEffect(() => { fetchInventory(); fetchDistributors(); fetchTransactions(); }, [fetchInventory, fetchDistributors, fetchTransactions]);
 
-  const [inventoryTypes] = useState<InventoryType[]>([
-    { id: '1', name: 'Consumable', description: 'Items used up in production' },
-    { id: '2', name: 'Non-Consumable', description: 'Durable equipment and machinery' },
-  ]);
-
   const [categories, setCategories] = useState<InventoryCategory[]>([]);
 
-  useEffect(() => {
-    supabase.from('inventory_categories').select('*').order('name').then(({ data }) => {
-      if (data && data.length > 0) setCategories(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryCategory['type'] })));
-    });
+  const fetchCategories = useCallback(async () => {
+    const { data } = await supabase.from('inventory_categories').select('*').order('name');
+    if (data && data.length > 0) setCategories(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, type: (r.type || 'Consumable') as InventoryCategory['type'] })));
   }, []);
+
+  useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
   const [showForm, setShowForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
@@ -128,7 +132,6 @@ export default function InventoryPage() {
     type: 'Consumable',
   });
 
-  // Calculate daily usage rate from transactions (last 30 days)
   const getDailyUsage = (itemId: string): number => {
     const itemTxns = transactions.filter(t => t.itemId === itemId && t.type === 'output');
     if (itemTxns.length === 0) return 0;
@@ -136,7 +139,6 @@ export default function InventoryPage() {
     return Math.round((totalUsed / 30) * 10) / 10;
   };
 
-  // Estimate days until stock runs out
   const getDaysRemaining = (item: InventoryItem): number | null => {
     const dailyUsage = getDailyUsage(item.id);
     if (dailyUsage <= 0) return null;
@@ -145,10 +147,17 @@ export default function InventoryPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!formData.name.trim()) {
+      showToast('Item name is required', 'error');
+      return;
+    }
+
+    setSaving(true);
     const row = {
-      name: formData.name,
+      name: formData.name.trim(),
       type: formData.type,
-      category: formData.category,
+      category: formData.category || null,
       quantity: formData.quantity,
       unit: formData.unit,
       unit_cost: formData.unitCost,
@@ -159,20 +168,48 @@ export default function InventoryPage() {
       distributor_id: formData.distributorId || null,
       last_restocked: formData.lastRestocked || null,
     };
+
     try {
-      if (editingId) await supabase.from('inventory_items').update(row).eq('id', editingId);
-      else await supabase.from('inventory_items').insert(row);
+      if (editingId) {
+        const { error } = await supabase.from('inventory_items').update(row).eq('id', editingId);
+        if (error) throw error;
+        showToast('Item updated successfully', 'success');
+      } else {
+        const { error } = await supabase.from('inventory_items').insert(row);
+        if (error) throw error;
+        showToast('Item added successfully', 'success');
+      }
       await fetchInventory();
-    } catch { /* fallback */ }
-    resetForm();
-    setShowForm(false);
+      resetForm();
+      setShowForm(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Failed to save item: ${msg}`, 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleCategorySubmit = (e: React.FormEvent) => {
+  const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCategories([...categories, { ...categoryForm, id: Date.now().toString() }]);
-    setCategoryForm({ id: '', name: '', type: 'Consumable' });
-    setShowCategoryForm(false);
+    if (!categoryForm.name.trim()) {
+      showToast('Category name is required', 'error');
+      return;
+    }
+    try {
+      const { error } = await supabase.from('inventory_categories').insert({
+        name: categoryForm.name.trim(),
+        type: categoryForm.type,
+      });
+      if (error) throw error;
+      showToast('Category added successfully', 'success');
+      await fetchCategories();
+      setCategoryForm({ id: '', name: '', type: 'Consumable' });
+      setShowCategoryForm(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Failed to save category: ${msg}`, 'error');
+    }
   };
 
   const resetForm = () => {
@@ -191,6 +228,7 @@ export default function InventoryPage() {
       distributorId: '',
       lastRestocked: new Date().toISOString().split('T')[0],
     });
+    setEditingId(null);
   };
 
   const handleEdit = (item: InventoryItem) => {
@@ -200,19 +238,42 @@ export default function InventoryPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this inventory item?')) {
-      await supabase.from('inventory_items').delete().eq('id', id);
-      setInventory(inventory.filter(i => i.id !== id));
+    if (!confirm('Delete this inventory item?')) return;
+    const { error } = await supabase.from('inventory_items').delete().eq('id', id);
+    if (error) {
+      showToast('Failed to delete: ' + error.message, 'error');
+      return;
     }
+    setInventory(prev => prev.filter(i => i.id !== id));
+    setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    showToast('Item deleted', 'success');
   };
 
-  const handleDeleteCategory = (id: string) => {
-    if (confirm('Delete this category?')) {
-      setCategories(categories.filter(c => c.id !== id));
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} selected item(s)?`)) return;
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from('inventory_items').delete().in('id', ids);
+    if (error) {
+      showToast('Failed to delete: ' + error.message, 'error');
+      return;
     }
+    setInventory(prev => prev.filter(i => !selectedIds.has(i.id)));
+    setSelectedIds(new Set());
+    showToast(`${ids.length} item(s) deleted`, 'success');
   };
 
-  // Record stock intake or output
+  const handleDeleteCategory = async (id: string) => {
+    if (!confirm('Delete this category?')) return;
+    const { error } = await supabase.from('inventory_categories').delete().eq('id', id);
+    if (error) {
+      showToast('Failed to delete category: ' + error.message, 'error');
+      return;
+    }
+    setCategories(prev => prev.filter(c => c.id !== id));
+    showToast('Category deleted', 'success');
+  };
+
   const handleStockTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showStockModal || stockQty <= 0) return;
@@ -222,31 +283,51 @@ export default function InventoryPage() {
     const newQty = txnType === 'intake' ? item.quantity + stockQty : Math.max(0, item.quantity - stockQty);
 
     try {
-      // Record the transaction
-      await supabase.from('inventory_transactions').insert({
+      const { error: txnError } = await supabase.from('inventory_transactions').insert({
         item_id: item.id,
         type: txnType,
         quantity: stockQty,
         reference: stockRef || (txnType === 'intake' ? 'Stock replenishment' : 'Production usage'),
       });
+      if (txnError) throw txnError;
 
-      // Update inventory quantity
       const updateData: Record<string, unknown> = { quantity: newQty };
       if (txnType === 'intake') {
         updateData.last_restocked = new Date().toISOString().split('T')[0];
       }
-      await supabase.from('inventory_items').update(updateData).eq('id', item.id);
+      const { error: updateError } = await supabase.from('inventory_items').update(updateData).eq('id', item.id);
+      if (updateError) throw updateError;
 
       await fetchInventory();
       await fetchTransactions();
-    } catch { /* fallback */ }
+      showToast(txnType === 'intake' ? 'Stock added successfully' : 'Usage recorded', 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Transaction failed: ${msg}`, 'error');
+    }
 
     setShowStockModal(null);
     setStockQty(0);
     setStockRef('');
   };
 
-  const filteredInventory = filterType === 'All' ? inventory : inventory.filter(i => i.type === filterType);
+  // Filter and search
+  const filteredInventory = inventory.filter(item => {
+    const matchesType = filterType === 'All' || item.type === filterType;
+    if (!matchesType) return false;
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(term) ||
+      item.category.toLowerCase().includes(term) ||
+      item.supplier.toLowerCase().includes(term) ||
+      item.unit.toLowerCase().includes(term)
+    );
+  });
+
+  // Reset to page 1 on search/filter change
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterType]);
+
   const lowStockConsumables = inventory.filter(i => i.type === 'Consumable' && i.reorderLevel > 0 && i.quantity <= i.reorderLevel);
   const lowStockCount = inventory.filter(i => i.quantity <= i.reorderLevel && i.reorderLevel > 0).length;
   const totalValue = inventory.reduce((sum, i) => sum + (i.quantity * i.unitCost), 0);
@@ -254,8 +335,42 @@ export default function InventoryPage() {
   const paginatedInventory = filteredInventory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const getDistributorName = (id: string) => distributors.find(d => d.id === id)?.name || '';
 
+  // Select all logic
+  const allPageSelected = paginatedInventory.length > 0 && paginatedInventory.every(item => selectedIds.has(item.id));
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      setSelectedIds(prev => {
+        const n = new Set(prev);
+        paginatedInventory.forEach(item => n.delete(item.id));
+        return n;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const n = new Set(prev);
+        paginatedInventory.forEach(item => n.add(item.id));
+        return n;
+      });
+    }
+  };
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
   return (
     <div className="p-8">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[60] px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="mb-8">
         <h1 className="mb-2">Inventory Management</h1>
         <p className="text-muted-foreground">Track consumable and non-consumable inventory with categories</p>
@@ -267,7 +382,7 @@ export default function InventoryPage() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-red-600 text-lg">!!!</span>
-              <h3 className="font-bold text-red-800">Reorder Alert — Consumable Items Low on Stock</h3>
+              <h3 className="font-bold text-red-800">Reorder Alert &mdash; Consumable Items Low on Stock</h3>
             </div>
             <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">
               {lowStockConsumables.filter(i => !dismissedAlerts.has(i.id)).length} item(s)
@@ -361,16 +476,37 @@ export default function InventoryPage() {
 
       {activeTab === 'inventory' && (
         <div>
-          <div className="mb-6 flex justify-between items-center">
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as 'All' | 'Consumable' | 'Non-Consumable')}
-              className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none font-medium"
-            >
-              <option>All</option>
-              <option>Consumable</option>
-              <option>Non-Consumable</option>
-            </select>
+          {/* Search / Filter / Actions Bar */}
+          <div className="mb-4 flex flex-wrap gap-3 items-center justify-between">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search items, categories, suppliers..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                />
+              </div>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value as 'All' | 'Consumable' | 'Non-Consumable')}
+                className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none font-medium text-sm"
+              >
+                <option>All</option>
+                <option>Consumable</option>
+                <option>Non-Consumable</option>
+              </select>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                >
+                  <Trash2 size={14} /> Delete {selectedIds.size} selected
+                </button>
+              )}
+            </div>
             <button
               onClick={() => {
                 setShowForm(true);
@@ -384,15 +520,15 @@ export default function InventoryPage() {
           </div>
 
           {/* Add/Edit Inventory Item Modal */}
-          <Modal isOpen={showForm} onClose={() => setShowForm(false)} title={editingId ? 'Edit Item' : 'Add Inventory Item'} size="lg">
+          <Modal isOpen={showForm} onClose={() => { setShowForm(false); resetForm(); }} title={editingId ? 'Edit Item' : 'Add Inventory Item'} size="lg">
             <form onSubmit={handleSubmit} className="space-y-4">
+              <p className="text-xs text-muted-foreground">Only item name is required. Fill other fields as needed.</p>
               <input
                 type="text"
-                placeholder="Item Name"
+                placeholder="Item Name *"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                required
               />
 
               <div className="grid grid-cols-2 gap-4">
@@ -409,9 +545,8 @@ export default function InventoryPage() {
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                  required
                 >
-                  <option value="">Select Category</option>
+                  <option value="">Select Category (optional)</option>
                   {categories.filter(c => c.type === formData.type).map(cat => (
                     <option key={cat.id} value={cat.name}>{cat.name}</option>
                   ))}
@@ -456,7 +591,7 @@ export default function InventoryPage() {
                 />
               </div>
 
-              {/* Reorder Settings — shown prominently for Consumable items */}
+              {/* Reorder Settings */}
               {formData.type === 'Consumable' ? (
                 <div className="border-2 border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -472,7 +607,7 @@ export default function InventoryPage() {
                     </label>
                   </div>
                   <p className="text-xs text-blue-600">
-                    Set the reorder level to get alerts when stock falls below the threshold. The system tracks intake/output to estimate when you will need to restock.
+                    Set the reorder level to get alerts when stock falls below the threshold.
                   </p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -546,16 +681,16 @@ export default function InventoryPage() {
                   className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                 >
                   <option value="">Select Distributor (optional)</option>
-                  {distributors.map(d => <option key={d.id} value={d.id}>{d.name} — {d.category}</option>)}
+                  {distributors.map(d => <option key={d.id} value={d.id}>{d.name} &mdash; {d.category}</option>)}
                 </select>
               </div>
 
               <div className="flex gap-2 justify-end pt-4 border-t border-border">
-                <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">
+                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90">
-                  {editingId ? 'Update' : 'Add'} Item
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50">
+                  {saving ? 'Saving...' : (editingId ? 'Update' : 'Add')} {!saving && 'Item'}
                 </button>
               </div>
             </form>
@@ -615,6 +750,11 @@ export default function InventoryPage() {
             <table className="w-full text-sm">
               <thead className="bg-secondary border-b border-border">
                 <tr>
+                  <th className="px-3 py-3 text-center w-10">
+                    <button type="button" onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
+                      {allPageSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-left font-semibold">Item Name</th>
                   <th className="px-4 py-3 text-left font-semibold">Type</th>
                   <th className="px-4 py-3 text-left font-semibold">Category</th>
@@ -629,8 +769,8 @@ export default function InventoryPage() {
               <tbody>
                 {filteredInventory.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
-                      No inventory items found
+                    <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                      {searchTerm ? 'No items match your search.' : 'No inventory items found'}
                     </td>
                   </tr>
                 ) : (
@@ -639,7 +779,12 @@ export default function InventoryPage() {
                     const dailyUsage = getDailyUsage(item.id);
                     const daysLeft = getDaysRemaining(item);
                     return (
-                      <tr key={item.id} className={`border-b border-border hover:bg-secondary/50 ${isLowStock ? 'bg-red-50/50' : ''}`}>
+                      <tr key={item.id} className={`border-b border-border hover:bg-secondary/50 ${isLowStock ? 'bg-red-50/50' : ''} ${selectedIds.has(item.id) ? 'bg-primary/5' : ''}`}>
+                        <td className="px-3 py-3 text-center">
+                          <button type="button" onClick={() => toggleSelect(item.id)} className="text-muted-foreground hover:text-foreground">
+                            {selectedIds.has(item.id) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
+                          </button>
+                        </td>
                         <td className="px-4 py-3 font-medium">
                           {item.name}
                           {item.autoReorder && item.type === 'Consumable' && (
@@ -653,7 +798,7 @@ export default function InventoryPage() {
                             {item.type}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm">{item.category}</td>
+                        <td className="px-4 py-3 text-sm">{item.category || '--'}</td>
                         <td className="px-4 py-3 font-medium">{item.quantity} {item.unit}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-1 rounded text-xs font-semibold ${
@@ -669,11 +814,11 @@ export default function InventoryPage() {
                           {item.type === 'Consumable' && dailyUsage > 0 ? (
                             <span>{dailyUsage} {item.unit}/day</span>
                           ) : (
-                            <span className="text-gray-300">—</span>
+                            <span className="text-gray-300">&mdash;</span>
                           )}
                         </td>
                         <td className="px-4 py-3">{item.unitCost}</td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{getDistributorName(item.distributorId) || item.supplier || '—'}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{getDistributorName(item.distributorId) || item.supplier || '\u2014'}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1 flex-wrap">
                             {item.type === 'Consumable' && (
@@ -714,14 +859,35 @@ export default function InventoryPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4">
               <p className="text-sm text-muted-foreground">
-                Showing {((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, filteredInventory.length)} of {filteredInventory.length} items
+                Showing {((currentPage - 1) * itemsPerPage) + 1}&ndash;{Math.min(currentPage * itemsPerPage, filteredInventory.length)} of {filteredInventory.length} items
               </p>
-              <div className="flex gap-1">
-                <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">Previous</button>
-                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
-                  <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1.5 text-sm rounded-lg ${currentPage === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-secondary'}`}>{page}</button>
-                ))}
-                <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
+              <div className="flex gap-1 items-center">
+                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                  className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  let page: number;
+                  if (totalPages <= 7) {
+                    page = i + 1;
+                  } else if (currentPage <= 4) {
+                    page = i + 1;
+                  } else if (currentPage >= totalPages - 3) {
+                    page = totalPages - 6 + i;
+                  } else {
+                    page = currentPage - 3 + i;
+                  }
+                  return (
+                    <button key={page} onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-1.5 text-sm rounded-lg ${currentPage === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-secondary'}`}>
+                      {page}
+                    </button>
+                  );
+                })}
+                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+                  className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+                  <ChevronRight size={16} />
+                </button>
               </div>
             </div>
           )}
@@ -747,7 +913,6 @@ export default function InventoryPage() {
                 value={categoryForm.name}
                 onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                required
               />
               <select
                 value={categoryForm.type}
@@ -768,26 +933,32 @@ export default function InventoryPage() {
             </form>
           </Modal>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {categories.map(cat => (
-              <div key={cat.id} className="p-4 border border-border rounded-lg">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-bold">{cat.name}</h3>
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    cat.type === 'Consumable' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
-                  }`}>
-                    {cat.type}
-                  </span>
+          {categories.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground border border-dashed border-border rounded-lg">
+              No categories found. Add your first category to organize inventory items.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {categories.map(cat => (
+                <div key={cat.id} className="p-4 border border-border rounded-lg">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-bold">{cat.name}</h3>
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                      cat.type === 'Consumable' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                    }`}>
+                      {cat.type}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteCategory(cat.id)}
+                    className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded hover:bg-red-200"
+                  >
+                    Delete
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleDeleteCategory(cat.id)}
-                  className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded hover:bg-red-200"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
