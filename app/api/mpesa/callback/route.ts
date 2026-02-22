@@ -6,8 +6,21 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { Body } = body;
+    const text = await request.text();
+    if (!text || text.trim().length === 0) {
+      console.error('M-Pesa callback received empty body');
+      return NextResponse.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      console.error('M-Pesa callback received invalid JSON:', text.substring(0, 200));
+      return NextResponse.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    }
+
+    const { Body } = body as { Body?: { stkCallback?: Record<string, unknown> } };
 
     if (Body?.stkCallback) {
       const { ResultCode, ResultDesc, CallbackMetadata, CheckoutRequestID } = Body.stkCallback;

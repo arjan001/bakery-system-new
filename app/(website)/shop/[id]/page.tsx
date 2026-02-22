@@ -4,7 +4,7 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/lib/cart-context';
-import { getProduct, products } from '@/lib/products';
+import { getProduct, products, getRelated } from '@/lib/products';
 import { ShoppingBag, Minus, Plus, ChevronRight, Star, Truck, RotateCcw, Shield } from 'lucide-react';
 
 export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,6 +32,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
   }
 
   const savings = product.originalPrice ? product.originalPrice - product.price : 0;
+  const related = getRelated(product);
 
   const handleAddToCart = () => {
     for (let i = 0; i < qty; i++) {
