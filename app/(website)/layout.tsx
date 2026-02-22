@@ -71,7 +71,7 @@ function Navbar() {
     { label: 'HOME', href: '/' },
     { label: 'SHOP', href: '/shop' },
     { label: 'ABOUT', href: '/#about' },
-    { label: 'CONTACT', href: '/#contact' },
+    { label: 'CONTACT', href: '/contact' },
   ];
 
   return (
@@ -304,8 +304,9 @@ function Footer() {
               Artisan baked goods crafted with love. From our oven to your table, fresh daily.
             </p>
             <p className="text-xs text-gray-500">📍 Nairobi, Kenya</p>
-            <p className="text-xs text-gray-500 mt-1">📞 +254 700 000 000</p>
-            <p className="text-xs text-gray-500 mt-1">✉️ hello@snackoh.co.ke</p>
+            <p className="text-xs text-gray-500 mt-1">📞 0733 67 52 67 (Orders)</p>
+            <p className="text-xs text-gray-500 mt-1">📞 0722 587 222 (Feedback)</p>
+            <p className="text-xs text-gray-500 mt-1">✉️ sales@snackoh-bakers.com</p>
             <div className="flex gap-3 mt-4">
               {['𝕏', 'f', '▶', 'in'].map(s => (
                 <button key={s} className="w-8 h-8 bg-gray-800 rounded-full text-xs font-bold flex items-center justify-center hover:bg-orange-600 transition-colors">
@@ -320,7 +321,7 @@ function Footer() {
             <h4 className="text-white font-bold text-sm uppercase tracking-widest mb-4">About Us</h4>
             <ul className="space-y-2.5 text-sm text-gray-400">
               {['Our Story', 'Privacy Policy', 'Terms & Conditions', 'Contact Us', 'Careers'].map(l => (
-                <li key={l}><Link href="#" className="hover:text-orange-400 transition-colors">{l}</Link></li>
+                <li key={l}><Link href={l === 'Contact Us' ? '/contact' : '#'} className="hover:text-orange-400 transition-colors">{l}</Link></li>
               ))}
             </ul>
           </div>

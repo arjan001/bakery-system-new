@@ -336,7 +336,7 @@ export default function HomePage() {
             <p className="text-sm text-gray-500 mb-4">
               Looking for <strong className="text-gray-700">wholesale pricing</strong>? We offer bulk orders for shops, restaurants, events, and corporate clients.
             </p>
-            <Link href="/#contact"
+            <Link href="/contact"
               className="inline-flex items-center gap-2 px-6 py-3 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors">
               Contact Us for Wholesale <ChevronRight size={14} />
             </Link>
