@@ -200,8 +200,21 @@ CREATE INDEX IF NOT EXISTS idx_ledger_entries_account ON ledger_entries(account)
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_category ON ledger_entries(category);
 
 -- =============================================
--- 8. DISTRIBUTORS TABLE (existing - add missing columns for suppliers)
+-- 8. DISTRIBUTORS TABLE (create if missing, then add extra columns)
 -- =============================================
+CREATE TABLE IF NOT EXISTS distributors (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  address TEXT,
+  location TEXT,
+  category TEXT,
+  status TEXT DEFAULT 'Active',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'distributors' AND column_name = 'company_name') THEN
     ALTER TABLE distributors ADD COLUMN company_name TEXT;
