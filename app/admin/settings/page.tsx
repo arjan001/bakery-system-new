@@ -136,6 +136,30 @@ export default function SettingsPage() {
   const [offerRotation, setOfferRotation] = useState({ enabled: true, interval: 5 });
   const [offerUploading, setOfferUploading] = useState(false);
 
+  // ── M-Pesa API Settings ──
+  const [mpesaApi, setMpesaApi] = useState({
+    mpesa_consumer_key: '',
+    mpesa_consumer_secret: '',
+    mpesa_shortcode: '174379',
+    mpesa_passkey: '',
+    mpesa_callback_url: '',
+    mpesa_env: 'sandbox',
+    mpesa_b2c_shortcode: '',
+    mpesa_b2c_initiator_name: '',
+    mpesa_b2c_security_credential: '',
+    mpesa_b2c_consumer_key: '',
+    mpesa_b2c_consumer_secret: '',
+    mpesa_b2c_result_url: '',
+    mpesa_b2c_timeout_url: '',
+  });
+  const [mpesaApiMasked, setMpesaApiMasked] = useState<Record<string, string>>({});
+  const [mpesaApiSource, setMpesaApiSource] = useState<Record<string, string>>({});
+  const [mpesaApiLoading, setMpesaApiLoading] = useState(false);
+  const [mpesaApiSaving, setMpesaApiSaving] = useState(false);
+  const [mpesaApiTesting, setMpesaApiTesting] = useState(false);
+  const [mpesaApiTestResult, setMpesaApiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showMpesaSecrets, setShowMpesaSecrets] = useState(false);
+
   const loadOffers = async () => {
     setOffersLoading(true);
     try {
@@ -164,6 +188,112 @@ export default function SettingsPage() {
     if (activeTab === 'offers') loadOffers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // ── M-Pesa API: Load settings ──
+  const loadMpesaApiSettings = async () => {
+    setMpesaApiLoading(true);
+    try {
+      const res = await fetch('/api/mpesa/settings');
+      const data = await res.json();
+      if (data.success) {
+        const masked: Record<string, string> = {};
+        const sources: Record<string, string> = {};
+        // Build masked display and source info from env
+        if (data.env) {
+          for (const [key, info] of Object.entries(data.env as Record<string, { masked: string; source: string }>)) {
+            masked[key] = info.masked || '';
+            sources[key] = info.source || 'none';
+          }
+        }
+        // Overlay DB backup info for display
+        if (data.db) {
+          for (const [key, info] of Object.entries(data.db as Record<string, { masked: string; value: string }>)) {
+            if (!masked[key] && info.masked) {
+              masked[key] = info.masked;
+              sources[key] = 'db';
+            }
+          }
+        }
+        setMpesaApiMasked(masked);
+        setMpesaApiSource(sources);
+      }
+    } catch {
+      // API may not be available
+    }
+    setMpesaApiLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'mpesa-api') loadMpesaApiSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const saveMpesaApiSettings = async () => {
+    setMpesaApiSaving(true);
+    try {
+      // Only send fields that have been filled in (non-empty)
+      const settingsToSave: Record<string, string> = {};
+      for (const [key, value] of Object.entries(mpesaApi)) {
+        if (value) settingsToSave[key] = value;
+      }
+
+      const res = await fetch('/api/mpesa/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: settingsToSave }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSavedMsg('M-Pesa API settings saved to database backup!');
+        // Clear the form fields (since they are now saved)
+        setMpesaApi({
+          mpesa_consumer_key: '',
+          mpesa_consumer_secret: '',
+          mpesa_shortcode: '',
+          mpesa_passkey: '',
+          mpesa_callback_url: '',
+          mpesa_env: '',
+          mpesa_b2c_shortcode: '',
+          mpesa_b2c_initiator_name: '',
+          mpesa_b2c_security_credential: '',
+          mpesa_b2c_consumer_key: '',
+          mpesa_b2c_consumer_secret: '',
+          mpesa_b2c_result_url: '',
+          mpesa_b2c_timeout_url: '',
+        });
+        // Reload to show updated masked values
+        loadMpesaApiSettings();
+      } else {
+        setSavedMsg(data.message || 'Failed to save M-Pesa settings');
+      }
+    } catch {
+      setSavedMsg('Error saving M-Pesa settings');
+    }
+    setMpesaApiSaving(false);
+    setTimeout(() => setSavedMsg(''), 4000);
+  };
+
+  const testMpesaConnection = async () => {
+    setMpesaApiTesting(true);
+    setMpesaApiTestResult(null);
+    try {
+      // Try to get an access token to verify credentials
+      const res = await fetch('/api/mpesa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '254700000000', amount: 1, accountReference: 'TEST', description: 'Connection Test' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMpesaApiTestResult({ success: true, message: 'Connection successful! STK push was initiated (sandbox test).' });
+      } else {
+        setMpesaApiTestResult({ success: false, message: data.message || 'Connection failed. Check your credentials.' });
+      }
+    } catch (err) {
+      setMpesaApiTestResult({ success: false, message: 'Network error. Unable to reach M-Pesa API.' + (err instanceof Error ? ' ' + err.message : '') });
+    }
+    setMpesaApiTesting(false);
+  };
 
   const saveOffer = async () => {
     const now = new Date().toISOString();

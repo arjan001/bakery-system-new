@@ -1,25 +1,94 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// M-Pesa Daraja API Integration
-const MPESA_AUTH_URL = process.env.MPESA_ENV === 'production'
-  ? 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
-  : 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
+// Helper: resolve M-Pesa config from env vars first, fallback to database backup
+let _dbSettingsCache: Record<string, string> | null = null;
+let _dbSettingsCacheTime = 0;
+const DB_CACHE_TTL = 60_000; // 1 minute
 
-const MPESA_STK_URL = process.env.MPESA_ENV === 'production'
-  ? 'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
-  : 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
+async function getMpesaConfig(): Promise<Record<string, string>> {
+  const envConfig: Record<string, string> = {
+    consumer_key: (process.env.MPESA_CONSUMER_KEY || '').trim(),
+    consumer_secret: (process.env.MPESA_CONSUMER_SECRET || '').trim(),
+    shortcode: (process.env.MPESA_SHORTCODE || '').trim(),
+    passkey: (process.env.MPESA_PASSKEY || '').trim(),
+    callback_url: (process.env.MPESA_CALLBACK_URL || '').trim(),
+    env: (process.env.MPESA_ENV || 'sandbox').trim(),
+  };
 
-const MPESA_QUERY_URL = process.env.MPESA_ENV === 'production'
-  ? 'https://api.safaricom.co.ke/mpesa/stkpushquery/v1/query'
-  : 'https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query';
+  // If all essential env vars are set, use them directly
+  if (envConfig.consumer_key && envConfig.consumer_secret && envConfig.shortcode) {
+    return envConfig;
+  }
 
-async function getAccessToken(): Promise<string> {
+  // Fallback: load missing values from database backup
+  try {
+    const now = Date.now();
+    if (!_dbSettingsCache || now - _dbSettingsCacheTime > DB_CACHE_TTL) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (supabaseUrl && supabaseKey) {
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        const { data } = await supabase.from('mpesa_settings').select('setting_key, setting_value');
+        if (data) {
+          _dbSettingsCache = {};
+          for (const row of data) {
+            _dbSettingsCache[row.setting_key] = row.setting_value;
+          }
+          _dbSettingsCacheTime = now;
+        }
+      }
+    }
+
+    if (_dbSettingsCache) {
+      const dbMap: Record<string, string> = {
+        consumer_key: _dbSettingsCache.mpesa_consumer_key || '',
+        consumer_secret: _dbSettingsCache.mpesa_consumer_secret || '',
+        shortcode: _dbSettingsCache.mpesa_shortcode || '',
+        passkey: _dbSettingsCache.mpesa_passkey || '',
+        callback_url: _dbSettingsCache.mpesa_callback_url || '',
+        env: _dbSettingsCache.mpesa_env || 'sandbox',
+      };
+
+      // Merge: env vars take precedence, DB fills gaps
+      for (const key of Object.keys(envConfig)) {
+        if (!envConfig[key] && dbMap[key]) {
+          envConfig[key] = dbMap[key];
+        }
+      }
+    }
+  } catch {
+    // DB fallback failed, continue with env vars only
+  }
+
+  return envConfig;
+}
+
+// M-Pesa Daraja API URL helpers
+function getAuthUrl(env: string) {
+  return env === 'production'
+    ? 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
+    : 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
+}
+
+function getStkUrl(env: string) {
+  return env === 'production'
+    ? 'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
+    : 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
+}
+
+function getQueryUrl(env: string) {
+  return env === 'production'
+    ? 'https://api.safaricom.co.ke/mpesa/stkpushquery/v1/query'
+    : 'https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query';
+}
+
+async function getAccessToken(config: Record<string, string>): Promise<string> {
   const auth = Buffer.from(
-    `${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`
+    `${config.consumer_key}:${config.consumer_secret}`
   ).toString('base64');
 
-  const response = await fetch(MPESA_AUTH_URL, {
+  const response = await fetch(getAuthUrl(config.env), {
     method: 'GET',
     headers: { Authorization: `Basic ${auth}` },
   });
@@ -71,14 +140,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const config = await getMpesaConfig();
     const formattedPhone = formatPhone(phone);
-    const accessToken = await getAccessToken();
+    const accessToken = await getAccessToken(config);
     const timestamp = generateTimestamp();
-    const shortcode = process.env.MPESA_SHORTCODE || '174379';
-    const passkey = process.env.MPESA_PASSKEY || '';
+    const shortcode = config.shortcode || '174379';
+    const passkey = config.passkey || '';
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
 
-    const callbackUrl = process.env.MPESA_CALLBACK_URL || `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bakery-system-new.netlify.app'}/api/mpesa/callback`;
+    const callbackUrl = config.callback_url || `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bakery-system-new.netlify.app'}/api/mpesa/callback`;
 
     const stkPayload = {
       BusinessShortCode: shortcode,
@@ -94,7 +164,7 @@ export async function POST(request: NextRequest) {
       TransactionDesc: description || 'POS Payment',
     };
 
-    const response = await fetch(MPESA_STK_URL, {
+    const response = await fetch(getStkUrl(config.env), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -235,13 +305,14 @@ async function handleStkQuery(checkoutRequestId: string) {
     }
 
     // Fall back to querying M-Pesa API directly
-    const accessToken = await getAccessToken();
+    const config = await getMpesaConfig();
+    const accessToken = await getAccessToken(config);
     const timestamp = generateTimestamp();
-    const shortcode = process.env.MPESA_SHORTCODE || '174379';
-    const passkey = process.env.MPESA_PASSKEY || '';
+    const shortcode = config.shortcode || '174379';
+    const passkey = config.passkey || '';
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
 
-    const response = await fetch(MPESA_QUERY_URL, {
+    const response = await fetch(getQueryUrl(config.env), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,

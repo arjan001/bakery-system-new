@@ -626,6 +626,23 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_module ON audit_log(module);
 CREATE INDEX IF NOT EXISTS idx_audit_log_date ON audit_log(created_at);
 
 -- =============================================
+-- 26. M-PESA API SETTINGS (Database Backup)
+-- Primary source: .env environment variables
+-- This table stores a backup copy of credentials
+-- =============================================
+CREATE TABLE IF NOT EXISTS mpesa_settings (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  setting_key TEXT NOT NULL UNIQUE,
+  setting_value TEXT NOT NULL DEFAULT '',
+  description TEXT,
+  is_sensitive BOOLEAN DEFAULT false,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mpesa_settings_key ON mpesa_settings(setting_key);
+
+-- =============================================
 -- SEED: Default roles & permissions
 -- =============================================
 INSERT INTO roles (name, description) VALUES
