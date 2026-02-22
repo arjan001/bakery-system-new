@@ -71,6 +71,13 @@ export default function RecipesPage() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // AI Generation
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [inventoryItems, setInventoryItems] = useState<{ name: string; unit: string; unitCost: number; quantity: number }[]>([]);
+
   // ── Form State ──
 
   const emptyForm: Recipe = {
@@ -356,6 +363,176 @@ export default function RecipesPage() {
     setFilePreview([]);
   };
 
+  // ── AI Recipe Generation ──
+
+  const fetchInventoryItems = useCallback(async () => {
+    const { data } = await supabase.from('inventory_items').select('name, unit, unit_cost, quantity').order('name');
+    if (data) {
+      setInventoryItems(data.map((r: Record<string, unknown>) => ({
+        name: (r.name || '') as string,
+        unit: (r.unit || '') as string,
+        unitCost: (r.unit_cost || 0) as number,
+        quantity: (r.quantity || 0) as number,
+      })));
+    }
+  }, []);
+
+  useEffect(() => { fetchInventoryItems(); }, [fetchInventoryItems]);
+
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setAiGenerating(true);
+    setAiError('');
+
+    try {
+      // Load gemini settings
+      let geminiKey = '';
+      let geminiModel = 'gemini-2.0-flash';
+      try {
+        const { data } = await supabase.from('business_settings').select('value').eq('key', 'geminiAi').single();
+        if (data?.value) {
+          const settings = data.value as Record<string, unknown>;
+          geminiKey = (settings.apiKey || '') as string;
+          geminiModel = (settings.model || 'gemini-2.0-flash') as string;
+          if (!(settings.enabled as boolean)) {
+            setAiError('Gemini AI is disabled. Enable it in Settings > Gemini AI.');
+            setAiGenerating(false);
+            return;
+          }
+        }
+      } catch {
+        try {
+          const saved = localStorage.getItem('snackoh_settings');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.geminiAi) {
+              geminiKey = parsed.geminiAi.apiKey || '';
+              geminiModel = parsed.geminiAi.model || 'gemini-2.0-flash';
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!geminiKey) {
+        setAiError('Gemini API key not configured. Go to Settings > Gemini AI to set it up.');
+        setAiGenerating(false);
+        return;
+      }
+
+      const inventoryList = inventoryItems.map(i => `${i.name} (${i.unit}, KES ${i.unitCost}/unit, stock: ${i.quantity})`).join('\n');
+
+      const prompt = `You are a professional bakery recipe formulator. Generate a complete bakery recipe for: "${aiPrompt}"
+
+Available inventory items:
+${inventoryList || 'No inventory items available.'}
+
+IMPORTANT: Prefer ingredients from the inventory list above. If an ingredient is NOT in inventory, prefix its name with "[NOT IN STOCK] ".
+
+Respond in this exact JSON format (no markdown, no code blocks, just raw JSON):
+{
+  "name": "Recipe Name",
+  "code": "XX-001",
+  "category": "Bread",
+  "productType": "White Bread",
+  "batchSize": 1,
+  "expectedOutput": 10,
+  "outputUnit": "pieces",
+  "prepTime": 30,
+  "bakeTime": 25,
+  "bakeTemp": 180,
+  "instructions": "Step 1...\\nStep 2...",
+  "ingredients": [
+    { "name": "Wheat Flour", "quantity": 1000, "unit": "g", "costPerUnit": 0.12, "sourcingNote": "" }
+  ]
+}
+
+For category use one of: Bread, Pastry, Cake, Buns, Cookies, Other
+For productType use one of: White Bread, Brown Bread, Sourdough, Croissant, Danish, Muffin, Scone, Cookie, Cake, Pie, Bun, Other
+For units use: g, kg, ml, l, pieces, tbsp, tsp, cups
+Use realistic quantities and costs in KES.`;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.error?.message || `API error: ${res.status}`);
+      }
+
+      const result = await res.json();
+      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      // Extract JSON from response (handle possible markdown code blocks)
+      let jsonStr = text;
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) jsonStr = jsonMatch[0];
+
+      const recipe = JSON.parse(jsonStr);
+
+      // Map AI response to form data
+      setFormData({
+        ...emptyForm,
+        name: recipe.name || aiPrompt,
+        code: recipe.code || `AI-${Date.now().toString().slice(-4)}`,
+        category: recipe.category || 'Bread',
+        productType: recipe.productType || 'Other',
+        batchSize: recipe.batchSize || 1,
+        expectedOutput: recipe.expectedOutput || 10,
+        outputUnit: recipe.outputUnit || 'pieces',
+        prepTime: recipe.prepTime || 0,
+        bakeTime: recipe.bakeTime || 0,
+        bakeTemp: recipe.bakeTemp || 180,
+        instructions: recipe.instructions || '',
+        status: 'active' as const,
+        ingredients: (recipe.ingredients || []).map((ing: Record<string, unknown>, idx: number) => {
+          const name = (ing.name || '') as string;
+          // Check if ingredient exists in inventory and match cost
+          const invMatch = inventoryItems.find(i => i.name.toLowerCase() === name.replace('[NOT IN STOCK] ', '').toLowerCase());
+          return {
+            id: `ai-${Date.now()}-${idx}`,
+            name: name,
+            quantity: (ing.quantity || 0) as number,
+            unit: (ing.unit || 'g') as string,
+            costPerUnit: invMatch ? invMatch.unitCost : ((ing.costPerUnit || 0) as number),
+            sourcingNote: invMatch ? 'In Stock' : (name.includes('[NOT IN STOCK]') ? 'Not in inventory' : ((ing.sourcingNote || '') as string)),
+          };
+        }),
+      });
+
+      setShowAiModal(false);
+      setAiPrompt('');
+      setShowForm(true);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Failed to generate recipe. Please try again.');
+    }
+
+    setAiGenerating(false);
+  };
+
+  const downloadCsvTemplate = () => {
+    const headers = ['name,quantity,unit,costPerUnit'];
+    const sampleRows = [
+      'Wheat Flour,1000,g,0.12',
+      'Sugar,200,g,0.15',
+      'Butter,250,g,0.80',
+      'Eggs,6,pieces,15.00',
+      'Yeast,10,g,2.50',
+    ];
+    const csvContent = [...headers, ...sampleRows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'recipe_ingredients_template.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   // ── Render ──
 
   return (
@@ -436,13 +613,22 @@ export default function RecipesPage() {
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-        <button
-          onClick={() => { setEditId(null); setFormData(emptyForm); setUploadedFile(null); setFilePreview([]); setShowForm(true); }}
-          className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold flex items-center gap-2 shadow-sm"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          New Recipe
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowAiModal(true)}
+            className="px-5 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg hover:opacity-90 font-semibold flex items-center gap-2 shadow-sm"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            AI Generate Recipe
+          </button>
+          <button
+            onClick={() => { setEditId(null); setFormData(emptyForm); setUploadedFile(null); setFilePreview([]); setShowForm(true); }}
+            className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold flex items-center gap-2 shadow-sm"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            New Recipe
+          </button>
+        </div>
       </div>
 
       {/* DataTable */}
@@ -916,6 +1102,14 @@ export default function RecipesPage() {
               <div className="w-8 h-8 rounded-lg bg-violet-500 text-white flex items-center justify-center text-sm font-bold">4</div>
               <h3 className="font-bold text-violet-900 text-lg">Import Ingredients from File</h3>
               <span className="text-xs px-2 py-0.5 bg-violet-200 text-violet-700 rounded-full font-medium ml-2">Optional</span>
+              <button
+                type="button"
+                onClick={downloadCsvTemplate}
+                className="ml-auto px-3 py-1.5 text-xs bg-violet-500 text-white rounded-lg hover:bg-violet-600 font-medium flex items-center gap-1"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                Download CSV Template
+              </button>
             </div>
 
             {/* Drag & Drop Area */}
@@ -1202,6 +1396,82 @@ export default function RecipesPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* AI RECIPE GENERATION MODAL                                        */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <Modal
+        isOpen={showAiModal}
+        onClose={() => { setShowAiModal(false); setAiPrompt(''); setAiError(''); }}
+        title="AI Recipe Generator"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              <h3 className="font-semibold text-purple-900">Gemini AI Recipe Formulation</h3>
+            </div>
+            <p className="text-sm text-purple-700">Describe what you want to bake and AI will generate a complete recipe with ingredients from your inventory.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">What would you like to bake?</label>
+            <input
+              type="text"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="e.g. Chocolate Croissant, Banana Bread, Cinnamon Rolls..."
+              className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-purple-400 outline-none text-lg"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAiGenerate(); }}
+            />
+          </div>
+
+          {inventoryItems.length > 0 && (
+            <div className="bg-secondary/50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground mb-1 font-medium">Available Inventory Items ({inventoryItems.length})</p>
+              <div className="flex flex-wrap gap-1">
+                {inventoryItems.slice(0, 20).map((item) => (
+                  <span key={item.name} className="px-2 py-0.5 bg-white border border-border rounded text-xs">{item.name}</span>
+                ))}
+                {inventoryItems.length > 20 && <span className="px-2 py-0.5 text-xs text-muted-foreground">+{inventoryItems.length - 20} more</span>}
+              </div>
+            </div>
+          )}
+
+          {aiError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-700">{aiError}</p>
+            </div>
+          )}
+
+          <div className="flex gap-3 justify-end pt-2 border-t border-border">
+            <button
+              onClick={() => { setShowAiModal(false); setAiPrompt(''); setAiError(''); }}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAiGenerate}
+              disabled={aiGenerating || !aiPrompt.trim()}
+              className="px-6 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg hover:opacity-90 font-semibold disabled:opacity-50 flex items-center gap-2"
+            >
+              {aiGenerating ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  Generate Recipe
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

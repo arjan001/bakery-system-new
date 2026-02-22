@@ -22,6 +22,7 @@ import {
   Package,
   ShoppingBag,
   Building2,
+  Handshake,
   Wrench,
   TrendingDown,
   CreditCard,
@@ -117,7 +118,8 @@ export function Sidebar() {
       items: [
         { label: 'Inventory', href: '/admin/inventory', tip: 'Raw materials, packaging & stock levels', icon: Package },
         { label: 'Purchasing', href: '/admin/purchasing', tip: 'Purchase orders & supplier procurement', icon: ShoppingBag },
-        { label: 'Distributors', href: '/admin/distributors', tip: 'Manage suppliers & distributors', icon: Building2 },
+        { label: 'Suppliers', href: '/admin/distributors', tip: 'Manage inventory suppliers & pricing', icon: Building2 },
+        { label: 'Distributors', href: '/admin/distribution', tip: 'Manage distribution agents & sales', icon: Handshake },
         { label: 'Assets', href: '/admin/assets', tip: 'Equipment, vehicles & depreciation tracking', icon: Wrench },
       ],
     },

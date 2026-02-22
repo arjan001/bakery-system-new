@@ -225,7 +225,7 @@ export default function DistributorsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this distributor?')) {
+    if (confirm('Delete this supplier?')) {
       await supabase.from('distributors').delete().eq('id', id);
       setDistributors(distributors.filter(d => d.id !== id));
     }
@@ -287,14 +287,14 @@ export default function DistributorsPage() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="mb-2">Distributor Management</h1>
-        <p className="text-muted-foreground">Manage distributors, suppliers, and their categories for inventory sourcing</p>
+        <h1 className="mb-2">Supplier Management</h1>
+        <p className="text-muted-foreground">Manage inventory suppliers, their categories, and procurement pricing</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Total Distributors</p>
+          <p className="text-sm text-muted-foreground">Total Suppliers</p>
           <p className="text-2xl font-bold">{totalDistributors}</p>
         </div>
         <div className="border border-border rounded-lg p-4 bg-card">
@@ -321,7 +321,7 @@ export default function DistributorsPage() {
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          Distributors
+          Suppliers
         </button>
         <button
           onClick={() => setActiveTab('categories')}
@@ -343,7 +343,7 @@ export default function DistributorsPage() {
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Search distributors..."
+                placeholder="Search suppliers..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none w-64"
@@ -363,17 +363,17 @@ export default function DistributorsPage() {
               onClick={() => { setEditingId(null); setFormData({ ...emptyForm, contacts: [{ ...emptyContact }] }); setShowForm(true); }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
             >
-              + Add Distributor
+              + Add Supplier
             </button>
           </div>
 
           {/* Distributor Form Modal */}
-          <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditingId(null); }} title={editingId ? 'Edit Distributor' : 'New Distributor'} size="2xl">
+          <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditingId(null); }} title={editingId ? 'Edit Supplier' : 'New Supplier'} size="2xl">
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
               {/* Basic Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Distributor Name *</label>
+                  <label className="block text-xs text-muted-foreground mb-1">Supplier Name *</label>
                   <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required />
                 </div>
                 <div>
@@ -540,7 +540,7 @@ export default function DistributorsPage() {
 
               <div className="flex gap-2 justify-end pt-4 border-t border-border">
                 <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">{editingId ? 'Update' : 'Create'} Distributor</button>
+                <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">{editingId ? 'Update' : 'Create'} Supplier</button>
               </div>
             </form>
           </Modal>
@@ -648,7 +648,7 @@ export default function DistributorsPage() {
               </thead>
               <tbody>
                 {paginatedDistributors.length === 0 && !loading ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No distributors found</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No suppliers found</td></tr>
                 ) : (
                   paginatedDistributors.map((dist) => (
                     <tr key={dist.id} className="border-b border-border hover:bg-secondary/50">
@@ -681,7 +681,7 @@ export default function DistributorsPage() {
           {filtered.length > ITEMS_PER_PAGE && (
             <div className="flex items-center justify-between mt-4">
               <p className="text-sm text-muted-foreground">
-                Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length} distributors
+                Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length} suppliers
               </p>
               <div className="flex gap-1">
                 <button
@@ -730,7 +730,7 @@ export default function DistributorsPage() {
             </button>
           </div>
 
-          <Modal isOpen={showCategoryForm} onClose={() => { setShowCategoryForm(false); setEditingCategoryId(null); }} title={editingCategoryId ? 'Edit Category' : 'Add Distributor Category'} size="md">
+          <Modal isOpen={showCategoryForm} onClose={() => { setShowCategoryForm(false); setEditingCategoryId(null); }} title={editingCategoryId ? 'Edit Category' : 'Add Supplier Category'} size="md">
             <form onSubmit={handleCategorySubmit} className="space-y-4">
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Category Name *</label>
@@ -750,7 +750,7 @@ export default function DistributorsPage() {
                   onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                   rows={3}
-                  placeholder="Brief description of this distributor category"
+                  placeholder="Brief description of this supplier category"
                 />
               </div>
               <div className="flex gap-2 justify-end pt-4 border-t border-border">
@@ -775,7 +775,7 @@ export default function DistributorsPage() {
                         <h3 className="font-bold">{cat.name}</h3>
                         <p className="text-xs text-muted-foreground mt-0.5">{cat.description || 'No description'}</p>
                       </div>
-                      <span className="px-2 py-1 rounded text-xs font-semibold bg-secondary">{count} distributor{count !== 1 ? 's' : ''}</span>
+                      <span className="px-2 py-1 rounded text-xs font-semibold bg-secondary">{count} supplier{count !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="flex gap-2 mt-3">
                       <button onClick={() => handleEditCategory(cat)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button>

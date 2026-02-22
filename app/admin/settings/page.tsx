@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions';
 
 interface NewsletterSubscriber {
   id: string;
@@ -64,6 +64,17 @@ export default function SettingsPage() {
     language: 'en',
     logoUrl: '',
   });
+
+  // ── Gemini AI Settings ──
+  const [geminiSettings, setGeminiSettings] = useState({
+    apiKey: '',
+    model: 'gemini-2.0-flash',
+    enabled: false,
+    maxTokens: 2048,
+    temperature: 0.7,
+  });
+  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [geminiTesting, setGeminiTesting] = useState(false);
 
   // ── Receipt Settings ──
   const [receipt, setReceipt] = useState({
@@ -524,6 +535,7 @@ export default function SettingsPage() {
           const settings: Record<string, unknown> = {};
           for (const row of data) settings[row.key] = row.value;
           if (settings.general) setGeneral(prev => ({ ...prev, ...(settings.general as Record<string, unknown>) }));
+          if (settings.geminiAi) setGeminiSettings(prev => ({ ...prev, ...(settings.geminiAi as Record<string, unknown>) }));
           if (settings.receipt) setReceipt(prev => ({ ...prev, ...(settings.receipt as Record<string, unknown>) }));
           if (settings.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...(settings.paymentDetails as Record<string, unknown>) }));
           if (settings.posCard) setPosCard(prev => ({ ...prev, ...(settings.posCard as Record<string, unknown>) }));
@@ -540,6 +552,7 @@ export default function SettingsPage() {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
+          if (parsed.geminiAi) setGeminiSettings(prev => ({ ...prev, ...parsed.geminiAi }));
           if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
           if (parsed.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...parsed.paymentDetails }));
           if (parsed.posCard) setPosCard(prev => ({ ...prev, ...parsed.posCard }));
@@ -551,9 +564,34 @@ export default function SettingsPage() {
     loadFromDb();
   }, []);
 
+  const testGeminiConnection = async () => {
+    if (!geminiSettings.apiKey) {
+      setGeminiTestResult({ success: false, message: 'Please enter an API key first' });
+      return;
+    }
+    setGeminiTesting(true);
+    setGeminiTestResult(null);
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiSettings.model}:generateContent?key=${geminiSettings.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'Say "Connection successful" in one sentence.' }] }], generationConfig: { maxOutputTokens: 50 } }),
+      });
+      if (res.ok) {
+        setGeminiTestResult({ success: true, message: 'Gemini AI connection successful! API key is valid.' });
+      } else {
+        const err = await res.json();
+        setGeminiTestResult({ success: false, message: err?.error?.message || `API error: ${res.status}` });
+      }
+    } catch (e) {
+      setGeminiTestResult({ success: false, message: `Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}` });
+    }
+    setGeminiTesting(false);
+  };
+
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, receipt, paymentDetails, posCard, security, backup, navbarAds, newsletterModal };
+    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, navbarAds, newsletterModal };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -587,6 +625,7 @@ export default function SettingsPage() {
 
   const tabs: { key: SettingsTab; label: string; icon: string; tip: string }[] = [
     { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
+    { key: 'gemini-ai', label: 'Gemini AI', icon: '🤖', tip: 'Configure Gemini AI for recipe generation & suggestions' },
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'navbar-ads', label: 'Navbar Ads', icon: '📢', tip: 'Scrolling marquee text on customer website navbar' },
     { key: 'newsletter', label: 'Newsletter', icon: '📧', tip: 'Newsletter modal settings & subscriber management' },
@@ -697,6 +736,80 @@ export default function SettingsPage() {
                   <p className="text-xs text-muted-foreground mt-1">Recommended: PNG or SVG, at least 200x200px. The logo is stored in Supabase Storage and referenced across all pages.</p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GEMINI AI ── */}
+      {activeTab === 'gemini-ai' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-1">Gemini AI Configuration</h3>
+            <p className="text-xs text-muted-foreground mb-4">Configure Google Gemini AI to auto-generate recipes based on your inventory items. The AI will formulate recipes and auto-fill ingredients with costs.</p>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Enable Gemini AI</p>
+                  <p className="text-xs text-muted-foreground">Allow AI recipe generation in the Recipes module</p>
+                </div>
+                <button type="button" onClick={() => setGeminiSettings({ ...geminiSettings, enabled: !geminiSettings.enabled })} className={`w-10 h-5 rounded-full transition-colors ${geminiSettings.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${geminiSettings.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+
+              <div>
+                <label className={labelCls}>Gemini API Key *</label>
+                <input type="password" value={geminiSettings.apiKey} onChange={e => setGeminiSettings({ ...geminiSettings, apiKey: e.target.value })} className={inputCls} placeholder="Enter your Google Gemini API key" />
+                <p className="text-xs text-muted-foreground mt-1">Get your API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google AI Studio</a></p>
+              </div>
+
+              <div>
+                <label className={labelCls}>Model</label>
+                <select value={geminiSettings.model} onChange={e => setGeminiSettings({ ...geminiSettings, model: e.target.value })} className={inputCls}>
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recommended)</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Max Tokens</label>
+                  <input type="number" value={geminiSettings.maxTokens} onChange={e => setGeminiSettings({ ...geminiSettings, maxTokens: parseInt(e.target.value) || 2048 })} className={inputCls} min={256} max={8192} />
+                </div>
+                <div>
+                  <label className={labelCls}>Temperature (Creativity)</label>
+                  <input type="number" step="0.1" min="0" max="2" value={geminiSettings.temperature} onChange={e => setGeminiSettings({ ...geminiSettings, temperature: parseFloat(e.target.value) || 0.7 })} className={inputCls} />
+                  <p className="text-xs text-muted-foreground mt-1">Lower = more precise, Higher = more creative</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Test Connection</h3>
+            <div className="flex items-center gap-3">
+              <button onClick={testGeminiConnection} disabled={geminiTesting || !geminiSettings.apiKey} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+                {geminiTesting ? 'Testing...' : 'Test Gemini Connection'}
+              </button>
+              {geminiTestResult && (
+                <span className={`text-sm font-medium ${geminiTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
+                  {geminiTestResult.message}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-2">How It Works</h3>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>1. Go to <strong>Recipes & Products</strong> and click <strong>&quot;AI Generate Recipe&quot;</strong></p>
+              <p>2. Enter a product name or description (e.g. &quot;Chocolate Croissant&quot;)</p>
+              <p>3. Gemini AI will formulate a recipe with ingredients, quantities, and instructions</p>
+              <p>4. The AI checks your <strong>inventory items</strong> — if an ingredient isn&apos;t in stock, it flags it</p>
+              <p>5. Review and adjust the auto-filled recipe, then save</p>
             </div>
           </div>
         </div>
