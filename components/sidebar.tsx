@@ -16,6 +16,7 @@ import {
   Trash2,
   Users,
   FileText,
+  MapPinned,
   Truck,
   Tag,
   Package,
@@ -103,6 +104,7 @@ export function Sidebar() {
       items: [
         { label: 'Customers', href: '/admin/customers', tip: 'Customer profiles, geo-location & segmentation', icon: Users },
         { label: 'Orders', href: '/admin/orders', tip: 'Create & manage customer orders with delivery', icon: FileText },
+        { label: 'Order Tracking', href: '/admin/order-tracking', tip: 'Track order status & delivery progress', icon: MapPinned },
         { label: 'Delivery', href: '/admin/delivery', tip: 'Schedule deliveries & assign drivers', icon: Truck },
         { label: 'Pricing', href: '/admin/pricing', tip: 'Set retail & wholesale pricing tiers', icon: Tag },
       ],
