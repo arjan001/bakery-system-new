@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/lib/cart-context';
 import { products, getBestSellers, CIRCLE_CATEGORIES } from '@/lib/products';
-import { ShoppingBag, Star, ChevronRight, Truck, Clock, Shield, Users, Store } from 'lucide-react';
+import { ShoppingBag, Star, ChevronRight, ChevronLeft, Truck, Clock, Shield, Users, Store, Megaphone, Tag, ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import type { Offer } from '@/lib/products';
 
 // ─── Product Card (mini, for home page) ───────────────────────────────────
 function HomeProductCard({ product }: { product: (typeof products)[0] }) {
@@ -50,7 +51,249 @@ function HomeProductCard({ product }: { product: (typeof products)[0] }) {
           <span className="text-xs text-gray-400 line-through">KES {product.originalPrice.toLocaleString()}</span>
         )}
       </div>
+      {/* Stock indicator */}
+      <div className="mt-1">
+        {product.inStock ? (
+          product.stock <= 5 ? (
+            <span className="text-[10px] text-amber-600 font-semibold">Only {product.stock} left!</span>
+          ) : (
+            <span className="text-[10px] text-green-600 font-semibold">In stock</span>
+          )
+        ) : (
+          <span className="text-[10px] text-red-500 font-semibold">Out of stock</span>
+        )}
+      </div>
     </div>
+  );
+}
+
+// ─── Promotional Ads Carousel ─────────────────────────────────────────────
+function AdsCarousel() {
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  useEffect(() => {
+    async function loadOffers() {
+      try {
+        const { data, error } = await supabase
+          .from('offers')
+          .select('*')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+        if (!error && data && data.length > 0) {
+          setOffers(data as Offer[]);
+          return;
+        }
+      } catch { /* table may not exist */ }
+      // Fallback to localStorage
+      try {
+        const local = localStorage.getItem('snackoh_offers');
+        if (local) {
+          const parsed = JSON.parse(local) as Offer[];
+          setOffers(parsed.filter(o => o.is_active));
+        }
+      } catch { /* ignore */ }
+    }
+    loadOffers();
+  }, []);
+
+  // Auto-slide every 5 seconds
+  useEffect(() => {
+    if (offers.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentSlide(prev => (prev + 1) % offers.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [offers.length]);
+
+  // Default offers if none configured
+  const defaultOffers: { title: string; description: string; badge: string; link: string; image: string; discount: string }[] = [
+    {
+      title: 'Weekend Special Sale',
+      description: 'Up to 30% off on selected baked goods. Fresh from the oven, curated for you.',
+      badge: 'LIMITED OFFER',
+      link: '/shop',
+      image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=800&q=80&fit=crop',
+      discount: '30% OFF',
+    },
+    {
+      title: 'New Arrivals This Week',
+      description: 'Fresh pastries and cakes added weekly. Discover our latest creations.',
+      badge: 'JUST DROPPED',
+      link: '/shop',
+      image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=800&q=80&fit=crop',
+      discount: '',
+    },
+  ];
+
+  if (offers.length === 0) {
+    return (
+      <section className="py-6 px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {defaultOffers.map((offer, idx) => (
+              <Link key={idx} href={offer.link}
+                className="group relative rounded-2xl overflow-hidden h-48 md:h-56 block">
+                <img src={offer.image} alt={offer.title}
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+                <div className="relative z-10 p-6 h-full flex flex-col justify-center">
+                  <p className="text-orange-300 text-[10px] font-bold tracking-widest uppercase mb-1">{offer.badge}</p>
+                  <h3 className="text-white text-xl md:text-2xl font-black leading-tight mb-1.5">{offer.title}</h3>
+                  <p className="text-white/70 text-xs max-w-xs mb-3">{offer.description}</p>
+                  <span className="inline-flex items-center gap-1.5 text-white text-xs font-bold group-hover:text-orange-300 transition-colors">
+                    {offer.discount ? `${offer.discount} — Shop Now` : 'Explore New In'} <ArrowRight size={12} />
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="py-6 px-6">
+      <div className="max-w-7xl mx-auto">
+        {offers.length <= 2 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {offers.map((offer) => (
+              <Link key={offer.id} href={offer.link_url || '/shop'}
+                className="group relative rounded-2xl overflow-hidden h-48 md:h-56 block">
+                {offer.image_url ? (
+                  <img src={offer.image_url} alt={offer.title}
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                ) : (
+                  <div className="absolute inset-0 bg-gradient-to-br from-orange-600 to-amber-800" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+                <div className="relative z-10 p-6 h-full flex flex-col justify-center">
+                  <p className="text-orange-300 text-[10px] font-bold tracking-widest uppercase mb-1">{offer.badge_text}</p>
+                  <h3 className="text-white text-xl md:text-2xl font-black leading-tight mb-1.5">{offer.title}</h3>
+                  <p className="text-white/70 text-xs max-w-xs mb-3">{offer.description}</p>
+                  <span className="inline-flex items-center gap-1.5 text-white text-xs font-bold group-hover:text-orange-300 transition-colors">
+                    {offer.discount_text ? `${offer.discount_text} — Shop Now` : 'Shop The Sale'} <ArrowRight size={12} />
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          /* Full carousel for 3+ offers */
+          <div className="relative">
+            <div className="overflow-hidden rounded-2xl">
+              <div className="flex transition-transform duration-500"
+                style={{ transform: `translateX(-${currentSlide * 100}%)` }}>
+                {offers.map((offer) => (
+                  <Link key={offer.id} href={offer.link_url || '/shop'}
+                    className="min-w-full relative h-48 md:h-56 block group">
+                    {offer.image_url ? (
+                      <img src={offer.image_url} alt={offer.title}
+                        className="absolute inset-0 w-full h-full object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-orange-600 to-amber-800" />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+                    <div className="relative z-10 p-8 h-full flex flex-col justify-center">
+                      <p className="text-orange-300 text-[10px] font-bold tracking-widest uppercase mb-1">{offer.badge_text}</p>
+                      <h3 className="text-white text-2xl md:text-3xl font-black leading-tight mb-2">{offer.title}</h3>
+                      <p className="text-white/70 text-sm max-w-md mb-3">{offer.description}</p>
+                      <span className="inline-flex items-center gap-1.5 text-white text-sm font-bold group-hover:text-orange-300 transition-colors">
+                        {offer.discount_text ? `${offer.discount_text} — Shop Now` : 'Shop Now'} <ArrowRight size={14} />
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+            {/* Carousel controls */}
+            {offers.length > 1 && (
+              <>
+                <button onClick={() => setCurrentSlide(prev => prev === 0 ? offers.length - 1 : prev - 1)}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white shadow-md transition-colors">
+                  <ChevronLeft size={16} />
+                </button>
+                <button onClick={() => setCurrentSlide(prev => (prev + 1) % offers.length)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white shadow-md transition-colors">
+                  <ChevronRight size={16} />
+                </button>
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  {offers.map((_, idx) => (
+                    <button key={idx} onClick={() => setCurrentSlide(idx)}
+                      className={`w-2 h-2 rounded-full transition-colors ${idx === currentSlide ? 'bg-white' : 'bg-white/40'}`} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ─── Offers & Wholesale Section ──────────────────────────────────────────────
+function OffersSection() {
+  return (
+    <section className="py-10 bg-orange-50">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="text-center mb-8">
+          <p className="text-xs text-orange-600 font-bold tracking-widest uppercase mb-1">Special Deals</p>
+          <h2 className="text-3xl font-black text-gray-900">Offers & Promotions</h2>
+          <p className="text-gray-500 mt-2 text-sm max-w-lg mx-auto">Check out our current deals, wholesale offers, and upcoming promotions. Save big on your favourite bakes!</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Current Offers */}
+          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm hover:shadow-md transition-shadow">
+            <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center mb-4">
+              <Tag size={20} className="text-orange-600" />
+            </div>
+            <h3 className="font-black text-gray-900 text-lg mb-2">Current Offers</h3>
+            <ul className="space-y-2 text-sm text-gray-600 mb-4">
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-orange-400 rounded-full shrink-0" /> 15% off all pastries this weekend</li>
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-orange-400 rounded-full shrink-0" /> Buy 2 loaves, get 1 free</li>
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-orange-400 rounded-full shrink-0" /> Free delivery over KES 2,000</li>
+            </ul>
+            <Link href="/shop" className="text-xs font-bold text-orange-600 hover:underline flex items-center gap-1">
+              Shop Now <ArrowRight size={12} />
+            </Link>
+          </div>
+
+          {/* Wholesale Offers */}
+          <div className="bg-white rounded-2xl p-6 border border-amber-100 shadow-sm hover:shadow-md transition-shadow">
+            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center mb-4">
+              <Users size={20} className="text-amber-600" />
+            </div>
+            <h3 className="font-black text-gray-900 text-lg mb-2">Wholesale Offers</h3>
+            <ul className="space-y-2 text-sm text-gray-600 mb-4">
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0" /> Bulk pricing from 50+ units</li>
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0" /> Dedicated account manager</li>
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0" /> Weekly delivery scheduling</li>
+            </ul>
+            <Link href="/contact" className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1">
+              Contact Sales <ArrowRight size={12} />
+            </Link>
+          </div>
+
+          {/* Upcoming */}
+          <div className="bg-white rounded-2xl p-6 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
+            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+              <Megaphone size={20} className="text-blue-600" />
+            </div>
+            <h3 className="font-black text-gray-900 text-lg mb-2">Coming Soon</h3>
+            <ul className="space-y-2 text-sm text-gray-600 mb-4">
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" /> Valentine&apos;s Day specials</li>
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" /> Custom cake design contest</li>
+              <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" /> Loyalty rewards program</li>
+            </ul>
+            <span className="text-xs font-bold text-blue-600 flex items-center gap-1">
+              Stay tuned for updates
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -174,6 +417,9 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ─── PROMOTIONAL ADS CAROUSEL ─────────────────────────────────── */}
+      <AdsCarousel />
+
       {/* ─── SCROLLING CATEGORY CIRCLES ──────────────────────────────────── */}
       <section className="py-10 border-y border-gray-100 bg-gray-50/50">
         <div className="max-w-7xl mx-auto px-6">
@@ -248,6 +494,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ─── OFFERS & PROMOTIONS SECTION ──────────────────────────────── */}
+      <OffersSection />
 
       {/* ─── PROMO BANNER ─────────────────────────────────────────────────── */}
       <section className="py-4 px-6">
