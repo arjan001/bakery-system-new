@@ -541,8 +541,8 @@ export default function CheckoutPage() {
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 {[
                   { id: 'mpesa' as const, label: 'M-Pesa', icon: Smartphone },
-                  { id: 'whatsapp' as const, label: 'Checkout via WhatsApp', icon: MessageCircle },
                   { id: 'card' as const, label: 'Credit / Debit Card', icon: CreditCard },
+                  { id: 'whatsapp' as const, label: 'Checkout via WhatsApp', icon: MessageCircle },
                 ].map((opt, i) => (
                   <div key={opt.id}>
                     <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? (opt.id === 'whatsapp' ? 'bg-green-50' : opt.id === 'mpesa' ? 'bg-green-50' : 'bg-blue-50') : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
