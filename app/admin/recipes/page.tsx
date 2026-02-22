@@ -78,6 +78,12 @@ export default function RecipesPage() {
   const [aiError, setAiError] = useState('');
   const [inventoryItems, setInventoryItems] = useState<{ name: string; unit: string; unitCost: number; quantity: number }[]>([]);
 
+  // AI Recipe Detail View
+  const [showRecipeWebView, setShowRecipeWebView] = useState(false);
+  const [aiRecipeDetail, setAiRecipeDetail] = useState('');
+  const [aiRecipeDetailLoading, setAiRecipeDetailLoading] = useState(false);
+  const [aiRecipeDetailError, setAiRecipeDetailError] = useState('');
+
   // ── Form State ──
 
   const emptyForm: Recipe = {
@@ -531,6 +537,119 @@ Use realistic quantities and costs in KES.`;
     link.download = 'recipe_ingredients_template.csv';
     link.click();
     URL.revokeObjectURL(link.href);
+  };
+
+  // ── AI Recipe Detail Generator (Web View) ──
+  const generateRecipeDetail = async (recipe: Recipe) => {
+    setAiRecipeDetailLoading(true);
+    setAiRecipeDetailError('');
+    setAiRecipeDetail('');
+    setShowRecipeWebView(true);
+
+    try {
+      let geminiKey = '';
+      let geminiModel = 'gemini-2.0-flash';
+      try {
+        const { data } = await supabase.from('business_settings').select('value').eq('key', 'geminiAi').single();
+        if (data?.value) {
+          const settings = data.value as Record<string, unknown>;
+          geminiKey = (settings.apiKey || '') as string;
+          geminiModel = (settings.model || 'gemini-2.0-flash') as string;
+          if (!(settings.enabled as boolean)) {
+            setAiRecipeDetailError('Gemini AI is disabled. Enable it in Settings > Gemini AI.');
+            setAiRecipeDetailLoading(false);
+            return;
+          }
+        }
+      } catch {
+        try {
+          const saved = localStorage.getItem('snackoh_settings');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.geminiAi) {
+              geminiKey = parsed.geminiAi.apiKey || '';
+              geminiModel = parsed.geminiAi.model || 'gemini-2.0-flash';
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!geminiKey) {
+        setAiRecipeDetailError('Gemini API key not configured. Go to Settings > Gemini AI to set it up.');
+        setAiRecipeDetailLoading(false);
+        return;
+      }
+
+      const ingredientList = recipe.ingredients.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
+
+      const prompt = `You are a professional bakery chef. Generate a comprehensive, detailed recipe card for: "${recipe.name}"
+
+Recipe details:
+- Category: ${recipe.category}
+- Product Type: ${recipe.productType}
+- Batch Size: ${recipe.batchSize}
+- Expected Output: ${recipe.expectedOutput} ${recipe.outputUnit}
+- Prep Time: ${recipe.prepTime} minutes
+- Bake Time: ${recipe.bakeTime} minutes
+- Bake Temperature: ${recipe.bakeTemp}°C
+
+Ingredients:
+${ingredientList}
+
+${recipe.instructions ? `Existing instructions: ${recipe.instructions}` : ''}
+
+Please provide a COMPLETE, PROFESSIONAL recipe card in HTML format (no markdown, just raw HTML) with:
+
+1. <h2> Recipe title
+2. A brief description/introduction of the product
+3. <h3> Ingredients section - formatted as a clean list with quantities
+4. <h3> Equipment Needed - list of equipment/tools
+5. <h3> Step-by-Step Preparation Method - numbered detailed steps including:
+   - Dough/batter preparation
+   - Mixing technique
+   - Proofing/resting time if applicable
+   - Shaping instructions
+   - Baking instructions
+   - Cooling instructions
+6. <h3> Quality Tips - professional tips for best results
+7. <h3> Storage Instructions - how to store the finished product
+8. <h3> Common Mistakes to Avoid
+
+Style the HTML with inline CSS for a clean, professional look. Use these colors:
+- Headers: #1a1a2e
+- Body text: #333
+- Tips/notes: #ea580c (orange)
+- Background for tips: #fff7ed
+- Borders: #e5e7eb
+Use font-family: system-ui, -apple-system, sans-serif.
+Make it printer-friendly.`;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.error?.message || `API error: ${res.status}`);
+      }
+
+      const result = await res.json();
+      let html = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      // Strip markdown code block wrappers if present
+      html = html.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
+
+      setAiRecipeDetail(html);
+    } catch (err) {
+      setAiRecipeDetailError(err instanceof Error ? err.message : 'Failed to generate recipe details. Please try again.');
+    }
+
+    setAiRecipeDetailLoading(false);
   };
 
   // ── Render ──
@@ -1363,6 +1482,23 @@ Use realistic quantities and costs in KES.`;
               </div>
             )}
 
+            {/* AI Full Recipe View Button */}
+            <div className="rounded-xl border-2 border-dashed border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-purple-900">Full Recipe & Preparation Method</p>
+                  <p className="text-xs text-purple-600 mt-0.5">Generate a comprehensive recipe card with detailed preparation steps, tips, and storage instructions using AI</p>
+                </div>
+                <button
+                  onClick={() => generateRecipeDetail(selectedRecipe)}
+                  className="px-5 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg hover:opacity-90 font-semibold flex items-center gap-2 shadow-sm shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  View Full Recipe
+                </button>
+              </div>
+            </div>
+
             {/* Detail Modal Actions */}
             <div className="flex items-center gap-2 pt-4 border-t border-border">
               <button
@@ -1471,6 +1607,98 @@ Use realistic quantities and costs in KES.`;
               )}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* AI RECIPE WEB VIEW MODAL                                          */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <Modal
+        isOpen={showRecipeWebView}
+        onClose={() => { setShowRecipeWebView(false); setAiRecipeDetail(''); setAiRecipeDetailError(''); }}
+        title={selectedRecipe ? `${selectedRecipe.name} — Full Recipe` : 'Recipe Detail'}
+        size="3xl"
+      >
+        <div className="max-h-[80vh] overflow-y-auto">
+          {aiRecipeDetailLoading && (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-4"></div>
+              <p className="text-sm font-medium text-purple-800">Generating detailed recipe...</p>
+              <p className="text-xs text-muted-foreground mt-1">AI is creating a comprehensive recipe card with full preparation method</p>
+            </div>
+          )}
+
+          {aiRecipeDetailError && (
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+              </div>
+              <p className="text-sm text-red-700 font-medium">{aiRecipeDetailError}</p>
+              <button
+                onClick={() => selectedRecipe && generateRecipeDetail(selectedRecipe)}
+                className="mt-4 px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 font-medium text-sm"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {aiRecipeDetail && !aiRecipeDetailLoading && (
+            <div className="space-y-4">
+              {/* Web View iframe-like container */}
+              <div
+                className="rounded-xl border border-border bg-white p-6 shadow-inner recipe-web-view"
+                dangerouslySetInnerHTML={{ __html: aiRecipeDetail }}
+              />
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-4 border-t border-border">
+                <button
+                  onClick={() => {
+                    const win = window.open('', '_blank', 'width=800,height=900');
+                    if (!win) return;
+                    win.document.write(`<!DOCTYPE html><html><head><title>${selectedRecipe?.name || 'Recipe'} — Full Recipe</title><style>body{padding:40px;max-width:800px;margin:0 auto}@media print{body{padding:20px}}</style></head><body>`);
+                    win.document.write(aiRecipeDetail);
+                    win.document.write('</body></html>');
+                    win.document.close();
+                  }}
+                  className="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 font-medium text-sm flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  Open in New Window
+                </button>
+                <button
+                  onClick={() => {
+                    const win = window.open('', '_blank', 'width=800,height=900');
+                    if (!win) return;
+                    win.document.write(`<!DOCTYPE html><html><head><title>${selectedRecipe?.name || 'Recipe'}</title><style>body{padding:40px;max-width:800px;margin:0 auto}@media print{body{padding:20px}}</style></head><body>`);
+                    win.document.write(aiRecipeDetail);
+                    win.document.write('</body></html>');
+                    win.document.close();
+                    setTimeout(() => win.print(), 500);
+                  }}
+                  className="px-4 py-2 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 font-medium text-sm flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                  Print Recipe
+                </button>
+                <button
+                  onClick={() => selectedRecipe && generateRecipeDetail(selectedRecipe)}
+                  className="px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 font-medium text-sm flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  Regenerate
+                </button>
+                <div className="flex-1" />
+                <button
+                  onClick={() => { setShowRecipeWebView(false); setAiRecipeDetail(''); }}
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

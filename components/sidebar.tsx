@@ -33,6 +33,8 @@ import {
   User,
   ScrollText,
   Receipt,
+  Activity,
+  RefreshCw,
   LucideIcon,
 } from 'lucide-react';
 
@@ -117,6 +119,7 @@ export function Sidebar() {
       color: 'border-l-purple-500',
       items: [
         { label: 'Inventory', href: '/admin/inventory', tip: 'Raw materials, packaging & stock levels', icon: Package },
+        { label: 'Stock Reorder', href: '/admin/stock-reorder', tip: 'Stock requisitions, reorder alerts & batch production triggers', icon: RefreshCw },
         { label: 'Purchasing', href: '/admin/purchasing', tip: 'Purchase orders & supplier procurement', icon: ShoppingBag },
         { label: 'Suppliers', href: '/admin/distributors', tip: 'Manage inventory suppliers & pricing', icon: Building2 },
         { label: 'Distributors', href: '/admin/distribution', tip: 'Manage distribution agents & sales', icon: Handshake },
@@ -137,6 +140,7 @@ export function Sidebar() {
       color: 'border-l-teal-500',
       items: [
         { label: 'Employees', href: '/admin/employees', tip: 'Staff profiles, certificates & payroll info', icon: UserCheck },
+        { label: 'Productivity Report', href: '/admin/employee-productivity', tip: 'Employee KPI tracking, performance & productivity metrics', icon: Activity },
         { label: 'Roles & Permissions', href: '/admin/roles-permissions', tip: 'Access control — who can do what', icon: Shield },
       ],
     },
