@@ -478,14 +478,10 @@ export default function CheckoutPage() {
                       <opt.icon size={16} className="text-gray-500" />
                       <span className="text-sm font-semibold text-gray-800 flex-1">{opt.label}</span>
                       {opt.id === 'card' && (
-                        <div className="flex gap-1">
-                          {['VISA', 'MC'].map(b => (
-                            <span key={b} className="text-[9px] font-black px-1.5 py-0.5 bg-gray-800 text-white rounded">{b}</span>
-                          ))}
-                        </div>
+                        <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-5 object-contain" />
                       )}
                       {opt.id === 'mpesa' && (
-                        <span className="text-[10px] font-black px-2 py-0.5 bg-green-600 text-white rounded">MPESA</span>
+                        <img src="/mpesa.png" alt="M-Pesa" className="h-5 object-contain" />
                       )}
                       {opt.id === 'whatsapp' && (
                         <span className="text-[10px] font-black px-2 py-0.5 bg-green-500 text-white rounded">WHATSAPP</span>

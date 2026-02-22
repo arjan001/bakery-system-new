@@ -367,11 +367,10 @@ function Footer() {
         </div>
         <div className="max-w-7xl mx-auto px-6 pb-5 flex flex-col md:flex-row items-center justify-between gap-3">
           <p className="text-xs text-gray-600">© {new Date().getFullYear()} Snackoh Bakers · All rights reserved</p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <span className="text-xs text-gray-600">We accept:</span>
-            {['VISA', 'MC', 'MPESA'].map(p => (
-              <span key={p} className="px-2 py-0.5 bg-gray-800 text-gray-300 text-[10px] font-bold rounded">{p}</span>
-            ))}
+            <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-6 object-contain" />
+            <img src="/mpesa.png" alt="M-Pesa" className="h-6 object-contain" />
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6 pb-5 flex items-center justify-center">
