@@ -335,12 +335,13 @@ function NewsletterModal() {
   const [submitted, setSubmitted] = useState(false);
   const [dontShow, setDontShow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const [config, setConfig] = useState({
     enabled: true,
     title: 'Subscribe Now',
     subtitle: 'Newsletter',
     description: 'Get 15% off your first order when you subscribe to our newsletter. Stay updated with exclusive offers and new arrivals.',
-    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop',
+    image: '',
     discountCode: 'WELCOME15',
     delaySeconds: 5,
   });
@@ -413,13 +414,24 @@ function NewsletterModal() {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50" onClick={handleClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col sm:flex-row" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col sm:flex-row" onClick={e => e.stopPropagation()}>
         {/* Image side */}
-        <div className="sm:w-1/2 h-48 sm:h-auto relative hidden sm:block">
-          <img src={config.image} alt="Newsletter" className="w-full h-full object-cover" />
+        <div className="sm:w-1/2 h-56 sm:h-auto relative hidden sm:block bg-gradient-to-br from-orange-400 via-orange-500 to-amber-600">
+          {config.image && !imgError ? (
+            <img src={config.image} alt="Newsletter" className="w-full h-full object-cover" onError={() => setImgError(true)} />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-white p-8">
+              <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-90 mb-4">
+                <rect width="20" height="16" x="2" y="4" rx="2"/>
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+              </svg>
+              <p className="text-xl font-black tracking-tight text-center">Stay In The Loop</p>
+              <p className="text-sm opacity-80 mt-1 text-center">Fresh deals & baked goodness</p>
+            </div>
+          )}
         </div>
         {/* Content side */}
-        <div className="sm:w-1/2 p-6 relative">
+        <div className="sm:w-1/2 p-8 relative">
           <button onClick={handleClose} className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500">
             <X size={16} />
           </button>
@@ -438,8 +450,8 @@ function NewsletterModal() {
           ) : (
             <>
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">{config.subtitle}</p>
-              <h3 className="text-xl font-black text-gray-900 mb-2">{config.title}</h3>
-              <p className="text-sm text-gray-600 mb-4 leading-relaxed">{config.description}</p>
+              <h3 className="text-2xl font-black text-gray-900 mb-3">{config.title}</h3>
+              <p className="text-sm text-gray-600 mb-5 leading-relaxed">{config.description}</p>
 
               <div className="space-y-3">
                 <div>

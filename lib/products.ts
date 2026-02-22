@@ -45,8 +45,8 @@ export const CIRCLE_CATEGORIES = [
 
 export const CATEGORY_LIST = ['All', 'Bread', 'Pastry', 'Cake', 'Cookies', 'Donuts'];
 
-// ─── TEST MODE: All 50 products at KES 10, stock 50, in stock ───
-// To revert to real prices, restore the original product data.
+// ─── STOCK MODE: All products at KES 10, stock 1-2, all in stock ───
+// Dynamic stock data - each product has stock of 1 or 2 units
 export const products: Product[] = [
   {
     id: 'white-bread',
@@ -56,7 +56,7 @@ export const products: Product[] = [
     category: 'Bread',
     description: 'Soft, fluffy white bread loaf baked fresh every morning. Perfect for sandwiches, toast, or just enjoying warm with butter.',
     details: 'Ingredients: Wheat flour, water, yeast, salt, sugar. Weight: 800g. Shelf life: 3 days at room temperature.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 2,
     tags: ['Fresh', 'Daily Bake', 'Popular'],
     isSale: true, isBestSeller: true,
   },
@@ -68,7 +68,7 @@ export const products: Product[] = [
     category: 'Bread',
     description: 'Traditional sourdough with a crispy crust and chewy interior. Made with our long-fermented starter for authentic depth of flavour.',
     details: 'Ingredients: Wheat flour, water, sourdough starter, sea salt. Weight: 900g. Shelf life: 4 days.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 1,
     tags: ['Artisan', 'Sourdough'],
     isNew: true,
   },
@@ -80,7 +80,7 @@ export const products: Product[] = [
     category: 'Pastry',
     description: 'Flaky, buttery French-style croissant. Layers of golden perfection — crispy outside, pillowy inside.',
     details: 'Weight: 100g each. Made with 100% butter. Shelf life: 1 day. Best served warm.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 2,
     tags: ['French', 'Buttery', 'Breakfast'],
     isBestSeller: true,
   },
@@ -92,7 +92,7 @@ export const products: Product[] = [
     category: 'Pastry',
     description: 'Warm, fluffy cinnamon roll with vanilla cream cheese icing. Made fresh every morning — best enjoyed warm.',
     details: 'Weight: 150g. Shelf life: 1 day. Contains: flour, butter, cinnamon, cream cheese.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 1,
     tags: ['Sweet', 'Cinnamon'],
     isSale: true,
   },
@@ -104,7 +104,7 @@ export const products: Product[] = [
     category: 'Donuts',
     description: 'Light, airy donut with a sweet vanilla glaze. Available in plain, chocolate, and sprinkles.',
     details: 'Weight: 80g each. Flavours: Plain, Chocolate, Strawberry, Sprinkles. Shelf life: 1 day.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 2,
     tags: ['Sweet', 'Kids'],
     isBestSeller: true,
   },
@@ -116,7 +116,7 @@ export const products: Product[] = [
     category: 'Cake',
     description: 'Rich, decadent 3-layer chocolate fudge cake with Belgian chocolate ganache. Perfect for any celebration.',
     details: 'Serves 8–12. Available in 1kg, 1.5kg, 2kg. Custom decoration available. Order 24hrs in advance.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 1,
     tags: ['Celebration', 'Chocolate'],
     isSale: true, isBestSeller: true,
   },
@@ -128,7 +128,7 @@ export const products: Product[] = [
     category: 'Cake',
     description: 'Stunning red velvet with velvety cream cheese frosting. A showstopper for weddings, birthdays, and special events.',
     details: 'Serves 8–12. 1kg standard. Custom sizes available. Order 48hrs in advance.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 2,
     tags: ['Celebration', 'Wedding'],
     isNew: true, isBestSeller: true,
   },
@@ -140,7 +140,7 @@ export const products: Product[] = [
     category: 'Cake',
     description: 'Classic baked New York cheesecake on a buttery digestive base. Creamy, rich, and perfectly smooth.',
     details: 'Serves 6–8. 800g. Toppings: plain, strawberry, blueberry. Keep refrigerated. Consume within 3 days.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 1,
     tags: ['Cheesecake', 'American'],
     isSale: true,
   },
@@ -152,7 +152,7 @@ export const products: Product[] = [
     category: 'Pastry',
     description: 'Six fluffy vanilla cupcakes topped with swirled buttercream. Choose your frosting colour for parties.',
     details: 'Pack of 6. 60g each. Flavours: Vanilla, Chocolate, Strawberry, Lemon. Custom colours available.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 2,
     tags: ['Party', 'Kids'],
   },
   {
@@ -163,7 +163,7 @@ export const products: Product[] = [
     category: 'Pastry',
     description: 'Moist muffin packed with fresh blueberries and topped with a crunchy streusel crumble.',
     details: 'Weight: 120g. Made with fresh blueberries. Shelf life: 2 days.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 1,
     tags: ['Breakfast', 'Healthy'],
     isSale: true,
   },
@@ -175,7 +175,7 @@ export const products: Product[] = [
     category: 'Cookies',
     description: 'Melt-in-your-mouth shortbread butter cookies in a beautiful gift box. Ideal for gifting.',
     details: '500g of assorted butter cookies. Varieties: plain, chocolate chip, vanilla. Shelf life: 2 weeks.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 2,
     tags: ['Gift', 'Shortbread'],
   },
   {
@@ -186,154 +186,154 @@ export const products: Product[] = [
     category: 'Pastry',
     description: 'Crisp pastry shell filled with vanilla custard cream topped with fresh seasonal fruits. A visual delight.',
     details: 'Serves 4–6. Also available as individual mini-tarts (KES 200 each). Consume within 24 hours.',
-    inStock: true, stock: 50,
+    inStock: true, stock: 1,
     tags: ['Fruit', 'Fancy'],
     isSale: true, isBestSeller: true,
   },
-  // ─── Additional 38 products to reach 50 total (all KES 10, stock 50) ───
+  // ─── Additional products (all KES 10, stock 1-2, all in stock) ───
   {
     id: 'brown-bread', name: 'Brown Bread Loaf', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Wholesome brown bread with a rich, nutty flavour.', details: 'Weight: 800g. Shelf life: 3 days.', inStock: true, stock: 50, tags: ['Healthy', 'Daily Bake'],
+    description: 'Wholesome brown bread with a rich, nutty flavour.', details: 'Weight: 800g. Shelf life: 3 days.', inStock: true, stock: 2, tags: ['Healthy', 'Daily Bake'],
   },
   {
     id: 'whole-wheat-bread', name: 'Whole Wheat Bread', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: '100% whole wheat bread for the health-conscious.', details: 'Weight: 700g. High fibre content.', inStock: true, stock: 50, tags: ['Healthy', 'Whole Wheat'],
+    description: '100% whole wheat bread for the health-conscious.', details: 'Weight: 700g. High fibre content.', inStock: true, stock: 1, tags: ['Healthy', 'Whole Wheat'],
   },
   {
     id: 'multigrain-bread', name: 'Multigrain Bread', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Loaded with seeds and grains for extra nutrition.', details: 'Weight: 750g. Contains sunflower, flax, sesame seeds.', inStock: true, stock: 50, tags: ['Healthy', 'Seeds'],
+    description: 'Loaded with seeds and grains for extra nutrition.', details: 'Weight: 750g. Contains sunflower, flax, sesame seeds.', inStock: true, stock: 2, tags: ['Healthy', 'Seeds'],
   },
   {
     id: 'garlic-bread', name: 'Garlic Bread Loaf', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Crispy garlic bread infused with butter and herbs.', details: 'Weight: 400g. Best served warm.', inStock: true, stock: 50, tags: ['Garlic', 'Buttery'],
+    description: 'Crispy garlic bread infused with butter and herbs.', details: 'Weight: 400g. Best served warm.', inStock: true, stock: 1, tags: ['Garlic', 'Buttery'],
   },
   {
     id: 'focaccia', name: 'Italian Focaccia', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Italian flatbread with rosemary, olive oil, and sea salt.', details: 'Weight: 500g. Artisan baked.', inStock: true, stock: 50, tags: ['Italian', 'Artisan'],
+    description: 'Italian flatbread with rosemary, olive oil, and sea salt.', details: 'Weight: 500g. Artisan baked.', inStock: true, stock: 2, tags: ['Italian', 'Artisan'],
   },
   {
     id: 'plain-bagel', name: 'Plain Bagel (4-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Chewy, golden bagels perfect for breakfast.', details: 'Pack of 4. Weight: 100g each.', inStock: true, stock: 50, tags: ['Breakfast', 'Chewy'],
+    description: 'Chewy, golden bagels perfect for breakfast.', details: 'Pack of 4. Weight: 100g each.', inStock: true, stock: 1, tags: ['Breakfast', 'Chewy'],
   },
   {
     id: 'cheese-scone', name: 'Cheese Scone', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Savoury scone loaded with cheddar cheese.', details: 'Weight: 100g. Best served warm.', inStock: true, stock: 50, tags: ['Savoury', 'Cheese'],
+    description: 'Savoury scone loaded with cheddar cheese.', details: 'Weight: 100g. Best served warm.', inStock: true, stock: 2, tags: ['Savoury', 'Cheese'],
   },
   {
     id: 'sausage-roll', name: 'Sausage Roll', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Flaky pastry wrapped around seasoned sausage meat.', details: 'Weight: 120g. Served hot.', inStock: true, stock: 50, tags: ['Savoury', 'Snack'],
+    description: 'Flaky pastry wrapped around seasoned sausage meat.', details: 'Weight: 120g. Served hot.', inStock: true, stock: 1, tags: ['Savoury', 'Snack'],
   },
   {
     id: 'almond-croissant', name: 'Almond Croissant', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Buttery croissant filled with almond frangipane cream.', details: 'Weight: 110g. Contains almonds.', inStock: true, stock: 50, tags: ['French', 'Almond'],
+    description: 'Buttery croissant filled with almond frangipane cream.', details: 'Weight: 110g. Contains almonds.', inStock: true, stock: 2, tags: ['French', 'Almond'],
   },
   {
     id: 'chocolate-eclair', name: 'Chocolate Eclair', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Choux pastry filled with custard and topped with chocolate.', details: 'Weight: 100g. Keep refrigerated.', inStock: true, stock: 50, tags: ['French', 'Chocolate'],
+    description: 'Choux pastry filled with custard and topped with chocolate.', details: 'Weight: 100g. Keep refrigerated.', inStock: true, stock: 1, tags: ['French', 'Chocolate'],
   },
   {
     id: 'danish-pastry', name: 'Danish Pastry', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Flaky layered pastry with fruit jam filling.', details: 'Weight: 90g. Assorted flavours.', inStock: true, stock: 50, tags: ['Sweet', 'Fruity'],
+    description: 'Flaky layered pastry with fruit jam filling.', details: 'Weight: 90g. Assorted flavours.', inStock: true, stock: 2, tags: ['Sweet', 'Fruity'],
   },
   {
     id: 'apple-turnover', name: 'Apple Turnover', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Golden puff pastry with cinnamon apple filling.', details: 'Weight: 110g. Best served warm.', inStock: true, stock: 50, tags: ['Apple', 'Sweet'],
+    description: 'Golden puff pastry with cinnamon apple filling.', details: 'Weight: 110g. Best served warm.', inStock: true, stock: 1, tags: ['Apple', 'Sweet'],
   },
   {
     id: 'meat-pie', name: 'Meat Pie', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Hearty pie with seasoned minced beef filling.', details: 'Weight: 150g. Fully baked.', inStock: true, stock: 50, tags: ['Savoury', 'Meat'],
+    description: 'Hearty pie with seasoned minced beef filling.', details: 'Weight: 150g. Fully baked.', inStock: true, stock: 2, tags: ['Savoury', 'Meat'],
   },
   {
     id: 'chocolate-donut', name: 'Chocolate Donut', price: 10, image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=600&q=80&fit=crop', category: 'Donuts',
-    description: 'Rich chocolate-glazed donut with sprinkles.', details: 'Weight: 80g. Fresh daily.', inStock: true, stock: 50, tags: ['Chocolate', 'Sweet'],
+    description: 'Rich chocolate-glazed donut with sprinkles.', details: 'Weight: 80g. Fresh daily.', inStock: true, stock: 1, tags: ['Chocolate', 'Sweet'],
   },
   {
     id: 'strawberry-donut', name: 'Strawberry Donut', price: 10, image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=600&q=80&fit=crop', category: 'Donuts',
-    description: 'Pink strawberry-glazed donut with cream filling.', details: 'Weight: 85g. Fresh daily.', inStock: true, stock: 50, tags: ['Strawberry', 'Sweet'],
+    description: 'Pink strawberry-glazed donut with cream filling.', details: 'Weight: 85g. Fresh daily.', inStock: true, stock: 2, tags: ['Strawberry', 'Sweet'],
   },
   {
     id: 'caramel-donut', name: 'Caramel Donut', price: 10, image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=600&q=80&fit=crop', category: 'Donuts',
-    description: 'Soft donut with caramel drizzle and sea salt.', details: 'Weight: 85g. Fresh daily.', inStock: true, stock: 50, tags: ['Caramel', 'Sweet'],
+    description: 'Soft donut with caramel drizzle and sea salt.', details: 'Weight: 85g. Fresh daily.', inStock: true, stock: 1, tags: ['Caramel', 'Sweet'],
   },
   {
     id: 'powdered-donut', name: 'Powdered Sugar Donut', price: 10, image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=600&q=80&fit=crop', category: 'Donuts',
-    description: 'Classic donut dusted with powdered sugar.', details: 'Weight: 75g. Fresh daily.', inStock: true, stock: 50, tags: ['Classic', 'Sweet'],
+    description: 'Classic donut dusted with powdered sugar.', details: 'Weight: 75g. Fresh daily.', inStock: true, stock: 2, tags: ['Classic', 'Sweet'],
   },
   {
     id: 'jelly-donut', name: 'Jelly-Filled Donut', price: 10, image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=600&q=80&fit=crop', category: 'Donuts',
-    description: 'Soft donut filled with strawberry jam.', details: 'Weight: 90g. Fresh daily.', inStock: true, stock: 50, tags: ['Jelly', 'Filled'],
+    description: 'Soft donut filled with strawberry jam.', details: 'Weight: 90g. Fresh daily.', inStock: true, stock: 1, tags: ['Jelly', 'Filled'],
   },
   {
     id: 'carrot-cake', name: 'Carrot Cake', price: 10, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', category: 'Cake',
-    description: 'Moist carrot cake with cream cheese frosting and walnuts.', details: 'Serves 8. 1kg.', inStock: true, stock: 50, tags: ['Celebration', 'Healthy'],
+    description: 'Moist carrot cake with cream cheese frosting and walnuts.', details: 'Serves 8. 1kg.', inStock: true, stock: 2, tags: ['Celebration', 'Healthy'],
   },
   {
     id: 'vanilla-cake', name: 'Vanilla Sponge Cake', price: 10, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', category: 'Cake',
-    description: 'Light and fluffy vanilla sponge with buttercream.', details: 'Serves 8. 1kg.', inStock: true, stock: 50, tags: ['Classic', 'Vanilla'],
+    description: 'Light and fluffy vanilla sponge with buttercream.', details: 'Serves 8. 1kg.', inStock: true, stock: 1, tags: ['Classic', 'Vanilla'],
   },
   {
     id: 'lemon-cake', name: 'Lemon Drizzle Cake', price: 10, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', category: 'Cake',
-    description: 'Zesty lemon cake with a tangy lemon glaze.', details: 'Serves 6. 800g.', inStock: true, stock: 50, tags: ['Lemon', 'Zesty'],
+    description: 'Zesty lemon cake with a tangy lemon glaze.', details: 'Serves 6. 800g.', inStock: true, stock: 2, tags: ['Lemon', 'Zesty'],
   },
   {
     id: 'black-forest', name: 'Black Forest Cake', price: 10, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', category: 'Cake',
-    description: 'Classic Black Forest with cherries, cream, and chocolate.', details: 'Serves 10. 1.5kg.', inStock: true, stock: 50, tags: ['Celebration', 'Cherry'],
+    description: 'Classic Black Forest with cherries, cream, and chocolate.', details: 'Serves 10. 1.5kg.', inStock: true, stock: 1, tags: ['Celebration', 'Cherry'],
   },
   {
     id: 'tiramisu-cake', name: 'Tiramisu Cake', price: 10, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', category: 'Cake',
-    description: 'Italian-inspired coffee and mascarpone layered cake.', details: 'Serves 8. Contains coffee.', inStock: true, stock: 50, tags: ['Italian', 'Coffee'],
+    description: 'Italian-inspired coffee and mascarpone layered cake.', details: 'Serves 8. Contains coffee.', inStock: true, stock: 2, tags: ['Italian', 'Coffee'],
   },
   {
     id: 'chocolate-chip-cookies', name: 'Chocolate Chip Cookies (12-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop', category: 'Cookies',
-    description: 'Classic chocolate chip cookies, soft and chewy.', details: 'Pack of 12. 30g each.', inStock: true, stock: 50, tags: ['Chocolate', 'Classic'],
+    description: 'Classic chocolate chip cookies, soft and chewy.', details: 'Pack of 12. 30g each.', inStock: true, stock: 1, tags: ['Chocolate', 'Classic'],
   },
   {
     id: 'oatmeal-cookies', name: 'Oatmeal Raisin Cookies (12-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop', category: 'Cookies',
-    description: 'Hearty oatmeal cookies with plump raisins.', details: 'Pack of 12. 35g each.', inStock: true, stock: 50, tags: ['Healthy', 'Oatmeal'],
+    description: 'Hearty oatmeal cookies with plump raisins.', details: 'Pack of 12. 35g each.', inStock: true, stock: 2, tags: ['Healthy', 'Oatmeal'],
   },
   {
     id: 'macaron-box', name: 'French Macaron Box (6-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop', category: 'Cookies',
-    description: 'Assorted French macarons in a gift box.', details: 'Pack of 6. Assorted flavours.', inStock: true, stock: 50, tags: ['French', 'Gift'],
+    description: 'Assorted French macarons in a gift box.', details: 'Pack of 6. Assorted flavours.', inStock: true, stock: 1, tags: ['French', 'Gift'],
   },
   {
     id: 'peanut-cookies', name: 'Peanut Butter Cookies (12-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop', category: 'Cookies',
-    description: 'Crunchy peanut butter cookies with a rich, nutty flavour.', details: 'Pack of 12. Contains peanuts.', inStock: true, stock: 50, tags: ['Peanut', 'Crunchy'],
+    description: 'Crunchy peanut butter cookies with a rich, nutty flavour.', details: 'Pack of 12. Contains peanuts.', inStock: true, stock: 2, tags: ['Peanut', 'Crunchy'],
   },
   {
     id: 'ginger-cookies', name: 'Ginger Snap Cookies (12-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop', category: 'Cookies',
-    description: 'Spiced ginger snap cookies with a satisfying crunch.', details: 'Pack of 12. 25g each.', inStock: true, stock: 50, tags: ['Ginger', 'Spiced'],
+    description: 'Spiced ginger snap cookies with a satisfying crunch.', details: 'Pack of 12. 25g each.', inStock: true, stock: 1, tags: ['Ginger', 'Spiced'],
   },
   {
     id: 'kaimati', name: 'Kaimati (10-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80&fit=crop', category: 'Pastry',
-    description: 'Traditional Kenyan sweet dumplings, golden and sugary.', details: 'Pack of 10. Made fresh daily.', inStock: true, stock: 50, tags: ['Traditional', 'Kenyan'],
+    description: 'Traditional Kenyan sweet dumplings, golden and sugary.', details: 'Pack of 10. Made fresh daily.', inStock: true, stock: 2, tags: ['Traditional', 'Kenyan'],
   },
   {
     id: 'mandazi', name: 'Mandazi (6-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80&fit=crop', category: 'Pastry',
-    description: 'Kenyan coconut-flavoured fried dough, lightly sweet.', details: 'Pack of 6. Best served warm.', inStock: true, stock: 50, tags: ['Traditional', 'Kenyan'],
+    description: 'Kenyan coconut-flavoured fried dough, lightly sweet.', details: 'Pack of 6. Best served warm.', inStock: true, stock: 1, tags: ['Traditional', 'Kenyan'],
   },
   {
     id: 'samosa', name: 'Beef Samosa (6-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop', category: 'Pastry',
-    description: 'Crispy samosas filled with spiced minced beef.', details: 'Pack of 6. Served hot.', inStock: true, stock: 50, tags: ['Savoury', 'Kenyan'],
+    description: 'Crispy samosas filled with spiced minced beef.', details: 'Pack of 6. Served hot.', inStock: true, stock: 2, tags: ['Savoury', 'Kenyan'],
   },
   {
     id: 'chapati', name: 'Chapati (4-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Soft layered Kenyan chapati, golden and flaky.', details: 'Pack of 4. Best served warm.', inStock: true, stock: 50, tags: ['Traditional', 'Kenyan'],
+    description: 'Soft layered Kenyan chapati, golden and flaky.', details: 'Pack of 4. Best served warm.', inStock: true, stock: 1, tags: ['Traditional', 'Kenyan'],
   },
   {
     id: 'banana-bread', name: 'Banana Bread Loaf', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Moist banana bread with a hint of cinnamon and walnuts.', details: 'Weight: 600g. Shelf life: 3 days.', inStock: true, stock: 50, tags: ['Banana', 'Moist'],
+    description: 'Moist banana bread with a hint of cinnamon and walnuts.', details: 'Weight: 600g. Shelf life: 3 days.', inStock: true, stock: 2, tags: ['Banana', 'Moist'],
   },
   {
     id: 'brioche', name: 'Brioche Bun (4-Pack)', price: 10, image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop', category: 'Bread',
-    description: 'Soft, buttery French brioche buns.', details: 'Pack of 4. 80g each.', inStock: true, stock: 50, tags: ['French', 'Buttery'],
+    description: 'Soft, buttery French brioche buns.', details: 'Pack of 4. 80g each.', inStock: true, stock: 1, tags: ['French', 'Buttery'],
   },
   {
     id: 'marble-cake', name: 'Marble Cake', price: 10, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', category: 'Cake',
-    description: 'Swirled vanilla and chocolate marble cake.', details: 'Serves 8. 1kg.', inStock: true, stock: 50, tags: ['Classic', 'Chocolate'],
+    description: 'Swirled vanilla and chocolate marble cake.', details: 'Serves 8. 1kg.', inStock: true, stock: 2, tags: ['Classic', 'Chocolate'],
   },
   {
     id: 'coconut-cake', name: 'Coconut Cake', price: 10, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop', category: 'Cake',
-    description: 'Tropical coconut cake with coconut cream frosting.', details: 'Serves 8. 1kg.', inStock: true, stock: 50, tags: ['Tropical', 'Coconut'],
+    description: 'Tropical coconut cake with coconut cream frosting.', details: 'Serves 8. 1kg.', inStock: true, stock: 1, tags: ['Tropical', 'Coconut'],
   },
 ];
 
