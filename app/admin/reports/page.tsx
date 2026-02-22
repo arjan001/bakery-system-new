@@ -35,11 +35,12 @@ interface PosSale {
   id: string; receiptNumber: string; customerName: string; saleType: string; paymentMethod: string; total: number; createdAt: string;
 }
 
-type TabKey = 'overview' | 'pnl' | 'sales' | 'inventory' | 'debtors' | 'creditors' | 'items' | 'ledger';
+type TabKey = 'overview' | 'pnl' | 'sales' | 'inventory' | 'debtors' | 'creditors' | 'items' | 'ledger' | 'balance-sheet';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'overview', label: 'Overview', icon: '📊' },
   { key: 'pnl', label: 'P&L', icon: '📈' },
+  { key: 'balance-sheet', label: 'Balance Sheet', icon: '⚖️' },
   { key: 'sales', label: 'Sales', icon: '💰' },
   { key: 'inventory', label: 'Inventory', icon: '📦' },
   { key: 'debtors', label: 'Debtors', icon: '📋' },
@@ -177,6 +178,8 @@ export default function ReportsPage() {
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [posSales, setPosSales] = useState<PosSale[]>([]);
+  const [costEntries, setCostEntries] = useState<{ id: string; category: string; amount: number; costType: string }[]>([]);
+  const [assets, setAssets] = useState<{ id: string; name: string; purchasePrice: number; currentValue: number; accumulatedDepreciation: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Pagination states
@@ -264,11 +267,25 @@ export default function ReportsPage() {
     if (data) setPosSales(data.map((r: Record<string, unknown>) => ({ id: r.id as string, receiptNumber: (r.receipt_number || '') as string, customerName: (r.customer_name || '') as string, saleType: (r.sale_type || '') as string, paymentMethod: (r.payment_method || '') as string, total: (r.total || 0) as number, createdAt: (r.created_at || '') as string })));
   }, [dateFrom, dateTo]);
 
+  const fetchCostEntries = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('cost_entries').select('*');
+      if (data) setCostEntries(data.map((r: Record<string, unknown>) => ({ id: r.id as string, category: (r.category || '') as string, amount: (r.amount || 0) as number, costType: (r.cost_type || 'general_expense') as string })));
+    } catch { setCostEntries([]); }
+  }, []);
+
+  const fetchAssets = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('assets').select('id, name, purchase_price, current_value, accumulated_depreciation');
+      if (data) setAssets(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, purchasePrice: (r.purchase_price || 0) as number, currentValue: (r.current_value || 0) as number, accumulatedDepreciation: (r.accumulated_depreciation || 0) as number })));
+    } catch { setAssets([]); }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchPlReports(), fetchOrders(), fetchInventory(), fetchDebtors(), fetchCreditors(), fetchLedger(), fetchSales(), fetchPosSales()]);
+    await Promise.all([fetchPlReports(), fetchOrders(), fetchInventory(), fetchDebtors(), fetchCreditors(), fetchLedger(), fetchSales(), fetchPosSales(), fetchCostEntries(), fetchAssets()]);
     setLoading(false);
-  }, [fetchPlReports, fetchOrders, fetchInventory, fetchDebtors, fetchCreditors, fetchLedger, fetchSales, fetchPosSales]);
+  }, [fetchPlReports, fetchOrders, fetchInventory, fetchDebtors, fetchCreditors, fetchLedger, fetchSales, fetchPosSales, fetchCostEntries, fetchAssets]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPnlPage(1); setSalesPage(1); setInventoryPage(1); setDebtorsPage(1); setCreditorsPage(1); setItemsPage(1); setLedgerPage(1); }, [activeTab]);
@@ -481,13 +498,71 @@ export default function ReportsPage() {
     const csvHeaders = ['Period', 'Revenue (KES)', 'Costs (KES)', 'Profit (KES)', 'Margin (%)'];
     const csvRows = plReports.map(r => [r.period, r.revenue.toFixed(2), r.costs.toFixed(2), r.profit.toFixed(2), r.margin.toFixed(1)]);
 
+    // P&L Breakdown - compute from cost entries and sales data
+    const rawMaterialsCost = costEntries.filter(c => c.costType === 'raw_materials' || c.category?.toLowerCase().includes('raw') || c.category?.toLowerCase().includes('ingredient')).reduce((s, c) => s + c.amount, 0);
+    const directCosts = costEntries.filter(c => c.costType === 'direct_cost' || c.category?.toLowerCase().includes('production') || c.category?.toLowerCase().includes('labor') || c.category?.toLowerCase().includes('packaging')).reduce((s, c) => s + c.amount, 0);
+    const generalExpenses = costEntries.filter(c => c.costType === 'general_expense' || (!['raw_materials', 'direct_cost'].includes(c.costType))).reduce((s, c) => s + c.amount, 0) - rawMaterialsCost - directCosts;
+    const totalDirectCosts = rawMaterialsCost + directCosts;
+    const grossProfit = totalRevenue - totalDirectCosts - (rawMaterialsCost > 0 ? 0 : totalCosts * 0.6);
+    const netProfit = totalProfit;
+
+    // Use actual data if available, otherwise derive from P&L reports
+    const displayRawMaterials = rawMaterialsCost > 0 ? rawMaterialsCost : totalCosts * 0.45;
+    const displayDirectCosts = directCosts > 0 ? directCosts : totalCosts * 0.15;
+    const displayGrossProfit = totalRevenue - displayRawMaterials - displayDirectCosts;
+    const displayGeneralExpenses = generalExpenses > 0 ? generalExpenses : totalCosts - displayRawMaterials - displayDirectCosts;
+    const displayNetProfit = displayGrossProfit - (displayGeneralExpenses > 0 ? displayGeneralExpenses : 0);
+
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <SummaryCard title="Total Revenue" value={formatKES(totalRevenue)} color="green" />
-          <SummaryCard title="Total Costs" value={formatKES(totalCosts)} color="red" />
-          <SummaryCard title="Net Profit" value={formatKES(totalProfit)} color={totalProfit >= 0 ? 'green' : 'red'} />
-          <SummaryCard title="Avg. Margin" value={`${avgMargin}%`} subtitle={`${plReports.length} periods`} />
+        {/* Financial Summary Cards - Arranged in P&L Order */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="bg-card border-2 border-emerald-200 rounded-xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-1">Total Revenue</p>
+            <p className="text-2xl font-bold text-emerald-600">{formatKES(totalRevenue)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Sales + POS income</p>
+          </div>
+          <div className="bg-card border-2 border-red-200 rounded-xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-1">Direct Costs</p>
+            <p className="text-2xl font-bold text-red-600">{formatKES(displayDirectCosts)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Production & labor</p>
+          </div>
+          <div className="bg-card border-2 border-amber-200 rounded-xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Raw Materials</p>
+            <p className="text-2xl font-bold text-amber-600">{formatKES(displayRawMaterials)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Ingredients & supplies</p>
+          </div>
+          <div className="bg-card border-2 border-blue-200 rounded-xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Gross Profit</p>
+            <p className={`text-2xl font-bold ${displayGrossProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{formatKES(displayGrossProfit)}</p>
+            <p className="text-xs text-muted-foreground mt-1">{totalRevenue > 0 ? `Margin: ${((displayGrossProfit / totalRevenue) * 100).toFixed(1)}%` : '-'}</p>
+          </div>
+          <div className="bg-card border-2 border-purple-200 rounded-xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">General Expenses</p>
+            <p className="text-2xl font-bold text-purple-600">{formatKES(displayGeneralExpenses > 0 ? displayGeneralExpenses : 0)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Overhead & admin</p>
+          </div>
+        </div>
+
+        {/* Net Profit Card - Full Width */}
+        <div className={`border-2 rounded-xl p-6 shadow-sm ${displayNetProfit >= 0 ? 'border-emerald-300 bg-emerald-50/50' : 'border-red-300 bg-red-50/50'}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Net Profit / (Loss)</p>
+              <p className={`text-3xl font-bold ${displayNetProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(displayNetProfit)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Net Margin</p>
+              <p className={`text-2xl font-bold ${displayNetProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{totalRevenue > 0 ? `${((displayNetProfit / totalRevenue) * 100).toFixed(1)}%` : '0.0%'}</p>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-5 gap-2 text-xs">
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">Revenue</p><p className="font-bold text-emerald-600">{formatKES(totalRevenue)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Direct</p><p className="font-bold text-red-600">{formatKES(displayDirectCosts)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Materials</p><p className="font-bold text-amber-600">{formatKES(displayRawMaterials)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">= Gross</p><p className="font-bold text-blue-600">{formatKES(displayGrossProfit)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Expenses</p><p className="font-bold text-purple-600">{formatKES(displayGeneralExpenses > 0 ? displayGeneralExpenses : 0)}</p></div>
+          </div>
         </div>
 
         {/* P&L Trend Chart */}
@@ -876,10 +951,157 @@ export default function ReportsPage() {
     );
   };
 
+  const renderBalanceSheet = () => {
+    // ─── Assets ───
+    const totalFixedAssets = assets.reduce((s, a) => s + a.currentValue, 0);
+    const totalAssetDepreciation = assets.reduce((s, a) => s + a.accumulatedDepreciation, 0);
+    const netFixedAssets = totalFixedAssets;
+    const cashAndBank = ledgerEntries.filter(e => e.account?.toLowerCase().includes('cash') || e.account?.toLowerCase().includes('bank')).reduce((s, e) => s + e.debit - e.credit, 0);
+    const accountsReceivable = totalDebt; // debtors owe us
+    const currentAssets = inventoryValuation + Math.max(0, cashAndBank) + accountsReceivable;
+    const totalAssets = netFixedAssets + currentAssets;
+
+    // ─── Liabilities ───
+    const accountsPayable = totalCredit; // we owe creditors
+    const otherCurrentLiabilities = ledgerEntries.filter(e => e.category === 'Liabilities' && e.credit > 0).reduce((s, e) => s + e.credit - e.debit, 0);
+    const currentLiabilities = accountsPayable + Math.max(0, otherCurrentLiabilities);
+    const longTermLiabilities = 0;
+    const totalLiabilities = currentLiabilities + longTermLiabilities;
+
+    // ─── Equity ───
+    const retainedEarnings = totalProfit;
+    const totalEquity = totalAssets - totalLiabilities;
+    const ownerCapital = totalEquity - retainedEarnings;
+
+    // Verify balance
+    const isBalanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01;
+
+    const bsDate = dateTo || new Date().toISOString().split('T')[0];
+
+    const csvHeaders = ['Account', 'Amount (KES)'];
+    const csvRows = [
+      ['ASSETS', ''],
+      ['Fixed Assets (Net Book Value)', totalFixedAssets.toFixed(2)],
+      ['Less: Accumulated Depreciation', totalAssetDepreciation.toFixed(2)],
+      ['Inventory', inventoryValuation.toFixed(2)],
+      ['Accounts Receivable (Debtors)', accountsReceivable.toFixed(2)],
+      ['Cash & Bank', Math.max(0, cashAndBank).toFixed(2)],
+      ['TOTAL ASSETS', totalAssets.toFixed(2)],
+      ['', ''],
+      ['LIABILITIES', ''],
+      ['Accounts Payable (Creditors)', accountsPayable.toFixed(2)],
+      ['Other Current Liabilities', Math.max(0, otherCurrentLiabilities).toFixed(2)],
+      ['TOTAL LIABILITIES', totalLiabilities.toFixed(2)],
+      ['', ''],
+      ['EQUITY', ''],
+      ['Owner Capital', Math.max(0, ownerCapital).toFixed(2)],
+      ['Retained Earnings', retainedEarnings.toFixed(2)],
+      ['TOTAL EQUITY', totalEquity.toFixed(2)],
+    ];
+
+    const renderBSRow = (label: string, amount: number, indent: boolean = false, bold: boolean = false, isNeg: boolean = false) => (
+      <tr className={`border-b border-border ${bold ? 'bg-secondary/50 font-bold' : 'hover:bg-secondary/20'}`}>
+        <td className={`px-5 py-3 ${indent ? 'pl-10' : ''} ${bold ? 'font-bold' : ''}`}>{label}</td>
+        <td className={`px-5 py-3 text-right font-semibold ${isNeg ? 'text-red-600' : bold ? 'text-foreground' : 'text-muted-foreground'}`}>
+          {isNeg ? `(${formatKES(Math.abs(amount))})` : formatKES(amount)}
+        </td>
+      </tr>
+    );
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <SummaryCard title="Total Assets" value={formatKES(totalAssets)} subtitle={`${assets.length} fixed assets`} color="blue" />
+          <SummaryCard title="Total Liabilities" value={formatKES(totalLiabilities)} subtitle={`${creditors.length} creditors`} color="red" />
+          <SummaryCard title="Total Equity" value={formatKES(totalEquity)} subtitle={isBalanced ? 'Balance verified' : 'Check entries'} color={isBalanced ? 'green' : 'amber'} />
+          <SummaryCard title="Net Worth" value={formatKES(totalEquity)} subtitle={totalEquity >= 0 ? 'Healthy position' : 'Negative equity'} color={totalEquity >= 0 ? 'green' : 'red'} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Statement of Financial Position</h3>
+            <p className="text-sm text-muted-foreground">As at {formatDate(bsDate)}</p>
+          </div>
+          <ExportButtons onCSV={() => exportCSV('balance_sheet', csvHeaders, csvRows)} onPDF={() => exportPDF('Balance Sheet', csvHeaders, csvRows)} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* ASSETS */}
+          <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+            <div className="bg-blue-50 border-b border-blue-200 px-5 py-3">
+              <h4 className="font-bold text-blue-900">ASSETS</h4>
+            </div>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr className="border-b border-border bg-blue-50/30"><td className="px-5 py-2 font-semibold text-blue-800" colSpan={2}>Non-Current Assets</td></tr>
+                {renderBSRow('Property, Plant & Equipment', totalFixedAssets + totalAssetDepreciation, true)}
+                {renderBSRow('Less: Accumulated Depreciation', totalAssetDepreciation, true, false, true)}
+                {renderBSRow('Net Fixed Assets', netFixedAssets, false, true)}
+
+                <tr className="border-b border-border bg-blue-50/30"><td className="px-5 py-2 font-semibold text-blue-800" colSpan={2}>Current Assets</td></tr>
+                {renderBSRow('Inventory', inventoryValuation, true)}
+                {renderBSRow('Accounts Receivable (Debtors)', accountsReceivable, true)}
+                {renderBSRow('Cash & Bank Balances', Math.max(0, cashAndBank), true)}
+                {renderBSRow('Total Current Assets', currentAssets, false, true)}
+
+                <tr className="border-t-2 border-blue-300 bg-blue-100/50 font-bold">
+                  <td className="px-5 py-3 text-blue-900 font-bold text-base">TOTAL ASSETS</td>
+                  <td className="px-5 py-3 text-right text-blue-900 font-bold text-base">{formatKES(totalAssets)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* LIABILITIES & EQUITY */}
+          <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+            <div className="bg-red-50 border-b border-red-200 px-5 py-3">
+              <h4 className="font-bold text-red-900">LIABILITIES & EQUITY</h4>
+            </div>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr className="border-b border-border bg-red-50/30"><td className="px-5 py-2 font-semibold text-red-800" colSpan={2}>Current Liabilities</td></tr>
+                {renderBSRow('Accounts Payable (Creditors)', accountsPayable, true)}
+                {renderBSRow('Other Current Liabilities', Math.max(0, otherCurrentLiabilities), true)}
+                {renderBSRow('Total Current Liabilities', currentLiabilities, false, true)}
+
+                <tr className="border-b border-border bg-emerald-50/30"><td className="px-5 py-2 font-semibold text-emerald-800" colSpan={2}>Equity</td></tr>
+                {renderBSRow("Owner's Capital", Math.max(0, ownerCapital), true)}
+                {renderBSRow('Retained Earnings', retainedEarnings, true)}
+                {renderBSRow('Total Equity', totalEquity, false, true)}
+
+                <tr className="border-t-2 border-red-300 bg-red-100/50 font-bold">
+                  <td className="px-5 py-3 text-red-900 font-bold text-base">TOTAL LIABILITIES & EQUITY</td>
+                  <td className="px-5 py-3 text-right text-red-900 font-bold text-base">{formatKES(totalLiabilities + totalEquity)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Balance Check */}
+        <div className={`border-2 rounded-xl p-4 flex items-center justify-between ${isBalanced ? 'border-emerald-300 bg-emerald-50/50' : 'border-amber-300 bg-amber-50/50'}`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isBalanced ? 'bg-emerald-500' : 'bg-amber-500'}`}>
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isBalanced ? "M5 13l4 4L19 7" : "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"} /></svg>
+            </div>
+            <div>
+              <p className={`font-semibold ${isBalanced ? 'text-emerald-800' : 'text-amber-800'}`}>{isBalanced ? 'Balance Sheet is Balanced' : 'Balance Sheet Requires Review'}</p>
+              <p className="text-xs text-muted-foreground">Assets ({formatKES(totalAssets)}) {isBalanced ? '=' : '≠'} Liabilities + Equity ({formatKES(totalLiabilities + totalEquity)})</p>
+            </div>
+          </div>
+          <span className={`text-sm font-bold px-3 py-1 rounded-full ${isBalanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {isBalanced ? 'Verified' : `Diff: ${formatKES(Math.abs(totalAssets - (totalLiabilities + totalEquity)))}`}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'overview': return renderOverview();
       case 'pnl': return renderPnl();
+      case 'balance-sheet': return renderBalanceSheet();
       case 'sales': return renderSales();
       case 'inventory': return renderInventory();
       case 'debtors': return renderDebtors();

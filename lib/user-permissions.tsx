@@ -38,7 +38,7 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
   const permRouteMap: Record<string, string[]> = {
     'View Dashboard': ['/admin'],
     'Manage Orders': ['/admin/orders', '/admin/delivery'],
-    'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/assets'],
+    'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets'],
     'Manage Employees': ['/admin/employees'],
     'Manage Customers': ['/admin/customers'],
     'Manage Deliveries': ['/admin/delivery', '/admin/orders'],
