@@ -5,12 +5,14 @@
 -- Run AFTER supabase-schema.sql and migrations
 -- =============================================
 
--- Add price and image_url columns to food_info if not present
+-- Add missing columns to food_info if not present
 ALTER TABLE food_info ADD COLUMN IF NOT EXISTS price DECIMAL DEFAULT 0;
 ALTER TABLE food_info ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE food_info ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE food_info ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE food_info ADD COLUMN IF NOT EXISTS in_stock BOOLEAN DEFAULT true;
+ALTER TABLE food_info ADD COLUMN IF NOT EXISTS current_stock DECIMAL DEFAULT 0;
+ALTER TABLE food_info ADD COLUMN IF NOT EXISTS stock_unit TEXT DEFAULT 'pieces';
 
 -- Clear existing seed products (based on known codes) to avoid duplicates
 DELETE FROM food_info WHERE code IN (
