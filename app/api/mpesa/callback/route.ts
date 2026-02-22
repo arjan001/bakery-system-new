@@ -45,16 +45,16 @@ export async function POST(request: NextRequest) {
           // Update pos_sales where mpesa_phone matches and status is pending
           await supabase
             .from('mpesa_transactions')
-            .upsert({
-              checkout_request_id: CheckoutRequestID,
-              mpesa_receipt_number: mpesaRef,
+            .update({
+              mpesa_receipt: mpesaRef,
               phone: String(phone),
               amount,
               result_code: ResultCode,
               result_desc: ResultDesc,
               status: 'completed',
               updated_at: new Date().toISOString(),
-            }, { onConflict: 'checkout_request_id' });
+            })
+            .eq('checkout_request_id', CheckoutRequestID);
         }
       } else {
         console.log('M-Pesa Payment Failed:', { ResultCode, ResultDesc, CheckoutRequestID });
@@ -63,13 +63,13 @@ export async function POST(request: NextRequest) {
           const supabase = createClient(supabaseUrl, supabaseServiceKey);
           await supabase
             .from('mpesa_transactions')
-            .upsert({
-              checkout_request_id: CheckoutRequestID,
+            .update({
               result_code: ResultCode,
               result_desc: ResultDesc,
               status: 'failed',
               updated_at: new Date().toISOString(),
-            }, { onConflict: 'checkout_request_id' });
+            })
+            .eq('checkout_request_id', CheckoutRequestID);
         }
       }
     }

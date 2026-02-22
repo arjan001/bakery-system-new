@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { Bell, ShoppingBag } from 'lucide-react';
+import { Bell, ShoppingBag, Volume2, VolumeX } from 'lucide-react';
 import Link from 'next/link';
 
 interface OnlineOrderNotif {
@@ -16,6 +16,95 @@ interface OnlineOrderNotif {
   paymentMethod: string;
 }
 
+// ── Alarm Sound Generator using Web Audio API ──
+// Generates a loud, attention-grabbing alarm tone that loops continuously
+class OrderAlarm {
+  private audioCtx: AudioContext | null = null;
+  private intervalId: ReturnType<typeof setInterval> | null = null;
+  private isPlaying = false;
+
+  private getContext(): AudioContext | null {
+    if (!this.audioCtx || this.audioCtx.state === 'closed') {
+      try {
+        this.audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      } catch {
+        return null;
+      }
+    }
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume();
+    }
+    return this.audioCtx;
+  }
+
+  private playTone(freq: number, duration: number, volume: number) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+    // Envelope: quick attack, sustain, quick release
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.02);
+    gain.gain.setValueAtTime(volume, ctx.currentTime + duration - 0.05);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  }
+
+  // Play a repeating alarm pattern: two-tone siren that keeps going
+  start() {
+    if (this.isPlaying) return;
+    this.isPlaying = true;
+
+    const playPattern = () => {
+      if (!this.isPlaying) return;
+      // Ring pattern: high-low-high-low like a classic alarm
+      this.playTone(880, 0.15, 0.9);   // A5 high
+      setTimeout(() => {
+        if (!this.isPlaying) return;
+        this.playTone(660, 0.15, 0.9);  // E5 low
+      }, 200);
+      setTimeout(() => {
+        if (!this.isPlaying) return;
+        this.playTone(880, 0.15, 0.9);  // A5 high
+      }, 400);
+      setTimeout(() => {
+        if (!this.isPlaying) return;
+        this.playTone(660, 0.15, 0.9);  // E5 low
+      }, 600);
+    };
+
+    // Play immediately, then repeat every 1.5 seconds
+    playPattern();
+    this.intervalId = setInterval(playPattern, 1500);
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
+  dispose() {
+    this.stop();
+    if (this.audioCtx && this.audioCtx.state !== 'closed') {
+      this.audioCtx.close();
+    }
+    this.audioCtx = null;
+  }
+}
+
 export function Header() {
   const router = useRouter();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -23,6 +112,10 @@ export function Header() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const [ringing, setRinging] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const alarmRef = useRef<OrderAlarm | null>(null);
+  // Track IDs of orders that have been acknowledged (clicked/dismissed)
+  const acknowledgedRef = useRef<Set<string>>(new Set());
 
   const [user, setUser] = useState({
     name: 'Admin User',
@@ -32,6 +125,27 @@ export function Header() {
   });
 
   const [notifications, setNotifications] = useState<OnlineOrderNotif[]>([]);
+
+  // Initialize alarm on mount
+  useEffect(() => {
+    alarmRef.current = new OrderAlarm();
+    return () => {
+      alarmRef.current?.dispose();
+      alarmRef.current = null;
+    };
+  }, []);
+
+  // ── Start/stop alarm based on unacknowledged notifications ──
+  const updateAlarm = useCallback((notifs: OnlineOrderNotif[], isMuted: boolean) => {
+    const hasUnacknowledged = notifs.some(n => !acknowledgedRef.current.has(n.id));
+    if (hasUnacknowledged && !isMuted) {
+      setRinging(true);
+      alarmRef.current?.start();
+    } else {
+      setRinging(false);
+      alarmRef.current?.stop();
+    }
+  }, []);
 
   // ── Fetch pending online orders on mount ──
   useEffect(() => {
@@ -44,8 +158,8 @@ export function Header() {
         .order('created_at', { ascending: false })
         .limit(20);
 
-      if (data) {
-        setNotifications(data.map((r: Record<string, unknown>) => ({
+      if (data && data.length > 0) {
+        const mapped = data.map((r: Record<string, unknown>) => ({
           id: r.id as string,
           orderNumber: (r.order_number || '') as string,
           customerName: (r.customer_name || '') as string,
@@ -53,10 +167,14 @@ export function Header() {
           createdAt: (r.created_at || '') as string,
           status: (r.status || 'Pending') as string,
           paymentMethod: (r.payment_method || '') as string,
-        })));
+        }));
+        setNotifications(mapped);
+        // Start alarm for existing unacknowledged pending orders
+        updateAlarm(mapped, muted);
       }
     };
     fetchPendingOnline();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Supabase real-time: listen for new Online orders ──
@@ -78,21 +196,18 @@ export function Header() {
               status: (r.status || 'Pending') as string,
               paymentMethod: (r.payment_method || '') as string,
             };
-            setNotifications(prev => [newNotif, ...prev.slice(0, 19)]);
-            // Ring the bell
-            setRinging(true);
-            setTimeout(() => setRinging(false), 3000);
-            // Play notification sound
-            try {
-              const audio = new Audio('/notification.mp3');
-              audio.volume = 0.5;
-              audio.play().catch(() => {});
-            } catch {}
+            setNotifications(prev => {
+              const updated = [newNotif, ...prev.slice(0, 19)];
+              // Start the alarm — new order just came in, it's unacknowledged
+              updateAlarm(updated, muted);
+              return updated;
+            });
             // Show browser notification if permitted
             if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-              new Notification('New Online Order', {
+              new Notification('NEW ORDER - Action Required!', {
                 body: `${newNotif.customerName} - ${newNotif.orderNumber} - KES ${newNotif.total.toLocaleString()}`,
                 icon: '/favicon.ico',
+                requireInteraction: true,
               });
             }
           }
@@ -106,7 +221,8 @@ export function Header() {
     }
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [muted]);
 
   // ── Auth ──
   useEffect(() => {
@@ -141,8 +257,45 @@ export function Header() {
     router.refresh();
   };
 
+  // Acknowledge a notification (dismiss) — stops alarm if all acknowledged
   const dismissNotif = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    acknowledgedRef.current.add(id);
+    setNotifications(prev => {
+      const updated = prev.filter(n => n.id !== id);
+      updateAlarm(updated, muted);
+      return updated;
+    });
+  };
+
+  // Acknowledge all notifications and stop the alarm
+  const acknowledgeAll = () => {
+    notifications.forEach(n => acknowledgedRef.current.add(n.id));
+    setRinging(false);
+    alarmRef.current?.stop();
+  };
+
+  // Acknowledge + navigate to orders (clicking Review)
+  const handleReviewClick = (id: string) => {
+    acknowledgedRef.current.add(id);
+    setShowNotifDropdown(false);
+    // Check if all are now acknowledged
+    const remaining = notifications.filter(n => !acknowledgedRef.current.has(n.id));
+    if (remaining.length === 0) {
+      setRinging(false);
+      alarmRef.current?.stop();
+    }
+  };
+
+  // Toggle mute
+  const toggleMute = () => {
+    const newMuted = !muted;
+    setMuted(newMuted);
+    if (newMuted) {
+      alarmRef.current?.stop();
+      setRinging(false);
+    } else {
+      updateAlarm(notifications, newMuted);
+    }
   };
 
   const timeAgo = (iso: string) => {
@@ -162,14 +315,37 @@ export function Header() {
         <span className="text-xs text-muted-foreground font-semibold tracking-wide">SNACKOH BAKERS</span>
       </div>
 
+      {/* Ringing banner — shows across the header when alarm is active */}
+      {ringing && (
+        <div className="flex items-center gap-3 px-4 py-1.5 bg-red-500 text-white rounded-full animate-pulse">
+          <Bell size={14} className="animate-bounce" />
+          <span className="text-xs font-bold">NEW ORDER — Click to acknowledge</span>
+          <button
+            onClick={acknowledgeAll}
+            className="px-2 py-0.5 bg-white text-red-600 rounded text-[10px] font-bold hover:bg-red-50"
+          >
+            STOP ALARM
+          </button>
+        </div>
+      )}
+
       {/* Right */}
       <div className="flex items-center gap-2">
+
+        {/* ── Mute Toggle ── */}
+        <button
+          onClick={toggleMute}
+          className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${muted ? 'text-red-500 bg-red-50' : 'text-muted-foreground hover:bg-secondary'}`}
+          title={muted ? 'Unmute alarm' : 'Mute alarm'}
+        >
+          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        </button>
 
         {/* ── Notification Bell ── */}
         <div className="relative" ref={notifRef}>
           <button
             onClick={() => setShowNotifDropdown(v => !v)}
-            className={`relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-secondary transition-colors ${ringing ? 'text-orange-500' : 'text-muted-foreground'}`}
+            className={`relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-secondary transition-colors ${ringing ? 'text-red-500' : 'text-muted-foreground'}`}
             title="Online order notifications"
           >
             <Bell
@@ -178,7 +354,7 @@ export function Header() {
               strokeWidth={ringing ? 2.5 : 2}
             />
             {notifications.length > 0 && (
-              <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center ${ringing ? 'animate-pulse' : ''}`}>
+              <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center ${ringing ? 'animate-ping' : ''}`}>
                 {notifications.length > 9 ? '9+' : notifications.length}
               </span>
             )}
@@ -191,15 +367,25 @@ export function Header() {
                   <ShoppingBag size={14} className="text-primary" />
                   <p className="text-sm font-bold">New Online Orders</p>
                 </div>
-                {notifications.length > 0 && (
-                  <Link
-                    href="/admin/orders"
-                    onClick={() => setShowNotifDropdown(false)}
-                    className="text-xs text-primary hover:underline font-medium"
-                  >
-                    View all →
-                  </Link>
-                )}
+                <div className="flex items-center gap-2">
+                  {ringing && (
+                    <button
+                      onClick={acknowledgeAll}
+                      className="text-[10px] px-2 py-0.5 bg-red-500 text-white rounded font-bold hover:bg-red-600"
+                    >
+                      Stop Alarm
+                    </button>
+                  )}
+                  {notifications.length > 0 && (
+                    <Link
+                      href="/admin/orders"
+                      onClick={() => { acknowledgeAll(); setShowNotifDropdown(false); }}
+                      className="text-xs text-primary hover:underline font-medium"
+                    >
+                      View all
+                    </Link>
+                  )}
+                </div>
               </div>
 
               {notifications.length === 0 ? (
@@ -210,9 +396,9 @@ export function Header() {
               ) : (
                 <div className="max-h-72 overflow-y-auto divide-y divide-border">
                   {notifications.map(n => (
-                    <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${n.status === 'On Hold' ? 'bg-amber-100' : 'bg-blue-100'}`}>
-                        <ShoppingBag size={14} className={n.status === 'On Hold' ? 'text-amber-600' : 'text-blue-600'} />
+                    <div key={n.id} className={`flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors ${!acknowledgedRef.current.has(n.id) ? 'bg-red-50/50' : ''}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${n.status === 'On Hold' ? 'bg-amber-100' : !acknowledgedRef.current.has(n.id) ? 'bg-red-100 animate-pulse' : 'bg-blue-100'}`}>
+                        <ShoppingBag size={14} className={n.status === 'On Hold' ? 'text-amber-600' : !acknowledgedRef.current.has(n.id) ? 'text-red-600' : 'text-blue-600'} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate">{n.customerName}</p>
@@ -232,7 +418,7 @@ export function Header() {
                       <div className="flex flex-col gap-1 shrink-0">
                         <Link
                           href="/admin/orders"
-                          onClick={() => setShowNotifDropdown(false)}
+                          onClick={() => handleReviewClick(n.id)}
                           className="text-[10px] px-2 py-0.5 bg-primary text-primary-foreground rounded font-medium hover:opacity-90"
                         >
                           Review
@@ -252,10 +438,10 @@ export function Header() {
               <div className="px-4 py-2 border-t border-border bg-secondary/30">
                 <Link
                   href="/admin/orders"
-                  onClick={() => setShowNotifDropdown(false)}
+                  onClick={() => { acknowledgeAll(); setShowNotifDropdown(false); }}
                   className="block text-center text-xs text-primary hover:underline font-medium py-1"
                 >
-                  Go to Online Orders tab →
+                  Go to Online Orders tab
                 </Link>
               </div>
             </div>

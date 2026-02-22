@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
     const passkey = config.passkey || '';
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
 
-    const callbackUrl = config.callback_url || `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bakery-system-new.netlify.app'}/api/mpesa/callback`;
+    const callbackUrl = config.callback_url || `${process.env.NEXT_PUBLIC_SITE_URL || 'https://snackoh-bakers.com'}/api/mpesa/callback`;
 
     const stkPayload = {
       BusinessShortCode: shortcode,
@@ -312,7 +312,7 @@ async function handleMpesaMatch(amount: number, phone?: string) {
       amount: txn.amount,
       phone: txn.phone,
       checkoutRequestId: txn.checkout_request_id,
-      mpesaRef: txn.mpesa_receipt_number || txn.mpesa_receipt || txn.mpesaRef || null,
+      mpesaRef: txn.mpesa_receipt || null,
     });
   }
 
@@ -341,7 +341,7 @@ async function handleStkQuery(checkoutRequestId: string) {
         return NextResponse.json({
           success: true,
           status: 'completed',
-          mpesaRef: txn.mpesa_receipt_number,
+          mpesaRef: txn.mpesa_receipt,
           amount: txn.amount,
         });
       }
