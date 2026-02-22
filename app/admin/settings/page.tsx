@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'mpesa-api' | 'security' | 'backup' | 'sessions';
 
 interface OfferForm {
   id?: string;
@@ -116,6 +116,30 @@ export default function SettingsPage() {
   const [offerRotation, setOfferRotation] = useState({ enabled: true, interval: 5 });
   const [offerUploading, setOfferUploading] = useState(false);
 
+  // ── M-Pesa API Settings ──
+  const [mpesaApi, setMpesaApi] = useState({
+    mpesa_consumer_key: '',
+    mpesa_consumer_secret: '',
+    mpesa_shortcode: '174379',
+    mpesa_passkey: '',
+    mpesa_callback_url: '',
+    mpesa_env: 'sandbox',
+    mpesa_b2c_shortcode: '',
+    mpesa_b2c_initiator_name: '',
+    mpesa_b2c_security_credential: '',
+    mpesa_b2c_consumer_key: '',
+    mpesa_b2c_consumer_secret: '',
+    mpesa_b2c_result_url: '',
+    mpesa_b2c_timeout_url: '',
+  });
+  const [mpesaApiMasked, setMpesaApiMasked] = useState<Record<string, string>>({});
+  const [mpesaApiSource, setMpesaApiSource] = useState<Record<string, string>>({});
+  const [mpesaApiLoading, setMpesaApiLoading] = useState(false);
+  const [mpesaApiSaving, setMpesaApiSaving] = useState(false);
+  const [mpesaApiTesting, setMpesaApiTesting] = useState(false);
+  const [mpesaApiTestResult, setMpesaApiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showMpesaSecrets, setShowMpesaSecrets] = useState(false);
+
   const loadOffers = async () => {
     setOffersLoading(true);
     try {
@@ -144,6 +168,112 @@ export default function SettingsPage() {
     if (activeTab === 'offers') loadOffers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // ── M-Pesa API: Load settings ──
+  const loadMpesaApiSettings = async () => {
+    setMpesaApiLoading(true);
+    try {
+      const res = await fetch('/api/mpesa/settings');
+      const data = await res.json();
+      if (data.success) {
+        const masked: Record<string, string> = {};
+        const sources: Record<string, string> = {};
+        // Build masked display and source info from env
+        if (data.env) {
+          for (const [key, info] of Object.entries(data.env as Record<string, { masked: string; source: string }>)) {
+            masked[key] = info.masked || '';
+            sources[key] = info.source || 'none';
+          }
+        }
+        // Overlay DB backup info for display
+        if (data.db) {
+          for (const [key, info] of Object.entries(data.db as Record<string, { masked: string; value: string }>)) {
+            if (!masked[key] && info.masked) {
+              masked[key] = info.masked;
+              sources[key] = 'db';
+            }
+          }
+        }
+        setMpesaApiMasked(masked);
+        setMpesaApiSource(sources);
+      }
+    } catch {
+      // API may not be available
+    }
+    setMpesaApiLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'mpesa-api') loadMpesaApiSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const saveMpesaApiSettings = async () => {
+    setMpesaApiSaving(true);
+    try {
+      // Only send fields that have been filled in (non-empty)
+      const settingsToSave: Record<string, string> = {};
+      for (const [key, value] of Object.entries(mpesaApi)) {
+        if (value) settingsToSave[key] = value;
+      }
+
+      const res = await fetch('/api/mpesa/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: settingsToSave }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSavedMsg('M-Pesa API settings saved to database backup!');
+        // Clear the form fields (since they are now saved)
+        setMpesaApi({
+          mpesa_consumer_key: '',
+          mpesa_consumer_secret: '',
+          mpesa_shortcode: '',
+          mpesa_passkey: '',
+          mpesa_callback_url: '',
+          mpesa_env: '',
+          mpesa_b2c_shortcode: '',
+          mpesa_b2c_initiator_name: '',
+          mpesa_b2c_security_credential: '',
+          mpesa_b2c_consumer_key: '',
+          mpesa_b2c_consumer_secret: '',
+          mpesa_b2c_result_url: '',
+          mpesa_b2c_timeout_url: '',
+        });
+        // Reload to show updated masked values
+        loadMpesaApiSettings();
+      } else {
+        setSavedMsg(data.message || 'Failed to save M-Pesa settings');
+      }
+    } catch {
+      setSavedMsg('Error saving M-Pesa settings');
+    }
+    setMpesaApiSaving(false);
+    setTimeout(() => setSavedMsg(''), 4000);
+  };
+
+  const testMpesaConnection = async () => {
+    setMpesaApiTesting(true);
+    setMpesaApiTestResult(null);
+    try {
+      // Try to get an access token to verify credentials
+      const res = await fetch('/api/mpesa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '254700000000', amount: 1, accountReference: 'TEST', description: 'Connection Test' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMpesaApiTestResult({ success: true, message: 'Connection successful! STK push was initiated (sandbox test).' });
+      } else {
+        setMpesaApiTestResult({ success: false, message: data.message || 'Connection failed. Check your credentials.' });
+      }
+    } catch (err) {
+      setMpesaApiTestResult({ success: false, message: 'Network error. Unable to reach M-Pesa API.' + (err instanceof Error ? ' ' + err.message : '') });
+    }
+    setMpesaApiTesting(false);
+  };
 
   const saveOffer = async () => {
     const now = new Date().toISOString();
@@ -308,6 +438,7 @@ export default function SettingsPage() {
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
+    { key: 'mpesa-api', label: 'M-Pesa API', icon: '🔑', tip: 'M-Pesa Daraja API credentials & configuration' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
@@ -797,6 +928,211 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── M-PESA API SETTINGS ── */}
+      {activeTab === 'mpesa-api' && (
+        <div className="max-w-3xl space-y-6">
+          {/* Info Banner */}
+          <div className="border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex gap-3">
+              <span className="text-blue-600 text-lg">ℹ</span>
+              <div className="text-sm">
+                <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">How M-Pesa credentials work</p>
+                <p className="text-blue-700 dark:text-blue-400">Credentials are read from <strong>environment variables</strong> (.env) as the primary source. The database stores a <strong>backup copy</strong>. If env vars are not set, the system falls back to the database backup. To update live credentials, update your Netlify environment variables.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Current Status */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Current M-Pesa Configuration Status</h3>
+              <button onClick={loadMpesaApiSettings} disabled={mpesaApiLoading} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium disabled:opacity-50">
+                {mpesaApiLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+            {mpesaApiLoading ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Loading current configuration...</p>
+            ) : (
+              <div className="space-y-2">
+                {[
+                  { key: 'mpesa_env', label: 'Environment' },
+                  { key: 'mpesa_consumer_key', label: 'Consumer Key' },
+                  { key: 'mpesa_consumer_secret', label: 'Consumer Secret' },
+                  { key: 'mpesa_shortcode', label: 'Shortcode' },
+                  { key: 'mpesa_passkey', label: 'Passkey' },
+                  { key: 'mpesa_callback_url', label: 'Callback URL' },
+                ].map(item => (
+                  <div key={item.key} className="flex items-center justify-between py-2 px-3 rounded-lg bg-secondary/50">
+                    <span className="text-sm font-medium">{item.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-mono text-muted-foreground">
+                        {mpesaApiMasked[item.key] || <span className="text-amber-500 italic">Not set</span>}
+                      </span>
+                      {mpesaApiSource[item.key] === 'env' && (
+                        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">ENV</span>
+                      )}
+                      {mpesaApiSource[item.key] === 'db' && (
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">DB</span>
+                      )}
+                      {mpesaApiSource[item.key] === 'none' && (
+                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">MISSING</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Test Connection */}
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="flex items-center gap-3">
+                <button onClick={testMpesaConnection} disabled={mpesaApiTesting} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm disabled:opacity-50">
+                  {mpesaApiTesting ? 'Testing...' : 'Test Connection'}
+                </button>
+                {mpesaApiTestResult && (
+                  <span className={`text-sm font-medium ${mpesaApiTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
+                    {mpesaApiTestResult.message}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Sends a test STK push to verify credentials are working. Uses sandbox test number 254700000000.</p>
+            </div>
+          </div>
+
+          {/* STK Push Credentials */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold">STK Push Credentials</h3>
+                <p className="text-xs text-muted-foreground mt-1">From the Safaricom Daraja portal. Leave blank to keep current values.</p>
+              </div>
+              <button type="button" onClick={() => setShowMpesaSecrets(!showMpesaSecrets)} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium">
+                {showMpesaSecrets ? 'Hide Values' : 'Show Values'}
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className={labelCls}>Environment</label>
+                <select value={mpesaApi.mpesa_env || ''} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_env: e.target.value })} className={inputCls}>
+                  <option value="">-- Keep current --</option>
+                  <option value="sandbox">Sandbox (Testing)</option>
+                  <option value="production">Production (Live)</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Consumer Key</label>
+                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_consumer_key} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_consumer_key: e.target.value })} placeholder="Enter consumer key..." className={inputCls} autoComplete="off" />
+                </div>
+                <div>
+                  <label className={labelCls}>Consumer Secret</label>
+                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_consumer_secret} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_consumer_secret: e.target.value })} placeholder="Enter consumer secret..." className={inputCls} autoComplete="off" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Business Shortcode</label>
+                  <input type="text" value={mpesaApi.mpesa_shortcode} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_shortcode: e.target.value })} placeholder="e.g. 174379" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Passkey</label>
+                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_passkey} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_passkey: e.target.value })} placeholder="STK push passkey..." className={inputCls} autoComplete="off" />
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>Callback URL</label>
+                <input type="url" value={mpesaApi.mpesa_callback_url} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_callback_url: e.target.value })} placeholder="https://your-site.netlify.app/api/mpesa/callback" className={inputCls} />
+                <p className="text-xs text-muted-foreground mt-1">URL where Safaricom sends payment confirmations. Must be publicly accessible (HTTPS).</p>
+              </div>
+            </div>
+          </div>
+
+          {/* B2C Credentials */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-1">B2C Configuration (Payouts)</h3>
+            <p className="text-xs text-muted-foreground mb-4">For sending money to customers or employees. Leave blank if not used.</p>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>B2C Shortcode</label>
+                  <input type="text" value={mpesaApi.mpesa_b2c_shortcode} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_shortcode: e.target.value })} placeholder="B2C shortcode" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Initiator Name</label>
+                  <input type="text" value={mpesaApi.mpesa_b2c_initiator_name} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_initiator_name: e.target.value })} placeholder="Initiator name" className={inputCls} />
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>Security Credential</label>
+                <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_security_credential} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_security_credential: e.target.value })} placeholder="Encrypted security credential" className={inputCls} autoComplete="off" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>B2C Consumer Key</label>
+                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_key} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_key: e.target.value })} placeholder="B2C consumer key" className={inputCls} autoComplete="off" />
+                </div>
+                <div>
+                  <label className={labelCls}>B2C Consumer Secret</label>
+                  <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_secret} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_secret: e.target.value })} placeholder="B2C consumer secret" className={inputCls} autoComplete="off" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>B2C Result URL</label>
+                  <input type="url" value={mpesaApi.mpesa_b2c_result_url} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_result_url: e.target.value })} placeholder="https://..." className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>B2C Timeout URL</label>
+                  <input type="url" value={mpesaApi.mpesa_b2c_timeout_url} onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_timeout_url: e.target.value })} placeholder="https://..." className={inputCls} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* B2C Status */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">B2C Configuration Status</h3>
+            <div className="space-y-2">
+              {[
+                { key: 'mpesa_b2c_shortcode', label: 'B2C Shortcode' },
+                { key: 'mpesa_b2c_initiator_name', label: 'Initiator Name' },
+                { key: 'mpesa_b2c_security_credential', label: 'Security Credential' },
+                { key: 'mpesa_b2c_consumer_key', label: 'B2C Consumer Key' },
+                { key: 'mpesa_b2c_consumer_secret', label: 'B2C Consumer Secret' },
+                { key: 'mpesa_b2c_result_url', label: 'Result URL' },
+                { key: 'mpesa_b2c_timeout_url', label: 'Timeout URL' },
+              ].map(item => (
+                <div key={item.key} className="flex items-center justify-between py-2 px-3 rounded-lg bg-secondary/50">
+                  <span className="text-sm font-medium">{item.label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono text-muted-foreground">
+                      {mpesaApiMasked[item.key] || <span className="text-amber-500 italic">Not set</span>}
+                    </span>
+                    {mpesaApiSource[item.key] === 'env' && (
+                      <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">ENV</span>
+                    )}
+                    {mpesaApiSource[item.key] === 'db' && (
+                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">DB</span>
+                    )}
+                    {mpesaApiSource[item.key] === 'none' && (
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">MISSING</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex items-center gap-4">
+            <button onClick={saveMpesaApiSettings} disabled={mpesaApiSaving} className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+              {mpesaApiSaving ? 'Saving...' : 'Save M-Pesa Settings to Database'}
+            </button>
+            <p className="text-xs text-muted-foreground">Saves credentials to the database as backup. Runtime uses env vars from .env as the primary source.</p>
           </div>
         </div>
       )}
