@@ -70,7 +70,7 @@ function Navbar() {
   const navLinks = [
     { label: 'HOME', href: '/' },
     { label: 'SHOP', href: '/shop' },
-    { label: 'ABOUT', href: '/#about' },
+    { label: 'ABOUT', href: '/about' },
     { label: 'CONTACT', href: '/contact' },
   ];
 
@@ -321,7 +321,7 @@ function Footer() {
             <h4 className="text-white font-bold text-sm uppercase tracking-widest mb-4">About Us</h4>
             <ul className="space-y-2.5 text-sm text-gray-400">
               {['Our Story', 'Privacy Policy', 'Terms & Conditions', 'Contact Us', 'Careers'].map(l => (
-                <li key={l}><Link href={l === 'Contact Us' ? '/contact' : '#'} className="hover:text-orange-400 transition-colors">{l}</Link></li>
+                <li key={l}><Link href={l === 'Contact Us' ? '/contact' : l === 'Our Story' ? '/about' : '#'} className="hover:text-orange-400 transition-colors">{l}</Link></li>
               ))}
             </ul>
           </div>

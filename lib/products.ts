@@ -38,7 +38,7 @@ export const CIRCLE_CATEGORIES = [
   { label: 'Breads',    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=240&q=80&fit=crop', href: '/shop?category=Bread' },
   { label: 'Pastries',  image: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=240&q=80&fit=crop', href: '/shop?category=Pastry' },
   { label: 'Cakes',     image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=240&q=80&fit=crop', href: '/shop?category=Cake' },
-  { label: 'Cookies',   image: 'https://images.unsplash.com/photo-1499638673689-79a0b0a1bcea?w=240&q=80&fit=crop', href: '/shop?category=Cookies' },
+  { label: 'Cookies',   image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=240&q=80&fit=crop', href: '/shop?category=Cookies' },
   { label: 'Donuts',    image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=240&q=80&fit=crop', href: '/shop?category=Donuts' },
   { label: 'Specials',  image: 'https://images.unsplash.com/photo-1464500701-54b8b28ede7f?w=240&q=80&fit=crop', href: '/shop' },
 ];
@@ -174,7 +174,7 @@ export const products: Product[] = [
     id: 'butter-cookies',
     name: 'Butter Cookies Box (500g)',
     price: 450,
-    image: 'https://images.unsplash.com/photo-1499638673689-79a0b0a1bcea?w=600&q=80&fit=crop',
+    image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop',
     category: 'Cookies',
     description: 'Melt-in-your-mouth shortbread butter cookies in a beautiful gift box. Ideal for gifting.',
     details: '500g of assorted butter cookies. Varieties: plain, chocolate chip, vanilla. Shelf life: 2 weeks.',
