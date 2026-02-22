@@ -2,12 +2,20 @@
 -- MIGRATION: Asset Management Enhancements, Distribution Agents,
 -- Balance Sheet Support, Ledger Entries, Gemini AI Settings
 -- =============================================
+-- This migration is idempotent: safe to run multiple times.
+-- All CREATE TABLE uses IF NOT EXISTS, all ALTER TABLE uses
+-- existence checks to avoid errors on re-run.
+-- =============================================
 
 -- =============================================
 -- 1. ASSETS TABLE - Add missing & new columns
 -- =============================================
+-- The base 'assets' table is created in supabase-schema.sql.
+-- This section adds columns required by the enhanced asset
+-- management UI (depreciation, maintenance, service life, etc.).
+-- =============================================
 DO $$ BEGIN
-  -- Existing columns that may be missing from base schema
+  -- Depreciation columns
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'salvage_value') THEN
     ALTER TABLE assets ADD COLUMN salvage_value DECIMAL DEFAULT 0;
   END IF;
@@ -20,12 +28,22 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'accumulated_depreciation') THEN
     ALTER TABLE assets ADD COLUMN accumulated_depreciation DECIMAL DEFAULT 0;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'depreciation_method') THEN
+    ALTER TABLE assets ADD COLUMN depreciation_method TEXT DEFAULT 'straight_line';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'usage_depreciation_rate') THEN
+    ALTER TABLE assets ADD COLUMN usage_depreciation_rate DECIMAL DEFAULT 0;
+  END IF;
+
+  -- Warranty & status
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'warranty_expiry') THEN
     ALTER TABLE assets ADD COLUMN warranty_expiry DATE;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'status') THEN
     ALTER TABLE assets ADD COLUMN status TEXT DEFAULT 'Active';
   END IF;
+
+  -- Assignment tracking
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'assignment_date') THEN
     ALTER TABLE assets ADD COLUMN assignment_date DATE;
   END IF;
@@ -33,7 +51,7 @@ DO $$ BEGIN
     ALTER TABLE assets ADD COLUMN assignment_notes TEXT;
   END IF;
 
-  -- NEW: Service life & usage tracking
+  -- Service life & usage tracking
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'service_life_hours') THEN
     ALTER TABLE assets ADD COLUMN service_life_hours DECIMAL DEFAULT 0;
   END IF;
@@ -41,7 +59,7 @@ DO $$ BEGIN
     ALTER TABLE assets ADD COLUMN hours_used DECIMAL DEFAULT 0;
   END IF;
 
-  -- NEW: Maintenance scheduling
+  -- Maintenance scheduling
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'last_maintenance_date') THEN
     ALTER TABLE assets ADD COLUMN last_maintenance_date DATE;
   END IF;
@@ -52,7 +70,7 @@ DO $$ BEGIN
     ALTER TABLE assets ADD COLUMN maintenance_interval_days INTEGER DEFAULT 0;
   END IF;
 
-  -- NEW: Cost tracking
+  -- Cost tracking
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'maintenance_cost_total') THEN
     ALTER TABLE assets ADD COLUMN maintenance_cost_total DECIMAL DEFAULT 0;
   END IF;
@@ -60,15 +78,8 @@ DO $$ BEGIN
     ALTER TABLE assets ADD COLUMN operating_cost_total DECIMAL DEFAULT 0;
   END IF;
 
-  -- NEW: Depreciation method
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'depreciation_method') THEN
-    ALTER TABLE assets ADD COLUMN depreciation_method TEXT DEFAULT 'straight_line';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'usage_depreciation_rate') THEN
-    ALTER TABLE assets ADD COLUMN usage_depreciation_rate DECIMAL DEFAULT 0;
-  END IF;
-
-  -- Keep existing replacement_date and capacity columns for backward compat
+  -- Legacy columns used by UI (replacement_date mapped as nextServiceDate,
+  -- capacity mapped as serviceInterval)
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'assets' AND column_name = 'replacement_date') THEN
     ALTER TABLE assets ADD COLUMN replacement_date DATE;
   END IF;
@@ -79,6 +90,9 @@ END $$;
 
 -- =============================================
 -- 2. ASSET MAINTENANCE LOG
+-- =============================================
+-- Tracks individual maintenance events for each asset.
+-- Used by: app/admin/assets/page.tsx
 -- =============================================
 CREATE TABLE IF NOT EXISTS asset_maintenance_log (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -99,6 +113,9 @@ CREATE INDEX IF NOT EXISTS idx_asset_maintenance_date ON asset_maintenance_log(p
 -- =============================================
 -- 3. ASSET COST LOG
 -- =============================================
+-- General cost tracking for assets (maintenance, operating, etc.).
+-- Created for future use alongside the maintenance log.
+-- =============================================
 CREATE TABLE IF NOT EXISTS asset_cost_log (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
@@ -114,7 +131,10 @@ CREATE TABLE IF NOT EXISTS asset_cost_log (
 CREATE INDEX IF NOT EXISTS idx_asset_cost_asset ON asset_cost_log(asset_id);
 
 -- =============================================
--- 4. ASSET ASSIGNMENTS (may already exist)
+-- 4. ASSET ASSIGNMENTS
+-- =============================================
+-- Tracks which employee an asset is assigned to over time.
+-- Used by: app/admin/assets/page.tsx
 -- =============================================
 CREATE TABLE IF NOT EXISTS asset_assignments (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -127,8 +147,13 @@ CREATE TABLE IF NOT EXISTS asset_assignments (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_asset_assignments_asset ON asset_assignments(asset_id);
+
 -- =============================================
--- 5. DISTRIBUTION AGENTS (New Distributor Management)
+-- 5. DISTRIBUTION AGENTS
+-- =============================================
+-- Agents who sell and distribute products on behalf of the bakery.
+-- Used by: app/admin/distribution/page.tsx
 -- =============================================
 CREATE TABLE IF NOT EXISTS distribution_agents (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -161,6 +186,9 @@ CREATE INDEX IF NOT EXISTS idx_distribution_agents_status ON distribution_agents
 -- =============================================
 -- 6. DISTRIBUTION RECORDS
 -- =============================================
+-- Individual distribution events linked to agents.
+-- Used by: app/admin/distribution/page.tsx
+-- =============================================
 CREATE TABLE IF NOT EXISTS distribution_records (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   agent_id UUID NOT NULL REFERENCES distribution_agents(id) ON DELETE CASCADE,
@@ -181,7 +209,11 @@ CREATE INDEX IF NOT EXISTS idx_distribution_records_agent ON distribution_record
 CREATE INDEX IF NOT EXISTS idx_distribution_records_date ON distribution_records(distribution_date);
 
 -- =============================================
--- 7. LEDGER ENTRIES (referenced in reports but may not exist)
+-- 7. LEDGER ENTRIES
+-- =============================================
+-- General-purpose double-entry ledger for balance sheet and
+-- financial reporting.
+-- Used by: app/admin/reports/page.tsx
 -- =============================================
 CREATE TABLE IF NOT EXISTS ledger_entries (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -200,7 +232,12 @@ CREATE INDEX IF NOT EXISTS idx_ledger_entries_account ON ledger_entries(account)
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_category ON ledger_entries(category);
 
 -- =============================================
--- 8. DISTRIBUTORS TABLE (create if missing, then add extra columns)
+-- 8. DISTRIBUTORS (Supplier Management)
+-- =============================================
+-- Inventory suppliers / distributors.
+-- The base table is created here with IF NOT EXISTS, then extra
+-- columns are added via ALTER TABLE with existence checks.
+-- Used by: app/admin/distributors/page.tsx, app/admin/inventory/page.tsx
 -- =============================================
 CREATE TABLE IF NOT EXISTS distributors (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -245,8 +282,14 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+CREATE INDEX IF NOT EXISTS idx_distributors_status ON distributors(status);
+CREATE INDEX IF NOT EXISTS idx_distributors_category ON distributors(category);
+
 -- =============================================
--- 9. DISTRIBUTOR CATEGORIES (may already exist)
+-- 9. DISTRIBUTOR CATEGORIES
+-- =============================================
+-- Categories for grouping suppliers.
+-- Used by: app/admin/distributors/page.tsx
 -- =============================================
 CREATE TABLE IF NOT EXISTS distributor_categories (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -256,7 +299,11 @@ CREATE TABLE IF NOT EXISTS distributor_categories (
 );
 
 -- =============================================
--- 10. COST ENTRIES - Add sub-category for P&L breakdown
+-- 10. COST ENTRIES - Add cost_type for P&L breakdown
+-- =============================================
+-- The base cost_entries table is in supabase-schema.sql.
+-- This adds a cost_type column for categorising expenses.
+-- Used by: app/admin/reports/page.tsx
 -- =============================================
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cost_entries' AND column_name = 'cost_type') THEN
@@ -265,7 +312,11 @@ DO $$ BEGIN
 END $$;
 
 -- =============================================
--- 11. RECIPE INGREDIENTS - Add sourcing_note if missing
+-- 11. RECIPE INGREDIENTS - Add sourcing_note
+-- =============================================
+-- The base recipe_ingredients table is in supabase-schema.sql.
+-- This adds a sourcing_note column for ingredient sourcing info.
+-- Used by: app/admin/recipes/page.tsx
 -- =============================================
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recipe_ingredients' AND column_name = 'sourcing_note') THEN
