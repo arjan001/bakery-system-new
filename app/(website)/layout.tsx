@@ -369,8 +369,8 @@ function Footer() {
           <p className="text-xs text-gray-600">© {new Date().getFullYear()} Snackoh Bakers · All rights reserved</p>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-600">We accept:</span>
-            <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-6 object-contain" />
-            <img src="/mpesa.png" alt="M-Pesa" className="h-6 object-contain" />
+            <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-10 object-contain" />
+            <img src="/mpesa.png" alt="M-Pesa" className="h-10 object-contain" />
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6 pb-5 flex items-center justify-center">

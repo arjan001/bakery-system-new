@@ -67,7 +67,11 @@ export default function OrdersPage() {
 
   const fetchOrders = useCallback(async () => {
     const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-    if (data && data.length > 0) {
+    if (data) {
+      if (data.length === 0) {
+        setOrders([]);
+        return;
+      }
       const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
         const { data: items } = await supabase.from('order_items').select('*').eq('order_id', r.id);
         return {
