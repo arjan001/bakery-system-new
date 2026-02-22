@@ -10,6 +10,7 @@ INSERT INTO storage.buckets (id, name, public) VALUES
   ('employees', 'employees', true),
   ('receipts', 'receipts', false),
   ('assets', 'assets', true),
+  ('offers', 'offers', true),
   ('documents', 'documents', false)
 ON CONFLICT (id) DO NOTHING;
 
@@ -18,6 +19,7 @@ CREATE POLICY "Public read logos" ON storage.objects FOR SELECT USING (bucket_id
 CREATE POLICY "Public read products" ON storage.objects FOR SELECT USING (bucket_id = 'products');
 CREATE POLICY "Public read employees" ON storage.objects FOR SELECT USING (bucket_id = 'employees');
 CREATE POLICY "Public read assets" ON storage.objects FOR SELECT USING (bucket_id = 'assets');
+CREATE POLICY "Public read offers" ON storage.objects FOR SELECT USING (bucket_id = 'offers');
 
 -- Allow authenticated uploads to all buckets
 CREATE POLICY "Auth upload logos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'logos');
@@ -25,6 +27,7 @@ CREATE POLICY "Auth upload products" ON storage.objects FOR INSERT WITH CHECK (b
 CREATE POLICY "Auth upload employees" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'employees');
 CREATE POLICY "Auth upload receipts" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'receipts');
 CREATE POLICY "Auth upload assets" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'assets');
+CREATE POLICY "Auth upload offers" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'offers');
 CREATE POLICY "Auth upload documents" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'documents');
 
 -- Allow authenticated delete
