@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS food_info (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   product_name TEXT NOT NULL,
   code TEXT,
+  image_url TEXT,
   allergens TEXT[] DEFAULT '{}',
   calories DECIMAL DEFAULT 0,
   protein DECIMAL DEFAULT 0,

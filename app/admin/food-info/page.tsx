@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 
 interface RecipeOption {
   id: string;
@@ -18,6 +18,7 @@ interface FoodInfo {
   id: string;
   productName: string;
   code: string;
+  imageUrl: string;
   recipeId: string;
   recipeName: string;
   allergens: string[];
@@ -76,6 +77,7 @@ export default function FoodInfoPage() {
       id: r.id as string,
       productName: (r.product_name || '') as string,
       code: (r.code || '') as string,
+      imageUrl: (r.image_url || '') as string,
       recipeId: (r.recipe_id || '') as string,
       recipeName: (r.recipe_name || '') as string,
       allergens: (r.allergens || []) as string[],
@@ -126,9 +128,13 @@ export default function FoodInfoPage() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'nutrition' | 'inventory'>('basic');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [formData, setFormData] = useState({
     productName: '',
     code: '',
+    imageUrl: '',
     recipeId: '',
     allergens: [] as string[],
     calories: '',
@@ -162,6 +168,36 @@ export default function FoodInfoPage() {
     setFormData(prev => ({ ...prev, recipeId }));
   };
 
+  const handleImageSelect = (file: File | null) => {
+    setImageFile(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => setImagePreview(e.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setImagePreview('');
+    }
+  };
+
+  const uploadImage = async (file: File): Promise<string | null> => {
+    try {
+      setUploadingImage(true);
+      const ext = file.name.split('.').pop() || 'jpg';
+      const baseName = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9._-]/g, '-');
+      const fileName = `product-${Date.now()}-${baseName}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('products').upload(fileName, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from('products').getPublicUrl(fileName);
+      return urlData?.publicUrl || null;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      showToast(`Image upload failed: ${msg}`, 'error');
+      return null;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -176,10 +212,21 @@ export default function FoodInfoPage() {
     const code = formData.code.trim() || generateProductCode(formData.productName);
 
     setSaving(true);
+
+    // Upload image if a new file was selected
+    let imageUrl = formData.imageUrl;
+    if (imageFile) {
+      const uploadedUrl = await uploadImage(imageFile);
+      if (uploadedUrl) {
+        imageUrl = uploadedUrl;
+      }
+    }
+
     const recipe = recipes.find(r => r.id === formData.recipeId);
     const row = {
       product_name: formData.productName.trim(),
       code,
+      image_url: imageUrl || null,
       recipe_id: formData.recipeId || null,
       recipe_name: recipe?.name || null,
       allergens: formData.allergens,
@@ -224,11 +271,13 @@ export default function FoodInfoPage() {
 
   const resetForm = () => {
     setFormData({
-      productName: '', code: '', recipeId: '', allergens: [],
+      productName: '', code: '', imageUrl: '', recipeId: '', allergens: [],
       calories: '', protein: '', fat: '', carbs: '', shelf_life_days: '', certification: '',
       currentStock: '', stockUnit: 'pieces', moq: '', reorderLevel: '', maxStock: '',
       fifoEnabled: true, batchNumber: '', lastRestocked: '', supplier: '',
     });
+    setImageFile(null);
+    setImagePreview('');
     setActiveTab('basic');
   };
 
@@ -237,6 +286,7 @@ export default function FoodInfoPage() {
     setFormData({
       productName: item.productName,
       code: item.code,
+      imageUrl: item.imageUrl || '',
       recipeId: item.recipeId || '',
       allergens: item.allergens,
       calories: item.calories ? item.calories.toString() : '',
@@ -256,6 +306,8 @@ export default function FoodInfoPage() {
       supplier: item.supplier || '',
     });
     setActiveTab('basic');
+    setImageFile(null);
+    setImagePreview(item.imageUrl || '');
     setShowForm(true);
   };
 
@@ -507,6 +559,46 @@ export default function FoodInfoPage() {
                         placeholder="e.g. KEBS, Halal"
                       />
                     </div>
+                  </div>
+
+                  {/* Product Image Upload */}
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium mb-1 text-blue-800">Product Image</label>
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1">
+                        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-blue-200 border-dashed rounded-lg cursor-pointer bg-white hover:bg-blue-50 transition-colors">
+                          <div className="flex flex-col items-center justify-center py-3">
+                            {uploadingImage ? (
+                              <p className="text-sm text-blue-600 font-medium">Uploading...</p>
+                            ) : (
+                              <>
+                                <Upload size={24} className="text-blue-400 mb-2" />
+                                <p className="text-sm text-blue-600 font-medium">Click to upload image</p>
+                                <p className="text-xs text-blue-400 mt-1">PNG, JPG, WEBP (max 5MB)</p>
+                              </>
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            onChange={(e) => handleImageSelect(e.target.files?.[0] || null)}
+                          />
+                        </label>
+                      </div>
+                      {(imagePreview || formData.imageUrl) && (
+                        <div className="w-32 h-32 rounded-lg overflow-hidden border-2 border-blue-200 bg-gray-50 shrink-0">
+                          <img
+                            src={imagePreview || formData.imageUrl}
+                            alt="Preview"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {formData.imageUrl && !imageFile && (
+                      <p className="text-xs text-blue-500 mt-1">Current image saved. Upload a new file to replace it.</p>
+                    )}
                   </div>
                 </div>
 
@@ -791,7 +883,18 @@ export default function FoodInfoPage() {
                         {selectedIds.has(item.id) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
                       </button>
                     </td>
-                    <td className="px-4 py-3 font-medium">{item.productName}</td>
+                    <td className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-2">
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.productName} className="w-8 h-8 rounded object-cover shrink-0" />
+                        ) : (
+                          <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center shrink-0">
+                            <span className="text-xs text-gray-400">N/A</span>
+                          </div>
+                        )}
+                        {item.productName}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{item.code}</td>
                     <td className="px-4 py-3">
                       {item.recipeName ? (
