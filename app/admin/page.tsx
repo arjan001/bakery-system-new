@@ -4,23 +4,27 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ recipes: 0, products: 0, employees: 0, revenue: 0 });
+  const [stats, setStats] = useState({ recipes: 0, products: 0, employees: 0, revenue: 0, orders: 0, inventory: 0 });
   const [recentSales, setRecentSales] = useState<{ receipt: string; customer: string; total: number; method: string; date: string }[]>([]);
 
   useEffect(() => {
-    // Fetch counts
+    // Fetch counts from database
     Promise.all([
       supabase.from('recipes').select('id', { count: 'exact', head: true }),
-      supabase.from('pricing_tiers').select('id', { count: 'exact', head: true }).eq('active', true),
+      supabase.from('food_info').select('id', { count: 'exact', head: true }),
       supabase.from('employees').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
       supabase.from('pos_sales').select('total').eq('status', 'Completed'),
-    ]).then(([recipes, products, employees, sales]) => {
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+      supabase.from('inventory_items').select('id', { count: 'exact', head: true }),
+    ]).then(([recipes, products, employees, sales, orders, inventory]) => {
       const totalRev = (sales.data || []).reduce((s: number, r: Record<string, unknown>) => s + ((r.total || 0) as number), 0);
       setStats({
         recipes: recipes.count || 0,
         products: products.count || 0,
         employees: employees.count || 0,
         revenue: totalRev,
+        orders: orders.count || 0,
+        inventory: inventory.count || 0,
       });
     });
 
@@ -37,10 +41,12 @@ export default function Dashboard() {
   }, []);
 
   const statCards = [
-    { label: 'Total Recipes', value: stats.recipes, icon: '📋' },
-    { label: 'Active Products', value: stats.products, icon: '📦' },
-    { label: 'Employees', value: stats.employees, icon: '👥' },
-    { label: 'Total Revenue', value: `KES ${stats.revenue.toLocaleString()}`, icon: '💰' },
+    { label: 'Total Recipes', value: stats.recipes, icon: '📋', color: '' },
+    { label: 'Active Products', value: stats.products, icon: '📦', color: '' },
+    { label: 'Employees', value: stats.employees, icon: '👥', color: '' },
+    { label: 'Total Orders', value: stats.orders, icon: '🛒', color: '' },
+    { label: 'Inventory Items', value: stats.inventory, icon: '📊', color: '' },
+    { label: 'Total Revenue', value: `KES ${stats.revenue.toLocaleString()}`, icon: '💰', color: 'text-green-600' },
   ];
 
   return (
@@ -50,13 +56,13 @@ export default function Dashboard() {
         <p className="text-muted-foreground">Welcome to Snackoh Bakers Management System</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
         {statCards.map((stat) => (
           <div key={stat.label} className="border border-border rounded-lg p-6 bg-card hover:shadow-sm transition-shadow">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">{stat.label}</p>
-                <p className="text-3xl font-bold">{stat.value}</p>
+                <p className={`text-3xl font-bold ${stat.color}`}>{stat.value}</p>
               </div>
               <span className="text-2xl">{stat.icon}</span>
             </div>
@@ -93,6 +99,7 @@ export default function Dashboard() {
             <a href="/admin/orders" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Create Order</a>
             <a href="/admin/production" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Start Production</a>
             <a href="/admin/employees" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Add Employee</a>
+            <a href="/admin/food-info" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Manage Products</a>
             <a href="/admin/settings" className="block px-4 py-2.5 text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Settings</a>
           </div>
         </div>

@@ -42,6 +42,9 @@ export default function CheckoutPage() {
   // WhatsApp
   const [whatsappOrderNumber, setWhatsappOrderNumber] = useState('');
 
+  // Track the order number for the success screen
+  const [completedOrderNumber, setCompletedOrderNumber] = useState('');
+
   const delivery = total >= 2000 ? 0 : 200;
   const orderTotal = total + delivery;
 
@@ -160,6 +163,8 @@ export default function CheckoutPage() {
         total_amount: orderTotal,
         payment_status: 'Unpaid',
         payment_method: 'WhatsApp',
+        source: 'Online',
+        fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
         delivery_notes: fulfillment === 'ship'
           ? `Ship to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county} ${form.postalCode}`
           : 'Pickup from bakery',
@@ -264,6 +269,50 @@ export default function CheckoutPage() {
       }
     }
 
+    // Save order to database for M-Pesa and Card payments
+    const orderNumber = `ON-${Date.now().toString(36).toUpperCase()}`;
+    const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
+    const customerPhone = form.phone || mpesaPhone || email;
+    try {
+      const { error: orderError } = await supabase.from('orders').insert({
+        order_number: orderNumber,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        status: 'Confirmed',
+        total_amount: orderTotal,
+        payment_status: payment === 'mpesa' ? 'Paid' : 'Pay on Delivery',
+        payment_method: payment === 'mpesa' ? 'M-Pesa' : 'Card',
+        source: 'Online',
+        fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
+        delivery_notes: fulfillment === 'ship'
+          ? `Ship to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county} ${form.postalCode}`
+          : 'Pickup from bakery',
+      });
+      if (orderError) console.error('Order save error:', orderError);
+
+      // Save order items
+      const { data: savedOrder } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_number', orderNumber)
+        .single();
+
+      if (savedOrder) {
+        await supabase.from('order_items').insert(
+          items.map(item => ({
+            order_id: savedOrder.id,
+            product_name: item.name,
+            quantity: item.quantity,
+            unit_price: item.price,
+            total: item.price * item.quantity,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Order save error:', err);
+    }
+
+    setCompletedOrderNumber(orderNumber);
     clearCart();
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setStep('success');
@@ -289,10 +338,20 @@ export default function CheckoutPage() {
               <li>Once payment is received, your order will be confirmed and processed</li>
             </ol>
           </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+            <p className="text-sm font-bold text-blue-800 mb-1">Track Your Order</p>
+            <p className="text-xs text-blue-600 mb-2">Use your order ID to track the status of your order anytime.</p>
+            <div className="bg-white rounded-lg px-3 py-2 border border-blue-200 font-mono text-sm text-blue-900 font-bold">{whatsappOrderNumber}</div>
+          </div>
           <p className="text-xs text-gray-400 mb-6">A confirmation will be sent to <strong>{email}</strong> once your order is approved.</p>
-          <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700">
-            Continue Shopping
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700 text-sm">
+              Continue Shopping
+            </Link>
+            <Link href={`/shop?track=${encodeURIComponent(whatsappOrderNumber)}`} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 text-sm flex items-center justify-center gap-2">
+              <Truck size={16} /> Track Order
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -305,10 +364,24 @@ export default function CheckoutPage() {
           <CheckCircle size={64} className="text-green-500 mx-auto mb-4" />
           <h1 className="text-3xl font-black text-gray-900 mb-2">Order Confirmed!</h1>
           <p className="text-gray-600 mb-2">Thank you for your order. We&apos;ll bake it fresh and{fulfillment === 'ship' ? ' deliver it to you' : ' have it ready for pickup'}.</p>
+          {completedOrderNumber && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 mt-4">
+              <p className="text-sm font-bold text-blue-800 mb-1">Your Order ID</p>
+              <div className="bg-white rounded-lg px-3 py-2 border border-blue-200 font-mono text-sm text-blue-900 font-bold mb-2">{completedOrderNumber}</div>
+              <p className="text-xs text-blue-600">Save this ID to track the status of your order.</p>
+            </div>
+          )}
           <p className="text-sm text-gray-400 mb-6">A confirmation will be sent to <strong>{email}</strong></p>
-          <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700">
-            Continue Shopping
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700 text-sm">
+              Continue Shopping
+            </Link>
+            {completedOrderNumber && (
+              <Link href={`/shop?track=${encodeURIComponent(completedOrderNumber)}`} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 text-sm flex items-center justify-center gap-2">
+                <Truck size={16} /> Track Order
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -478,10 +551,10 @@ export default function CheckoutPage() {
                       <opt.icon size={16} className="text-gray-500" />
                       <span className="text-sm font-semibold text-gray-800 flex-1">{opt.label}</span>
                       {opt.id === 'card' && (
-                        <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-5 object-contain" />
+                        <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-8 object-contain" />
                       )}
                       {opt.id === 'mpesa' && (
-                        <img src="/mpesa.png" alt="M-Pesa" className="h-5 object-contain" />
+                        <img src="/mpesa.png" alt="M-Pesa" className="h-8 object-contain" />
                       )}
                       {opt.id === 'whatsapp' && (
                         <span className="text-[10px] font-black px-2 py-0.5 bg-green-500 text-white rounded">WHATSAPP</span>
