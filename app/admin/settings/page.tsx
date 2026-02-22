@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 
-type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'offers' | 'receipt' | 'payment' | 'posCard' | 'security' | 'backup' | 'sessions';
 
 interface OfferForm {
   id?: string;
@@ -83,6 +83,26 @@ export default function SettingsPage() {
     bankAccount: '',
     bankBranch: '',
     showOnReceipt: true,
+  });
+
+  // ── POS Card Reader Settings ──
+  const [posCard, setPosCard] = useState({
+    enabled: false,
+    readerType: 'bluetooth' as 'bluetooth' | 'usb' | 'audio',
+    readerBrand: '',
+    readerModel: '',
+    connectionId: '',
+    autoConnect: true,
+    requireApprovalCode: true,
+    requireLastFourDigits: true,
+    printCardReceipt: true,
+    minimumAmount: 0,
+    surchargeEnabled: false,
+    surchargePercent: 0,
+    allowContactless: true,
+    allowChip: true,
+    allowSwipe: true,
+    timeoutSeconds: 60,
   });
 
   // ── Security Settings ──
@@ -246,6 +266,7 @@ export default function SettingsPage() {
           if (settings.general) setGeneral(prev => ({ ...prev, ...(settings.general as Record<string, unknown>) }));
           if (settings.receipt) setReceipt(prev => ({ ...prev, ...(settings.receipt as Record<string, unknown>) }));
           if (settings.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...(settings.paymentDetails as Record<string, unknown>) }));
+          if (settings.posCard) setPosCard(prev => ({ ...prev, ...(settings.posCard as Record<string, unknown>) }));
           if (settings.security) setSecurity(prev => ({ ...prev, ...(settings.security as Record<string, unknown>) }));
           if (settings.backup) setBackup(prev => ({ ...prev, ...(settings.backup as Record<string, unknown>) }));
           return;
@@ -261,6 +282,7 @@ export default function SettingsPage() {
           if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
           if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
           if (parsed.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...parsed.paymentDetails }));
+          if (parsed.posCard) setPosCard(prev => ({ ...prev, ...parsed.posCard }));
           if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
           if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
         }
@@ -271,7 +293,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, receipt, paymentDetails, security, backup };
+    const settingsData = { general, receipt, paymentDetails, posCard, security, backup };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -308,6 +330,7 @@ export default function SettingsPage() {
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
+    { key: 'posCard', label: 'POS Card', icon: '💳', tip: 'Card reader setup & POS card payment settings' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
@@ -798,6 +821,183 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── POS CARD READER ── */}
+      {activeTab === 'posCard' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Card Payment on POS</h3>
+            <p className="text-sm text-muted-foreground mb-4">Enable card payments on the POS cashier terminal. When enabled, cashiers can accept physical card payments using a handheld card reader device.</p>
+            <label className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Enable Card Payments</p>
+                <p className="text-xs text-muted-foreground">Allow &quot;Card&quot; as a payment method on POS</p>
+              </div>
+              <button type="button" onClick={() => setPosCard({ ...posCard, enabled: !posCard.enabled })} className={`w-10 h-5 rounded-full transition-colors ${posCard.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </label>
+          </div>
+
+          {posCard.enabled && (
+            <>
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Card Reader Device</h3>
+                <p className="text-sm text-muted-foreground mb-4">Configure the handheld card reader connected to your POS terminal.</p>
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelCls}>Connection Type</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {([
+                        { v: 'bluetooth' as const, l: 'Bluetooth', d: 'Wireless pairing' },
+                        { v: 'usb' as const, l: 'USB', d: 'Wired connection' },
+                        { v: 'audio' as const, l: 'Audio Jack', d: 'Headphone plug-in' },
+                      ]).map(t => (
+                        <button key={t.v} onClick={() => setPosCard({ ...posCard, readerType: t.v })} className={`px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all text-center ${posCard.readerType === t.v ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/40'}`}>
+                          <p className="font-semibold">{t.l}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{t.d}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Reader Brand</label>
+                      <select value={posCard.readerBrand} onChange={e => setPosCard({ ...posCard, readerBrand: e.target.value })} className={inputCls}>
+                        <option value="">-- Select Brand --</option>
+                        <option value="square">Square</option>
+                        <option value="sumup">SumUp</option>
+                        <option value="zettle">Zettle (iZettle)</option>
+                        <option value="stripe">Stripe Reader</option>
+                        <option value="verifone">Verifone</option>
+                        <option value="ingenico">Ingenico</option>
+                        <option value="pax">PAX</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Reader Model / Name</label>
+                      <input type="text" value={posCard.readerModel} onChange={e => setPosCard({ ...posCard, readerModel: e.target.value })} placeholder="e.g. Square Reader, SumUp Air" className={inputCls} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Device ID / Serial Number (optional)</label>
+                    <input type="text" value={posCard.connectionId} onChange={e => setPosCard({ ...posCard, connectionId: e.target.value })} placeholder="e.g. SN-12345 or Bluetooth MAC address" className={inputCls} />
+                    <p className="text-xs text-muted-foreground mt-1">Used to identify the reader when multiple devices are available.</p>
+                  </div>
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Auto-connect on POS start</p>
+                      <p className="text-xs text-muted-foreground">Attempt to reconnect to the card reader when POS loads</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, autoConnect: !posCard.autoConnect })} className={`w-10 h-5 rounded-full transition-colors ${posCard.autoConnect ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.autoConnect ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                </div>
+              </div>
+
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Accepted Card Methods</h3>
+                <p className="text-sm text-muted-foreground mb-4">Choose which card entry methods the reader should accept.</p>
+                <div className="space-y-3">
+                  {[
+                    { key: 'allowContactless', label: 'Contactless / NFC (Tap)', desc: 'Accept tap-to-pay cards and mobile wallets' },
+                    { key: 'allowChip', label: 'Chip (EMV Insert)', desc: 'Accept chip card insert transactions' },
+                    { key: 'allowSwipe', label: 'Magnetic Stripe (Swipe)', desc: 'Accept card swipe (less secure, fallback)' },
+                  ].map(opt => (
+                    <label key={opt.key} className="flex items-center justify-between">
+                      <div><p className="text-sm font-medium">{opt.label}</p><p className="text-xs text-muted-foreground">{opt.desc}</p></div>
+                      <button type="button" onClick={() => setPosCard({ ...posCard, [opt.key]: !posCard[opt.key as keyof typeof posCard] })} className={`w-10 h-5 rounded-full transition-colors ${posCard[opt.key as keyof typeof posCard] ? 'bg-primary' : 'bg-gray-300'}`}>
+                        <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard[opt.key as keyof typeof posCard] ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Transaction Settings</h3>
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Require Approval Code</p>
+                      <p className="text-xs text-muted-foreground">Cashier must enter the approval / auth code from the terminal</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, requireApprovalCode: !posCard.requireApprovalCode })} className={`w-10 h-5 rounded-full transition-colors ${posCard.requireApprovalCode ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.requireApprovalCode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Require Last 4 Digits</p>
+                      <p className="text-xs text-muted-foreground">Cashier must enter the last 4 digits of the card number for records</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, requireLastFourDigits: !posCard.requireLastFourDigits })} className={`w-10 h-5 rounded-full transition-colors ${posCard.requireLastFourDigits ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.requireLastFourDigits ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Print Card Receipt</p>
+                      <p className="text-xs text-muted-foreground">Show &quot;Card&quot; as payment method and card reference on receipt</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, printCardReceipt: !posCard.printCardReceipt })} className={`w-10 h-5 rounded-full transition-colors ${posCard.printCardReceipt ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.printCardReceipt ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Minimum Card Amount ({general.currency})</label>
+                      <input type="number" value={posCard.minimumAmount} onChange={e => setPosCard({ ...posCard, minimumAmount: parseFloat(e.target.value) || 0 })} className={inputCls} placeholder="0 for no minimum" />
+                      <p className="text-xs text-muted-foreground mt-1">Set 0 to allow any amount</p>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Transaction Timeout (seconds)</label>
+                      <input type="number" value={posCard.timeoutSeconds} onChange={e => setPosCard({ ...posCard, timeoutSeconds: parseInt(e.target.value) || 60 })} className={inputCls} min={10} max={300} />
+                      <p className="text-xs text-muted-foreground mt-1">Max wait time for card reader response</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-border rounded-lg p-6 bg-card">
+                <h3 className="font-semibold mb-4">Card Surcharge (Optional)</h3>
+                <p className="text-sm text-muted-foreground mb-4">Add a processing fee for card transactions. This will be added to the total at checkout.</p>
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Enable Card Surcharge</p>
+                      <p className="text-xs text-muted-foreground">Add a percentage fee on card payments</p>
+                    </div>
+                    <button type="button" onClick={() => setPosCard({ ...posCard, surchargeEnabled: !posCard.surchargeEnabled })} className={`w-10 h-5 rounded-full transition-colors ${posCard.surchargeEnabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${posCard.surchargeEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+                  {posCard.surchargeEnabled && (
+                    <div>
+                      <label className={labelCls}>Surcharge Percentage (%)</label>
+                      <input type="number" step="0.1" value={posCard.surchargePercent} onChange={e => setPosCard({ ...posCard, surchargePercent: parseFloat(e.target.value) || 0 })} className={`${inputCls} max-w-xs`} placeholder="e.g. 1.5" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border border-blue-200 rounded-lg p-6 bg-blue-50/50">
+                <h3 className="font-semibold mb-2 text-blue-800">How Card Payments Work on POS</h3>
+                <ol className="text-sm text-blue-700 space-y-2 list-decimal list-inside">
+                  <li>Cashier selects <strong>&quot;Card&quot;</strong> as the payment method at checkout</li>
+                  <li>The card reader device processes the physical card (tap, chip, or swipe)</li>
+                  <li>Cashier enters the <strong>approval code</strong> and optionally the <strong>last 4 digits</strong> from the terminal</li>
+                  <li>Sale is recorded as a card payment with the reference details</li>
+                  <li>Receipt is printed showing card payment info</li>
+                </ol>
+                <p className="text-xs text-blue-600 mt-3">Note: The card reader device must be set up and paired independently. This system records the card transaction reference after the reader approves the payment.</p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
