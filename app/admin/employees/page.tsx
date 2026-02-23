@@ -103,7 +103,9 @@ function dbToEmployee(row: Record<string, unknown>): Employee {
     loginEmail: (row.login_email as string) || '',
     loginRole: (row.login_role as Employee['loginRole']) || 'Viewer',
     permissions: parsedPermissions,
-  };
+    primaryOutletId: (row.primary_outlet_id as string) || '',
+    primaryOutletName: (row.primary_outlet_name as string) || '',
+  } as Employee;
 }
 
 function generateEmployeeId(category: string): string {
@@ -152,6 +154,11 @@ const ALL_PERMISSIONS = [
   'Manage Finance',
   'View Finance',
   'System Settings',
+  'Manage Outlets',
+  'View Outlets',
+  'Manage Outlet Inventory',
+  'Manage Requisitions',
+  'Approve Requisitions',
 ];
 
 export default function EmployeesPage() {
@@ -160,6 +167,7 @@ export default function EmployeesPage() {
   const [rolePermissionsMap, setRolePermissionsMap] = useState<Record<string, string[]>>({});
   const [availablePermissions, setAvailablePermissions] = useState<string[]>(ALL_PERMISSIONS);
   const [loginRoles, setLoginRoles] = useState<string[]>(['Admin', 'Administrator', 'Baker', 'Driver', 'Sales', 'Cashier', 'Viewer']);
+  const [outlets, setOutlets] = useState<{ id: string; name: string; outlet_type: string; is_main_branch: boolean }[]>([]);
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -211,6 +219,17 @@ export default function EmployeesPage() {
   }, []);
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
+
+  // Fetch outlets for assignment
+  useEffect(() => {
+    async function fetchOutlets() {
+      try {
+        const { data, error } = await supabase.from('outlets').select('id, name, outlet_type, is_main_branch').eq('status', 'Active').order('name');
+        if (!error && data) setOutlets(data);
+      } catch { /* outlets table may not exist yet */ }
+    }
+    fetchOutlets();
+  }, []);
 
   // Fetch system roles + permissions for login access control
   useEffect(() => {
@@ -750,6 +769,37 @@ export default function EmployeesPage() {
                     </select>
                   </div>
                 </div>
+                {/* Primary Outlet Assignment */}
+                {outlets.length > 0 && (
+                  <div className="border-t border-border pt-4">
+                    <p className="text-sm font-medium mb-3">Outlet Assignment</p>
+                    <p className="text-xs text-muted-foreground mb-2">Assign this employee to a primary outlet/branch. Detailed outlet roles and permissions can be managed from the Outlet Management page.</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Primary Outlet</label>
+                        <select
+                          value={(formData as Record<string, unknown>).primaryOutletId as string || ''}
+                          onChange={(e) => {
+                            const outletId = e.target.value;
+                            const outlet = outlets.find(o => o.id === outletId);
+                            setFormData({ ...formData, ...({ primaryOutletId: outletId || null, primaryOutletName: outlet?.name || '' } as Record<string, unknown>) } as Employee);
+                          }}
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                        >
+                          <option value="">No outlet (Main Branch Staff)</option>
+                          {outlets.map(o => (
+                            <option key={o.id} value={o.id}>
+                              {o.name} {o.is_main_branch ? '(Main)' : `(${o.outlet_type.replace('_', ' ')})`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <a href="/admin/outlets" className="text-xs text-primary hover:underline">Manage outlets &amp; detailed assignments &rarr;</a>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Notes</label>
                   <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" rows={3} />
@@ -1228,6 +1278,7 @@ export default function EmployeesPage() {
               <th className="px-4 py-3 text-left font-semibold">ID</th>
               <th className="px-4 py-3 text-left font-semibold">Category</th>
               <th className="px-4 py-3 text-left font-semibold">Department</th>
+              <th className="px-4 py-3 text-left font-semibold">Outlet</th>
               <th className="px-4 py-3 text-left font-semibold">Role</th>
               <th className="px-4 py-3 text-left font-semibold">Compliance</th>
               <th className="px-4 py-3 text-center font-semibold">Status</th>
@@ -1238,7 +1289,7 @@ export default function EmployeesPage() {
           <tbody>
             {paginatedEmployees.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
                   {loading ? 'Loading...' : 'No employees found'}
                 </td>
               </tr>
@@ -1273,6 +1324,13 @@ export default function EmployeesPage() {
                     }`}>{emp.category}</span>
                   </td>
                   <td className="px-4 py-3 text-sm">{emp.department}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {(emp as Record<string, unknown>).primaryOutletName ? (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">{(emp as Record<string, unknown>).primaryOutletName as string}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Main Branch</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm">{emp.role}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1 flex-wrap">

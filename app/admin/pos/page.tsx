@@ -62,6 +62,7 @@ function clearSession() {
 export default function POSPage() {
   // ── Auth — resolve actual cashier name from authenticated user ──
   const [loggedCashier, setLoggedCashier] = useState('Cashier');
+  const [outletId, setOutletId] = useState<string | null>(null);
 
   useEffect(() => {
     async function resolveCashierName() {
@@ -73,11 +74,26 @@ export default function POSPage() {
           // Try to get name from employee record first
           const { data: emp } = await supabase
             .from('employees')
-            .select('first_name, last_name')
+            .select('first_name, last_name, id, primary_outlet_id')
             .eq('login_email', email)
             .single();
           if (emp) {
             setLoggedCashier(`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Cashier');
+            // Check if employee is assigned to an outlet
+            if (emp.primary_outlet_id) {
+              setOutletId(emp.primary_outlet_id);
+            } else {
+              try {
+                const { data: outletEmp } = await supabase
+                  .from('outlet_employees')
+                  .select('outlet_id')
+                  .eq('employee_id', emp.id)
+                  .eq('status', 'Active')
+                  .limit(1)
+                  .single();
+                if (outletEmp?.outlet_id) setOutletId(outletEmp.outlet_id);
+              } catch { /* no outlet assignment */ }
+            }
           } else {
             setLoggedCashier((meta.full_name as string) || email.split('@')[0] || 'Cashier');
           }
@@ -452,6 +468,7 @@ export default function POSPage() {
         receipt_number: rNo, customer_name: selectedCustomer.name, sale_type: saleType,
         payment_method: method, mpesa_reference: mpesaRef || null, mpesa_phone: method === 'M-Pesa' ? mpesaPhone : null,
         subtotal, tax, total, amount_paid: paid, change_amount: change, cashier_name: loggedCashier, status: 'Completed',
+        outlet_id: outletId || null,
       }).select('id').single();
       if (saleData) posSaleId = saleData.id;
       if (posSaleId) {
@@ -1151,6 +1168,7 @@ export default function POSPage() {
                     change_amount: 0,
                     cashier_name: loggedCashier,
                     status: 'Shift Close',
+                    outlet_id: outletId || null,
                     mpesa_reference: JSON.stringify({
                       openingBalance,
                       totalSales: totalSalesAmount,

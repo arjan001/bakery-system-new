@@ -11,6 +11,9 @@ interface UserPermissions {
   permissions: string[];
   isAdmin: boolean;
   loading: boolean;
+  outletId: string | null;       // The outlet this user is assigned to as admin
+  outletName: string | null;     // Name of the outlet
+  isOutletAdmin: boolean;        // Whether user is an outlet admin
 }
 
 const defaultPerms: UserPermissions = {
@@ -21,6 +24,9 @@ const defaultPerms: UserPermissions = {
   permissions: [],
   isAdmin: true,
   loading: true,
+  outletId: null,
+  outletName: null,
+  isOutletAdmin: false,
 };
 
 const UserPermissionsContext = createContext<UserPermissions>(defaultPerms);
@@ -48,6 +54,11 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     'Manage Pricing': ['/admin/pricing'],
     'Manage Purchases': ['/admin/purchasing'],
     'System Settings': ['/admin/settings', '/admin/roles-permissions'],
+    'Manage Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
+    'View Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
+    'Manage Outlet Inventory': ['/admin/outlet-inventory'],
+    'Manage Requisitions': ['/admin/outlet-requisitions'],
+    'Approve Requisitions': ['/admin/outlet-requisitions'],
   };
 
   // Role-based defaults
@@ -122,6 +133,40 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
         }
         const isAdmin = loginRole === 'Admin' || loginRole === 'Super Admin' || loginRole === 'Administrator';
 
+        // Check if user is an outlet admin
+        let outletId: string | null = null;
+        let outletName: string | null = null;
+        let isOutletAdmin = false;
+        try {
+          const { data: empRecord } = await supabase
+            .from('employees')
+            .select('id')
+            .eq('login_email', email)
+            .single();
+          if (empRecord?.id) {
+            const { data: outletEmp } = await supabase
+              .from('outlet_employees')
+              .select('outlet_id, is_outlet_admin, outlet_role')
+              .eq('employee_id', empRecord.id)
+              .eq('status', 'Active')
+              .in('outlet_role', ['Admin', 'Manager'])
+              .limit(1)
+              .single();
+            if (outletEmp && (outletEmp.is_outlet_admin || outletEmp.outlet_role === 'Admin' || outletEmp.outlet_role === 'Manager')) {
+              const { data: outlet } = await supabase
+                .from('outlets')
+                .select('id, name')
+                .eq('id', outletEmp.outlet_id)
+                .single();
+              if (outlet) {
+                outletId = outlet.id;
+                outletName = outlet.name;
+                isOutletAdmin = outletEmp.is_outlet_admin || false;
+              }
+            }
+          }
+        } catch { /* outlet tables may not exist yet */ }
+
         setPerms({
           userId: user.id,
           email,
@@ -130,6 +175,9 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           permissions: parsedPermissions,
           isAdmin,
           loading: false,
+          outletId,
+          outletName,
+          isOutletAdmin,
         });
       } else {
         // No employee record or no system access configured = treat as admin (owner/super admin)
@@ -141,6 +189,9 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           permissions: [],
           isAdmin: true,
           loading: false,
+          outletId: null,
+          outletName: null,
+          isOutletAdmin: false,
         });
       }
     } catch {
