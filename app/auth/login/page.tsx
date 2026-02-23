@@ -42,6 +42,7 @@ export default function LoginPage() {
             full_name: (meta.full_name as string) || data.user.email?.split('@')[0] || '',
             is_active: true,
             last_login: new Date().toISOString(),
+            last_activity: new Date().toISOString(),
           }, { onConflict: 'id' });
 
         logAudit({

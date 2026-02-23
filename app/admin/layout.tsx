@@ -1,18 +1,105 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Sidebar } from '@/components/sidebar';
 import { Header } from '@/components/header';
 import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
 import { UserPermissionsProvider, useUserPermissions, getAllowedRoutes } from '@/lib/user-permissions';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ShieldAlert, LogOut } from 'lucide-react';
+
+// Impersonation banner shown when an admin is viewing the system as another user
+function ImpersonationBanner() {
+  const [impersonation, setImpersonation] = useState<{
+    active: boolean;
+    adminName: string;
+    targetName: string;
+    targetEmail: string;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('impersonation');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.active) {
+          setImpersonation(parsed);
+        }
+      }
+    } catch {
+      // sessionStorage not available
+    }
+  }, []);
+
+  const handleEndImpersonation = async () => {
+    try {
+      sessionStorage.removeItem('impersonation');
+    } catch { /* ignore */ }
+    await supabase.auth.signOut();
+    window.close();
+  };
+
+  if (!impersonation) return null;
+
+  return (
+    <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-between text-sm z-50">
+      <div className="flex items-center gap-2">
+        <ShieldAlert size={16} />
+        <span className="font-semibold">Admin Impersonation Active</span>
+        <span className="opacity-90">
+          &mdash; Viewing as <strong>{impersonation.targetName}</strong>
+          {impersonation.targetEmail && <span className="ml-1 opacity-75">({impersonation.targetEmail})</span>}
+        </span>
+        <span className="opacity-75 ml-2">
+          Initiated by {impersonation.adminName}
+        </span>
+      </div>
+      <button
+        onClick={handleEndImpersonation}
+        className="flex items-center gap-1.5 px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-semibold transition-colors"
+      >
+        <LogOut size={12} />
+        End Impersonation
+      </button>
+    </div>
+  );
+}
+
+// Heartbeat: periodically updates last_activity in the users table for online status tracking
+function useActivityHeartbeat() {
+  const updateActivity = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.email) {
+        await supabase
+          .from('users')
+          .update({ last_activity: new Date().toISOString() })
+          .eq('email', user.email);
+      }
+    } catch {
+      // Silently fail - activity tracking is non-critical
+    }
+  }, []);
+
+  useEffect(() => {
+    // Update immediately on mount
+    updateActivity();
+
+    // Then every 2 minutes
+    const interval = setInterval(updateActivity, 2 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [updateActivity]);
+}
 
 function AdminContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAdmin, permissions, role, loading: permsLoading } = useUserPermissions();
+
+  // Activity heartbeat for online status tracking
+  useActivityHeartbeat();
 
   // Route guard based on permissions
   useEffect(() => {
@@ -30,13 +117,16 @@ function AdminContent({ children }: { children: React.ReactNode }) {
   }, [pathname, isAdmin, permissions, role, permsLoading, router]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-auto bg-background">
-          {children}
-        </main>
+    <div className="flex flex-col h-screen overflow-hidden">
+      <ImpersonationBanner />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Header />
+          <main className="flex-1 overflow-auto bg-background">
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   );
