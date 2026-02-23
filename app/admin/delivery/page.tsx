@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
+import { useUserPermissions } from '@/lib/user-permissions';
 
 interface Customer {
   id: string;
@@ -122,6 +123,406 @@ interface RecentOrder {
 }
 
 export default function DeliveryPage() {
+  const { role, isAdmin, fullName } = useUserPermissions();
+  const isRider = role === 'Driver' || role === 'Rider';
+
+  // If rider, show the rider-specific view
+  if (isRider && !isAdmin) {
+    return <RiderDeliveryView riderName={fullName} />;
+  }
+
+  return <AdminDeliveryView />;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── RIDER DELIVERY VIEW (Modern Bolt-like UI) ──
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function RiderDeliveryView({ riderName }: { riderName: string }) {
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
+  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+
+  const fetchMyDeliveries = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('deliveries')
+      .select('*')
+      .or(`driver.ilike.%${riderName}%,driver_name.ilike.%${riderName}%`)
+      .order('created_at', { ascending: false });
+    if (data) {
+      setDeliveries(data.map((r: Record<string, unknown>) => dbToDelivery(r)));
+    }
+    setLoading(false);
+  }, [riderName]);
+
+  useEffect(() => { fetchMyDeliveries(); }, [fetchMyDeliveries]);
+
+  const handlePickUp = async (id: string) => {
+    await supabase.from('deliveries').update({ status: 'In Transit' }).eq('id', id);
+    logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'In Transit', rider: riderName } });
+    setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: 'In Transit' as const } : d));
+    if (selectedDelivery?.id === id) setSelectedDelivery(prev => prev ? { ...prev, status: 'In Transit' as const } : null);
+  };
+
+  const handleComplete = async (id: string) => {
+    await supabase.from('deliveries').update({ status: 'Delivered' }).eq('id', id);
+    logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'Delivered', rider: riderName } });
+    setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: 'Delivered' as const } : d));
+    if (selectedDelivery?.id === id) setSelectedDelivery(prev => prev ? { ...prev, status: 'Delivered' as const } : null);
+  };
+
+  const handleFailed = async (id: string) => {
+    if (!confirm('Mark this delivery as failed?')) return;
+    await supabase.from('deliveries').update({ status: 'Failed' }).eq('id', id);
+    logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'Failed', rider: riderName } });
+    setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: 'Failed' as const } : d));
+    if (selectedDelivery?.id === id) setSelectedDelivery(prev => prev ? { ...prev, status: 'Failed' as const } : null);
+  };
+
+  const getMapUrl = (lat: number, lng: number) =>
+    `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.01},${lat - 0.01},${lng + 0.01},${lat + 0.01}&layer=mapnik&marker=${lat},${lng}`;
+  const getMapLinkUrl = (lat: number, lng: number) =>
+    `https://www.google.com/maps?q=${lat},${lng}`;
+
+  const activeDeliveries = deliveries.filter(d => d.status === 'Pending' || d.status === 'Assigned' || d.status === 'In Transit');
+  const completedDeliveries = deliveries.filter(d => d.status === 'Delivered' || d.status === 'Failed');
+  const displayList = activeTab === 'active' ? activeDeliveries : completedDeliveries;
+
+  const getStatusBadge = (s: Delivery['status']) => {
+    switch (s) {
+      case 'Pending': return 'bg-yellow-500 text-white';
+      case 'Assigned': return 'bg-purple-500 text-white';
+      case 'In Transit': return 'bg-blue-500 text-white';
+      case 'Delivered': return 'bg-green-500 text-white';
+      case 'Failed': return 'bg-red-500 text-white';
+    }
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayActive = activeDeliveries.filter(d => d.scheduledDate === today).length;
+  const todayCompleted = completedDeliveries.filter(d => d.scheduledDate === today).length;
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Rider Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-blue-200 text-sm">Hello,</p>
+            <h1 className="text-xl font-bold">{riderName || 'Rider'}</h1>
+          </div>
+          <div className="text-right">
+            <p className="text-blue-200 text-xs">Today</p>
+            <p className="text-sm font-semibold">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+          </div>
+        </div>
+
+        {/* Quick Stats */}
+        <div className="grid grid-cols-3 gap-3 mt-4">
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold">{todayActive}</p>
+            <p className="text-xs text-blue-100">Active</p>
+          </div>
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold">{todayCompleted}</p>
+            <p className="text-xs text-blue-100">Completed</p>
+          </div>
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold">{deliveries.length}</p>
+            <p className="text-xs text-blue-100">Total</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-border bg-card sticky top-0 z-10">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`flex-1 py-3 text-sm font-semibold text-center border-b-2 transition-colors ${
+            activeTab === 'active' ? 'border-blue-500 text-blue-600' : 'border-transparent text-muted-foreground'
+          }`}
+        >
+          Active ({activeDeliveries.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('completed')}
+          className={`flex-1 py-3 text-sm font-semibold text-center border-b-2 transition-colors ${
+            activeTab === 'completed' ? 'border-green-500 text-green-600' : 'border-transparent text-muted-foreground'
+          }`}
+        >
+          Completed ({completedDeliveries.length})
+        </button>
+      </div>
+
+      {/* Delivery Cards */}
+      <div className="p-4 space-y-3">
+        {loading ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm">Loading deliveries...</p>
+          </div>
+        ) : displayList.length === 0 ? (
+          <div className="text-center py-12">
+            <Truck className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-muted-foreground font-medium">
+              {activeTab === 'active' ? 'No active deliveries' : 'No completed deliveries'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {activeTab === 'active' ? 'Deliveries assigned to you will appear here' : 'Completed deliveries will appear here'}
+            </p>
+          </div>
+        ) : (
+          displayList.map((d) => (
+            <div
+              key={d.id}
+              onClick={() => setSelectedDelivery(d)}
+              className="border border-border rounded-2xl bg-card p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+            >
+              {/* Card Header */}
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-mono text-xs font-semibold text-muted-foreground">{d.trackingNumber}</span>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(d.status)}`}>{d.status}</span>
+              </div>
+
+              {/* Customer Info */}
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                  <User className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold truncate">{d.customerName || 'Unknown'}</p>
+                  <p className="text-xs text-muted-foreground">{d.customerPhone || '---'}</p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+              </div>
+
+              {/* Location */}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+                <MapPin className="w-4 h-4 text-red-500 shrink-0" />
+                <span className="truncate">{d.customerLocation || d.customerAddress || 'No location set'}</span>
+              </div>
+
+              {/* Items & Schedule */}
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Package className="w-3.5 h-3.5" />
+                  <span>{d.items.length} item(s)</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{d.scheduledDate || '---'} {d.timeSlot ? `| ${d.timeSlot}` : ''}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              {(d.status === 'Pending' || d.status === 'Assigned') && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handlePickUp(d.id); }}
+                  className="w-full mt-3 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Navigation className="w-4 h-4" /> Pick Up Delivery
+                </button>
+              )}
+              {d.status === 'In Transit' && (
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleComplete(d.id); }}
+                    className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Delivered
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleFailed(d.id); }}
+                    className="py-2.5 px-4 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <AlertTriangle className="w-4 h-4" /> Failed
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ── Delivery Detail Modal (Rider View) ── */}
+      <Modal
+        isOpen={!!selectedDelivery}
+        onClose={() => setSelectedDelivery(null)}
+        title={selectedDelivery ? `Delivery ${selectedDelivery.trackingNumber}` : ''}
+        size="3xl"
+      >
+        {selectedDelivery && (
+          <div className="space-y-5 max-h-[80vh] overflow-y-auto">
+            {/* Status */}
+            <div className="flex items-center justify-between">
+              <span className={`px-3 py-1.5 rounded-full text-sm font-bold ${getStatusBadge(selectedDelivery.status)}`}>{selectedDelivery.status}</span>
+              <span className="text-xs text-muted-foreground">{selectedDelivery.scheduledDate} {selectedDelivery.timeSlot}</span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="flex gap-1">
+              {(['Pending', 'Assigned', 'In Transit', 'Delivered'] as const).map((s, idx) => {
+                const statusOrder = ['Pending', 'Assigned', 'In Transit', 'Delivered'];
+                const currentIdx = statusOrder.indexOf(selectedDelivery.status);
+                const isActive = idx <= currentIdx;
+                const isFailed = selectedDelivery.status === 'Failed';
+                return (
+                  <div key={s} className="flex-1">
+                    <div className={`h-1.5 rounded-full ${isFailed && idx === currentIdx ? 'bg-red-500' : isActive ? 'bg-green-500' : 'bg-gray-200'}`} />
+                    <p className={`text-[10px] mt-1 text-center ${isActive ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{s}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Customer Card */}
+            <div className="border border-border rounded-2xl p-4">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Customer</p>
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                  <User className="w-6 h-6 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-lg">{selectedDelivery.customerName || 'Unknown'}</p>
+                  {selectedDelivery.customerPhone && (
+                    <a href={`tel:${selectedDelivery.customerPhone}`} className="flex items-center gap-1 text-blue-600 text-sm mt-1 hover:underline">
+                      <Phone className="w-3.5 h-3.5" /> {selectedDelivery.customerPhone}
+                    </a>
+                  )}
+                  {selectedDelivery.customerLocation && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
+                      <MapPin className="w-3.5 h-3.5 text-red-500" /> {selectedDelivery.customerLocation}
+                    </div>
+                  )}
+                  {selectedDelivery.customerAddress && (
+                    <p className="text-sm text-muted-foreground mt-0.5">{selectedDelivery.customerAddress}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Map */}
+              {selectedDelivery.customerGpsLat !== 0 && selectedDelivery.customerGpsLng !== 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-muted-foreground">Customer Location</p>
+                    <a
+                      href={getMapLinkUrl(selectedDelivery.customerGpsLat, selectedDelivery.customerGpsLng)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                    >
+                      <Navigation className="w-3 h-3" /> Navigate
+                    </a>
+                  </div>
+                  <iframe
+                    src={getMapUrl(selectedDelivery.customerGpsLat, selectedDelivery.customerGpsLng)}
+                    width="100%"
+                    height="200"
+                    className="rounded-xl border border-border"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Delivery Info */}
+            <div className="border border-border rounded-2xl p-4">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Delivery Details</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-muted-foreground">Tracking:</span> <span className="font-mono font-semibold ml-1">{selectedDelivery.trackingNumber}</span></div>
+                <div><span className="text-muted-foreground">Vehicle:</span> <span className="font-medium ml-1">{selectedDelivery.vehicleName || '---'}</span></div>
+                <div><span className="text-muted-foreground">Date:</span> <span className="font-medium ml-1">{selectedDelivery.scheduledDate || '---'}</span></div>
+                <div><span className="text-muted-foreground">Time Slot:</span> <span className="font-medium ml-1">{selectedDelivery.timeSlot || '---'}</span></div>
+              </div>
+            </div>
+
+            {/* Items */}
+            {selectedDelivery.items.length > 0 && (
+              <div className="border border-border rounded-2xl p-4">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Items for Delivery ({selectedDelivery.items.length})</p>
+                <div className="space-y-2">
+                  {selectedDelivery.items.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-xs font-bold text-orange-600">{idx + 1}</div>
+                        <span className="font-medium">{item.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold">{item.quantity}</span>
+                        <span className="text-xs text-muted-foreground ml-1">{item.unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            {(selectedDelivery.notes || selectedDelivery.specialInstructions) && (
+              <div className="space-y-3">
+                {selectedDelivery.notes && (
+                  <div className="border border-border rounded-2xl p-4">
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">Delivery Notes</p>
+                    <p className="text-sm">{selectedDelivery.notes}</p>
+                  </div>
+                )}
+                {selectedDelivery.specialInstructions && (
+                  <div className="border border-yellow-200 bg-yellow-50 rounded-2xl p-4">
+                    <p className="text-xs font-bold text-yellow-800 uppercase tracking-wide mb-2">Special Instructions</p>
+                    <p className="text-sm text-yellow-700">{selectedDelivery.specialInstructions}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="space-y-2 pt-3 border-t border-border">
+              {(selectedDelivery.status === 'Pending' || selectedDelivery.status === 'Assigned') && (
+                <button
+                  onClick={() => handlePickUp(selectedDelivery.id)}
+                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
+                >
+                  <Navigation className="w-4 h-4" /> Pick Up Delivery
+                </button>
+              )}
+              {selectedDelivery.status === 'In Transit' && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleComplete(selectedDelivery.id)}
+                    className="flex-1 py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Mark as Delivered
+                  </button>
+                  <button
+                    onClick={() => handleFailed(selectedDelivery.id)}
+                    className="py-3 px-4 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 flex items-center justify-center gap-2"
+                  >
+                    <AlertTriangle className="w-4 h-4" /> Failed
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={() => setSelectedDelivery(null)}
+                className="w-full py-2.5 border border-border rounded-xl text-sm hover:bg-secondary"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── ADMIN DELIVERY VIEW (Original) ──
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function AdminDeliveryView() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);

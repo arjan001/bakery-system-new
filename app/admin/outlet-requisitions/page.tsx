@@ -384,7 +384,7 @@ export default function OutletRequisitionsPage() {
 
   // ── Filtering & Pagination ─────────────────────────────────────────────────
 
-  const nonMainOutlets = outlets.filter((o) => !o.is_main_branch);
+  const nonMainOutlets = outlets.filter((o) => !o.is_main_branch && o.status === 'Active');
 
   const filteredRequisitions = requisitions.filter((req) => {
     const matchesStatus = filterStatus === 'All' || req.status === filterStatus;
@@ -1725,42 +1725,173 @@ export default function OutletRequisitionsPage() {
             </div>
           </div>
 
-          {/* Items Section */}
+          {/* Product Catalog - Browse & Select */}
           <div className="border border-border rounded-lg p-4 bg-secondary/30">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-semibold flex items-center gap-2">
                 <Package className="w-4 h-4" />
-                Items ({formItems.length})
+                Select Products
+              </p>
+              <span className="text-xs text-muted-foreground">Click products to add them</span>
+            </div>
+            <div className="relative mb-3">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                placeholder="Search products by name or code..."
+                className="w-full pl-9 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+              {getFilteredProducts(productSearch).map((product) => {
+                const alreadyAdded = formItems.some((fi) => fi.product_name === product.product_name);
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => {
+                      if (alreadyAdded) return;
+                      const newItem: FormItem = {
+                        temp_id: Date.now().toString() + Math.random().toString(36).slice(2),
+                        product_name: product.product_name,
+                        product_code: product.product_code,
+                        quantity_requested: 1,
+                        unit: 'pieces',
+                        unit_cost: product.wholesale_price,
+                        total_cost: product.wholesale_price,
+                        notes: '',
+                      };
+                      setFormItems([...formItems, newItem]);
+                    }}
+                    className={`text-left p-2.5 rounded-lg border transition-colors text-sm ${
+                      alreadyAdded
+                        ? 'bg-green-50 border-green-300 text-green-800 cursor-default'
+                        : 'border-border hover:bg-primary/10 hover:border-primary/40'
+                    }`}
+                  >
+                    <div className="font-medium text-xs truncate">{product.product_name}</div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-muted-foreground">{product.product_code || '---'}</span>
+                      <span className="text-xs font-semibold">${product.wholesale_price.toFixed(2)}</span>
+                    </div>
+                    {alreadyAdded && <span className="text-[10px] text-green-600 font-medium">Added</span>}
+                  </button>
+                );
+              })}
+              {getFilteredProducts(productSearch).length === 0 && (
+                <div className="col-span-3 text-center py-4 text-muted-foreground text-sm">
+                  No products found. Try a different search.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Selected Items - Adjust Quantities */}
+          <div className="border border-border rounded-lg p-4 bg-secondary/30">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <Package className="w-4 h-4" />
+                Requisition Items ({formItems.length})
               </p>
               <button
                 type="button"
                 onClick={addFormItem}
-                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium flex items-center gap-1"
+                className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-secondary font-medium flex items-center gap-1"
               >
                 <Plus className="w-3 h-3" />
-                Add Item
+                Add Custom Item
               </button>
             </div>
 
             {formItems.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground">
                 <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No items added yet. Click &quot;Add Item&quot; to start.</p>
+                <p className="text-sm">No items selected. Browse and click products above to add them.</p>
               </div>
             ) : (
               <>
-                {renderItemRows(
-                  formItems,
-                  updateFormItem,
-                  removeFormItem,
-                  productSearch,
-                  setProductSearch,
-                  showProductDropdown,
-                  setShowProductDropdown,
-                  activeItemIndex,
-                  setActiveItemIndex,
-                  selectProduct
-                )}
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-secondary/70 border-b border-border">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-semibold">Product</th>
+                        <th className="px-3 py-2 text-center text-xs font-semibold w-28">Qty</th>
+                        <th className="px-3 py-2 text-center text-xs font-semibold w-24">Unit</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold w-24">Unit Cost</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold w-24">Total</th>
+                        <th className="px-3 py-2 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formItems.map((item, index) => (
+                        <tr key={item.temp_id} className="border-b border-border/50">
+                          <td className="px-3 py-2">
+                            {item.product_name ? (
+                              <div>
+                                <span className="font-medium">{item.product_name}</span>
+                                {item.product_code && (
+                                  <span className="text-xs text-muted-foreground ml-1">({item.product_code})</span>
+                                )}
+                              </div>
+                            ) : (
+                              <input
+                                type="text"
+                                placeholder="Product name..."
+                                value={item.product_name}
+                                onChange={(e) => updateFormItem(index, { product_name: e.target.value })}
+                                className="w-full px-2 py-1 border border-border rounded text-sm bg-background"
+                              />
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => updateFormItem(index, { quantity_requested: Math.max(1, item.quantity_requested - 1) })}
+                                className="w-7 h-7 flex items-center justify-center rounded bg-secondary hover:bg-secondary/80 text-xs font-bold"
+                              >-</button>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity_requested}
+                                onChange={(e) => updateFormItem(index, { quantity_requested: parseInt(e.target.value) || 1 })}
+                                className="w-14 text-center px-1 py-1 border border-border rounded text-sm bg-background"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => updateFormItem(index, { quantity_requested: item.quantity_requested + 1 })}
+                                className="w-7 h-7 flex items-center justify-center rounded bg-secondary hover:bg-secondary/80 text-xs font-bold"
+                              >+</button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <select
+                              value={item.unit}
+                              onChange={(e) => updateFormItem(index, { unit: e.target.value })}
+                              className="px-1 py-1 border border-border rounded text-xs bg-background"
+                            >
+                              {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 text-right text-sm">${item.unit_cost.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-sm">${item.total_cost.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeFormItem(index)}
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded"
+                              title="Remove"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
                 {/* Totals Summary */}
                 <div className="mt-4 pt-3 border-t border-border">

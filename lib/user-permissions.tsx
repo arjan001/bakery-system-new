@@ -48,7 +48,7 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets', '/admin/stock-reorder'],
     'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
     'Manage Customers': ['/admin/customers'],
-    'Manage Deliveries': ['/admin/delivery', '/admin/orders'],
+    'Manage Deliveries': ['/admin/delivery', '/admin/orders', '/admin/rider-reports'],
     'View Reports': ['/admin/reports', '/admin/employee-productivity'],
     'Manage Recipes': ['/admin/recipes', '/admin/food-info', '/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
     'Manage Pricing': ['/admin/pricing'],
@@ -62,7 +62,19 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
   };
 
   // Role-based defaults
-  if (role === 'Driver' || role === 'Sales') {
+  if (role === 'Rider') {
+    routes.push('/admin'); // dashboard
+    routes.push('/admin/delivery');
+    routes.push('/admin/rider-reports');
+    routes.push('/admin/employee-productivity');
+  }
+  if (role === 'Driver') {
+    routes.push('/admin'); // dashboard
+    routes.push('/admin/delivery');
+    routes.push('/admin/rider-reports');
+    routes.push('/admin/employee-productivity');
+  }
+  if (role === 'Sales') {
     routes.push('/admin'); // dashboard
     routes.push('/admin/orders');
     routes.push('/admin/delivery');
