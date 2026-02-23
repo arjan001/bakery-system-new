@@ -257,11 +257,23 @@ export function Header() {
 
   const handleLogout = async () => {
     setShowDropdown(false);
+    // Clear online status
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser?.email) {
+        await supabase
+          .from('users')
+          .update({ last_activity: null })
+          .eq('email', currentUser.email);
+      }
+    } catch { /* non-critical */ }
     logAudit({
       action: 'LOGOUT',
       module: 'Authentication',
       details: { email: user.email },
     });
+    // Clear impersonation state if present
+    try { sessionStorage.removeItem('impersonation'); } catch { /* ignore */ }
     await supabase.auth.signOut();
     router.push('/');
     router.refresh();

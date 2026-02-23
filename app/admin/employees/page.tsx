@@ -5,6 +5,7 @@ import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { mapToDb } from '@/lib/db-utils';
 import { logAudit } from '@/lib/audit-logger';
+import { Loader2 } from 'lucide-react';
 
 interface Certificate {
   id: string;
@@ -49,6 +50,9 @@ interface Employee {
   loginEmail: string;
   loginRole: string;
   permissions: string[];
+  // Activity tracking fields (from users table)
+  lastLogin: string | null;
+  lastActivity: string | null;
 }
 
 function dbToEmployee(row: Record<string, unknown>): Employee {
@@ -164,6 +168,7 @@ const ALL_PERMISSIONS = [
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [impersonating, setImpersonating] = useState<string | null>(null);
   const [rolePermissionsMap, setRolePermissionsMap] = useState<Record<string, string[]>>({});
   const [availablePermissions, setAvailablePermissions] = useState<string[]>(ALL_PERMISSIONS);
   const [loginRoles, setLoginRoles] = useState<string[]>(['Admin', 'Administrator', 'Baker', 'Driver', 'Sales', 'Cashier', 'Viewer']);
@@ -176,16 +181,27 @@ export default function EmployeesPage() {
       ? data.map(r => dbToEmployee(r as Record<string, unknown>))
       : [];
 
-    // Also fetch Supabase Auth users who may not be in employees table (e.g. super admins)
+    // Fetch user activity data (last_login, last_activity) from users table
+    let userActivityMap: Record<string, { lastLogin: string | null; lastActivity: string | null }> = {};
     try {
-      const { data: authUsersResponse } = await supabase.from('users').select('*').order('created_at', { ascending: false });
-      if (authUsersResponse && authUsersResponse.length > 0) {
+      const { data: usersData } = await supabase.from('users').select('email, last_login, last_activity, full_name, id, role_id, is_active');
+      if (usersData && usersData.length > 0) {
+        for (const u of usersData) {
+          const email = ((u.email || '') as string).toLowerCase();
+          if (email) {
+            userActivityMap[email] = {
+              lastLogin: (u.last_login as string) || null,
+              lastActivity: (u.last_activity as string) || null,
+            };
+          }
+        }
+
+        // Also add auth users who may not be in employees table (e.g. super admins)
         const existingEmails = new Set(empList.map(e => (e.loginEmail || e.email || '').toLowerCase()).filter(Boolean));
-        for (const authUser of authUsersResponse) {
+        for (const authUser of usersData) {
           const email = ((authUser.email || '') as string).toLowerCase();
           if (email && !existingEmails.has(email)) {
-            const meta = (authUser.user_metadata || authUser.raw_user_meta_data || {}) as Record<string, unknown>;
-            const fullName = (meta.full_name || authUser.full_name || email.split('@')[0] || '') as string;
+            const fullName = ((authUser.full_name || email.split('@')[0] || '') as string);
             const nameParts = fullName.split(' ');
             empList.push({
               ...emptyForm,
@@ -193,7 +209,7 @@ export default function EmployeesPage() {
               firstName: nameParts[0] || '',
               lastName: nameParts.slice(1).join(' ') || '',
               email: email,
-              role: (meta.role || authUser.role || 'Super Admin') as string,
+              role: 'Super Admin',
               category: 'Admin',
               department: 'Administration',
               status: 'Active',
@@ -201,6 +217,8 @@ export default function EmployeesPage() {
               loginEmail: email,
               loginRole: 'Admin',
               permissions: [...ALL_PERMISSIONS],
+              lastLogin: (authUser.last_login as string) || null,
+              lastActivity: (authUser.last_activity as string) || null,
             });
             existingEmails.add(email);
           }
@@ -208,6 +226,15 @@ export default function EmployeesPage() {
       }
     } catch {
       // users table may not exist or not be accessible
+    }
+
+    // Merge activity data into employee records
+    for (const emp of empList) {
+      const email = (emp.loginEmail || emp.email || '').toLowerCase();
+      if (email && userActivityMap[email]) {
+        emp.lastLogin = userActivityMap[email].lastLogin;
+        emp.lastActivity = userActivityMap[email].lastActivity;
+      }
     }
 
     const existingRoles = empList.map(e => e.loginRole).filter(Boolean);
@@ -354,6 +381,8 @@ export default function EmployeesPage() {
     loginEmail: '',
     loginRole: 'Viewer',
     permissions: [],
+    lastLogin: null,
+    lastActivity: null,
   };
 
   const [formData, setFormData] = useState<Employee>(emptyForm);
@@ -511,6 +540,94 @@ export default function EmployeesPage() {
     }));
   };
 
+  // Check if a user is online (last_activity within 5 minutes)
+  const isUserOnline = (lastActivity: string | null): boolean => {
+    if (!lastActivity) return false;
+    const diff = Date.now() - new Date(lastActivity).getTime();
+    return diff < 5 * 60 * 1000; // 5 minutes
+  };
+
+  // Format time ago for display
+  const formatTimeAgo = (iso: string | null): string => {
+    if (!iso) return 'Never';
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(iso).toLocaleDateString();
+  };
+
+  // Handle "Login as User" impersonation
+  const handleLoginAsUser = async (emp: Employee) => {
+    const targetEmail = emp.loginEmail || emp.email;
+    if (!targetEmail) {
+      alert('This employee does not have a login email configured.');
+      return;
+    }
+    if (!emp.systemAccess) {
+      alert('This employee does not have system access enabled.');
+      return;
+    }
+
+    setImpersonating(emp.id);
+    try {
+      // Get current admin info for audit logging
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const adminEmail = currentUser?.email || '';
+      const adminName = currentUser?.user_metadata?.full_name || adminEmail.split('@')[0] || 'Admin';
+      const targetName = `${emp.firstName} ${emp.lastName}`.trim();
+
+      const res = await fetch('/api/auth/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetEmail,
+          adminEmail,
+          adminName,
+          targetName,
+        }),
+      });
+
+      const result = await res.json();
+      if (!result.success) {
+        alert(`Impersonation failed: ${result.message}`);
+        setImpersonating(null);
+        return;
+      }
+
+      // Open the impersonate page in a new tab
+      // The impersonate page will set sessionStorage and redirect to the magic link
+      const params = new URLSearchParams({
+        link: result.url,
+        admin: adminName,
+        target: targetName,
+        email: targetEmail,
+      });
+      window.open(`/auth/impersonate?${params.toString()}`, '_blank');
+
+      logAudit({
+        action: 'LOGIN',
+        module: 'Impersonation',
+        record_id: emp.id,
+        details: {
+          type: 'admin_impersonation',
+          admin_email: adminEmail,
+          target_email: targetEmail,
+          target_name: targetName,
+        },
+      });
+    } catch (err) {
+      console.error('Impersonation error:', err);
+      alert('Failed to initiate impersonation. Please try again.');
+    } finally {
+      setImpersonating(null);
+    }
+  };
+
   const filteredEmployees = employees.filter(emp => {
     const matchSearch = `${emp.firstName} ${emp.lastName} ${emp.email} ${emp.role} ${emp.employeeIdNumber}`.toLowerCase().includes(searchTerm.toLowerCase());
     const matchCategory = filterCategory === 'All' || emp.category === filterCategory;
@@ -529,6 +646,7 @@ export default function EmployeesPage() {
   const activeCount = employees.filter(e => e.status === 'Active').length;
   const driverCount = employees.filter(e => e.category === 'Driver').length;
   const bakerCount = employees.filter(e => e.category === 'Baker').length;
+  const onlineCount = employees.filter(e => e.systemAccess && isUserOnline(e.lastActivity)).length;
 
   const formTabs = ['personal', 'employment', 'certificates', 'payroll', 'systemAccess'] as const;
   const formTabLabels: Record<string, string> = {
@@ -547,7 +665,7 @@ export default function EmployeesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="border border-border rounded-lg p-4 bg-card">
           <p className="text-sm text-muted-foreground">Total Employees</p>
           <p className="text-2xl font-bold">{employees.length}</p>
@@ -555,6 +673,13 @@ export default function EmployeesPage() {
         <div className="border border-border rounded-lg p-4 bg-card">
           <p className="text-sm text-muted-foreground">Active</p>
           <p className="text-2xl font-bold text-green-600">{activeCount}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Online Now</p>
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
+            <p className="text-2xl font-bold text-green-600">{onlineCount}</p>
+          </div>
         </div>
         <div className="border border-border rounded-lg p-4 bg-card">
           <p className="text-sm text-muted-foreground">Bakers</p>
@@ -1231,6 +1356,48 @@ export default function EmployeesPage() {
                     <div><span className="text-muted-foreground">Login Email:</span> <span className="font-medium ml-2">{showDetail.loginEmail}</span></div>
                     <div><span className="text-muted-foreground">Role:</span> <span className="font-medium ml-2">{showDetail.loginRole}</span></div>
                   </div>
+
+                  {/* Online Status & Last Login */}
+                  <div className="grid grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Online Status:</span>
+                      <div className="flex items-center gap-1.5 ml-2">
+                        <div className={`w-2.5 h-2.5 rounded-full ${isUserOnline(showDetail.lastActivity) ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
+                        <span className={`text-xs font-semibold ${isUserOnline(showDetail.lastActivity) ? 'text-green-700' : 'text-gray-500'}`}>
+                          {isUserOnline(showDetail.lastActivity) ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Last Login:</span>
+                      <span className="font-medium ml-2" title={showDetail.lastLogin ? new Date(showDetail.lastLogin).toLocaleString() : ''}>
+                        {showDetail.lastLogin ? formatTimeAgo(showDetail.lastLogin) : 'Never'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Last Activity:</span>
+                      <span className="font-medium ml-2" title={showDetail.lastActivity ? new Date(showDetail.lastActivity).toLocaleString() : ''}>
+                        {showDetail.lastActivity ? formatTimeAgo(showDetail.lastActivity) : 'Never'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Login as User Button */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => handleLoginAsUser(showDetail)}
+                      disabled={impersonating === showDetail.id}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-semibold disabled:opacity-50"
+                    >
+                      {impersonating === showDetail.id ? (
+                        <><Loader2 size={14} className="animate-spin" /> Opening session...</>
+                      ) : (
+                        <>Login as {showDetail.firstName}</>
+                      )}
+                    </button>
+                    <p className="text-xs text-muted-foreground mt-1.5">Opens a new tab logged in as this user. No password required.</p>
+                  </div>
+
                   {showDetail.permissions.length > 0 && (
                     <div>
                       <p className="text-xs text-muted-foreground mb-2">Permissions:</p>
@@ -1275,21 +1442,20 @@ export default function EmployeesPage() {
           <thead className="bg-secondary border-b border-border">
             <tr>
               <th className="px-4 py-3 text-left font-semibold">Employee</th>
-              <th className="px-4 py-3 text-left font-semibold">ID</th>
               <th className="px-4 py-3 text-left font-semibold">Category</th>
               <th className="px-4 py-3 text-left font-semibold">Department</th>
-              <th className="px-4 py-3 text-left font-semibold">Outlet</th>
               <th className="px-4 py-3 text-left font-semibold">Role</th>
-              <th className="px-4 py-3 text-left font-semibold">Compliance</th>
               <th className="px-4 py-3 text-center font-semibold">Status</th>
               <th className="px-4 py-3 text-center font-semibold">Access</th>
+              <th className="px-4 py-3 text-center font-semibold">Online</th>
+              <th className="px-4 py-3 text-left font-semibold">Last Login</th>
               <th className="px-4 py-3 text-left font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
             {paginatedEmployees.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                   {loading ? 'Loading...' : 'No employees found'}
                 </td>
               </tr>
@@ -1298,11 +1464,18 @@ export default function EmployeesPage() {
                 <tr key={emp.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0 overflow-hidden">
-                        {emp.profilePhotoUrl ? (
-                          <img src={emp.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span>{emp.firstName.charAt(0)}{emp.lastName.charAt(0)}</span>
+                      <div className="relative">
+                        <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0 overflow-hidden">
+                          {emp.profilePhotoUrl ? (
+                            <img src={emp.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{emp.firstName.charAt(0)}{emp.lastName.charAt(0)}</span>
+                          )}
+                        </div>
+                        {emp.systemAccess && (
+                          <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
+                            isUserOnline(emp.lastActivity) ? 'bg-green-500' : 'bg-gray-300'
+                          }`} title={isUserOnline(emp.lastActivity) ? 'Online' : 'Offline'} />
                         )}
                       </div>
                       <div>
@@ -1311,7 +1484,6 @@ export default function EmployeesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{emp.employeeIdNumber || '---'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                       emp.category === 'Baker' ? 'bg-amber-100 text-amber-800' :
@@ -1324,43 +1496,7 @@ export default function EmployeesPage() {
                     }`}>{emp.category}</span>
                   </td>
                   <td className="px-4 py-3 text-sm">{emp.department}</td>
-                  <td className="px-4 py-3 text-sm">
-                    {(emp as Record<string, unknown>).primaryOutletName ? (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">{(emp as Record<string, unknown>).primaryOutletName as string}</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Main Branch</span>
-                    )}
-                  </td>
                   <td className="px-4 py-3 text-sm">{emp.role}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1 flex-wrap">
-                      {emp.category === 'Driver' && (
-                        <span className={`px-1.5 py-0.5 rounded text-xs ${
-                          !emp.driverLicenseId ? 'bg-red-100 text-red-700' :
-                          isExpired(emp.driverLicenseExpiry) ? 'bg-red-100 text-red-700' :
-                          isExpiringSoon(emp.driverLicenseExpiry) ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          DL {emp.driverLicenseId ? (isExpired(emp.driverLicenseExpiry) ? 'EXP' : 'OK') : 'N/A'}
-                        </span>
-                      )}
-                      {emp.category === 'Baker' && (
-                        <span className={`px-1.5 py-0.5 rounded text-xs ${
-                          !emp.hygieneCertNo ? 'bg-red-100 text-red-700' :
-                          isExpired(emp.hygieneCertExpiry) ? 'bg-red-100 text-red-700' :
-                          isExpiringSoon(emp.hygieneCertExpiry) ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          Hygiene {emp.hygieneCertNo ? (isExpired(emp.hygieneCertExpiry) ? 'EXP' : 'OK') : 'N/A'}
-                        </span>
-                      )}
-                      {emp.certificates.length > 0 && (
-                        <span className="px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-700">
-                          +{emp.certificates.length}
-                        </span>
-                      )}
-                    </div>
-                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       emp.status === 'Active' ? 'bg-green-100 text-green-800' :
@@ -1376,10 +1512,48 @@ export default function EmployeesPage() {
                       <span className="text-xs text-muted-foreground">---</span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-center">
+                    {emp.systemAccess ? (
+                      <div className="flex items-center justify-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-full ${isUserOnline(emp.lastActivity) ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
+                        <span className={`text-xs font-medium ${isUserOnline(emp.lastActivity) ? 'text-green-700' : 'text-gray-500'}`}>
+                          {isUserOnline(emp.lastActivity) ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">---</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-1">
+                    {emp.systemAccess ? (
+                      <div className="text-xs text-muted-foreground">
+                        {emp.lastLogin ? (
+                          <span title={new Date(emp.lastLogin).toLocaleString()}>{formatTimeAgo(emp.lastLogin)}</span>
+                        ) : (
+                          <span>Never</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">---</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1 flex-wrap">
                       <button onClick={() => setShowDetail(emp)} className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors font-medium">View</button>
                       <button onClick={() => handleEdit(emp)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium">Edit</button>
+                      {emp.systemAccess && (
+                        <button
+                          onClick={() => handleLoginAsUser(emp)}
+                          disabled={impersonating === emp.id}
+                          className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded hover:bg-amber-200 transition-colors font-medium disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {impersonating === emp.id ? (
+                            <><Loader2 size={10} className="animate-spin" /> Loading...</>
+                          ) : (
+                            'Login as User'
+                          )}
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(emp.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors font-medium">Delete</button>
                     </div>
                   </td>

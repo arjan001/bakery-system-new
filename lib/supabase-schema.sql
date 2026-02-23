@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   is_active BOOLEAN DEFAULT true,
   last_login TIMESTAMPTZ,
+  last_activity TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
