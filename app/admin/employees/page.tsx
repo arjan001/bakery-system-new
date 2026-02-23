@@ -462,6 +462,15 @@ export default function EmployeesPage() {
     let employeeSaved = false;
     try {
       if (editingId) {
+        // First verify the record exists and is accessible
+        const { data: existCheck, error: existError } = await supabase.from('employees').select('id').eq('id', editingId).maybeSingle();
+        if (existError) {
+          throw new Error(`Cannot access employee record: ${existError.message}. Row Level Security (RLS) may be blocking access — run the fix-employee-update-rls.sql script in your Supabase SQL Editor.`);
+        }
+        if (!existCheck) {
+          throw new Error(`Employee record not found (ID: ${editingId}). It may have been deleted.`);
+        }
+
         const { data, error } = await supabase.from('employees').update(dbRow).eq('id', editingId).select();
         if (error) {
           // If columns don't exist, try with only basic fields
@@ -471,10 +480,10 @@ export default function EmployeesPage() {
           const { data: fallbackData, error: fallbackError } = await supabase.from('employees').update(basicRow).eq('id', editingId).select();
           if (fallbackError) throw fallbackError;
           if (!fallbackData || fallbackData.length === 0) {
-            throw new Error('Update failed — no rows were changed. The employee record may be protected by database policies. Please contact your administrator.');
+            throw new Error('Update failed — no rows were changed. RLS policies may be blocking updates. Please run the fix-employee-update-rls.sql script in your Supabase SQL Editor.');
           }
         } else if (!data || data.length === 0) {
-          throw new Error('Update failed — no rows were changed. The employee record may be protected by database policies. Please contact your administrator.');
+          throw new Error('Update failed — no rows were changed. RLS policies may be blocking updates. Please run the fix-employee-update-rls.sql script in your Supabase SQL Editor.');
         }
         employeeSaved = true;
         logAudit({
@@ -493,10 +502,10 @@ export default function EmployeesPage() {
           const { data: fallbackData, error: fallbackError } = await supabase.from('employees').insert(basicRow).select();
           if (fallbackError) throw fallbackError;
           if (!fallbackData || fallbackData.length === 0) {
-            throw new Error('Insert failed — no rows were created. Please check database policies or contact your administrator.');
+            throw new Error('Insert failed — no rows were created. RLS policies may be blocking inserts. Please run the fix-employee-update-rls.sql script in your Supabase SQL Editor.');
           }
         } else if (!data || data.length === 0) {
-          throw new Error('Insert failed — no rows were created. Please check database policies or contact your administrator.');
+          throw new Error('Insert failed — no rows were created. RLS policies may be blocking inserts. Please run the fix-employee-update-rls.sql script in your Supabase SQL Editor.');
         }
         employeeSaved = true;
         logAudit({
