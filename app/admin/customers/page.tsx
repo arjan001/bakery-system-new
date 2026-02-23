@@ -60,6 +60,8 @@ export default function CustomersPage() {
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
@@ -74,11 +76,11 @@ export default function CustomersPage() {
         email: (r.email || '') as string,
         location: (r.location || '') as string,
         address: (r.address || '') as string,
-        gpsLat: (r.gps_lat || 0) as number,
-        gpsLng: (r.gps_lng || 0) as number,
-        creditLimit: (r.credit_limit || 0) as number,
-        purchaseVolume: (r.purchase_volume || 0) as number,
-        rating: (r.rating || 0) as number,
+        gpsLat: Number(r.gps_lat) || 0,
+        gpsLng: Number(r.gps_lng) || 0,
+        creditLimit: Number(r.credit_limit) || 0,
+        purchaseVolume: Number(r.purchase_volume) || 0,
+        rating: Number(r.rating) || 0,
         status: (r.status || 'Active') as string,
         notes: (r.notes || '') as string,
         landmark: (r.landmark || '') as string,
@@ -126,20 +128,20 @@ export default function CustomersPage() {
   };
 
   const selectLocation = (loc: { name: string; lat: number; lon: number }) => {
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       location: loc.name.split(',')[0].trim(),
       address: loc.name,
       gpsLat: loc.lat,
       gpsLng: loc.lon,
-    });
+    }));
     setLocationResults([]);
     setLocationSearch('');
     setShowDropdown(false);
   };
 
   const clearLocation = () => {
-    setFormData({ ...formData, location: '', address: '', gpsLat: 0, gpsLng: 0 });
+    setFormData(prev => ({ ...prev, location: '', address: '', gpsLat: 0, gpsLng: 0 }));
     setLocationSearch('');
     setLocationResults([]);
     setShowDropdown(false);
@@ -147,6 +149,8 @@ export default function CustomersPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    setSaving(true);
     const row = {
       name: formData.name,
       type: formData.type,
@@ -154,8 +158,8 @@ export default function CustomersPage() {
       email: formData.email,
       location: formData.location,
       address: formData.address,
-      gps_lat: formData.gpsLat || null,
-      gps_lng: formData.gpsLng || null,
+      gps_lat: formData.gpsLat ?? 0,
+      gps_lng: formData.gpsLng ?? 0,
       credit_limit: formData.creditLimit,
       purchase_volume: formData.purchaseVolume,
       rating: formData.rating,
@@ -166,7 +170,12 @@ export default function CustomersPage() {
     };
     try {
       if (editingId) {
-        await supabase.from('customers').update(row).eq('id', editingId);
+        const { error } = await supabase.from('customers').update(row).eq('id', editingId);
+        if (error) {
+          setFormError(error.message || 'Failed to update customer');
+          setSaving(false);
+          return;
+        }
         logAudit({
           action: 'UPDATE',
           module: 'Customers',
@@ -174,7 +183,12 @@ export default function CustomersPage() {
           details: { name: formData.name, type: formData.type, phone: formData.phone },
         });
       } else {
-        const { data: inserted } = await supabase.from('customers').insert(row).select().single();
+        const { data: inserted, error } = await supabase.from('customers').insert(row).select().single();
+        if (error) {
+          setFormError(error.message || 'Failed to create customer');
+          setSaving(false);
+          return;
+        }
         if (inserted) {
           logAudit({
             action: 'CREATE',
@@ -185,13 +199,17 @@ export default function CustomersPage() {
         }
       }
       await fetchData();
-    } catch { /* continue */ }
-    setEditingId(null);
-    setFormData(emptyForm);
-    setLocationSearch('');
-    setLocationResults([]);
-    setShowDropdown(false);
-    setShowForm(false);
+      setEditingId(null);
+      setFormData(emptyForm);
+      setLocationSearch('');
+      setLocationResults([]);
+      setShowDropdown(false);
+      setShowForm(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleEdit = (c: Customer) => {
@@ -205,6 +223,7 @@ export default function CustomersPage() {
     setLocationSearch('');
     setLocationResults([]);
     setShowDropdown(false);
+    setFormError(null);
     setShowForm(true);
   };
 
@@ -286,7 +305,7 @@ export default function CustomersPage() {
           </select>
         </div>
         <button
-          onClick={() => { setEditingId(null); setFormData(emptyForm); setLocationSearch(''); setLocationResults([]); setShowDropdown(false); setShowForm(true); }}
+          onClick={() => { setEditingId(null); setFormData(emptyForm); setLocationSearch(''); setLocationResults([]); setShowDropdown(false); setFormError(null); setShowForm(true); }}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
         >
           + Add Customer
@@ -296,11 +315,16 @@ export default function CustomersPage() {
       {/* ── Add / Edit Form Modal ── */}
       <Modal
         isOpen={showForm}
-        onClose={() => { setShowForm(false); setEditingId(null); }}
+        onClose={() => { setShowForm(false); setEditingId(null); setFormError(null); }}
         title={editingId ? 'Edit Customer' : 'New Customer'}
         size="3xl"
       >
         <form onSubmit={handleSubmit} className="space-y-4 max-h-[78vh] overflow-y-auto pr-1">
+          {formError && (
+            <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              {formError}
+            </div>
+          )}
           {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -502,11 +526,11 @@ export default function CustomersPage() {
           </div>
 
           <div className="flex gap-2 justify-end pt-4 border-t border-border">
-            <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }}
+            <button type="button" onClick={() => { setShowForm(false); setEditingId(null); setFormError(null); }}
               className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">Cancel</button>
-            <button type="submit"
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">
-              {editingId ? 'Update' : 'Save'} Customer
+            <button type="submit" disabled={saving}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+              {saving ? 'Saving…' : (editingId ? 'Update' : 'Save')} {saving ? '' : 'Customer'}
             </button>
           </div>
         </form>
