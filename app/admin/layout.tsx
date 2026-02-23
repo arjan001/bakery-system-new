@@ -113,6 +113,11 @@ function AdminContent({ children }: { children: React.ReactNode }) {
         // Redirect to first allowed route or account page
         router.push(allowedRoutes[0] || '/admin/account');
       }
+    } else if (!isAdmin) {
+      // Non-admin user with no allowed routes — restrict to account only
+      if (pathname !== '/admin/account') {
+        router.push('/admin/account');
+      }
     }
   }, [pathname, isAdmin, permissions, role, permsLoading, router]);
 

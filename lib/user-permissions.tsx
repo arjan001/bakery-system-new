@@ -39,6 +39,18 @@ export function useUserPermissions() {
 export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean): string[] {
   if (isAdmin) return []; // empty means all allowed
 
+  // Strict role-based restrictions for Rider and Driver — these roles can ONLY access
+  // the routes listed below, regardless of any additional permissions in the database.
+  if (role === 'Rider' || role === 'Driver') {
+    return [
+      '/admin',             // dashboard
+      '/admin/delivery',    // delivery/schedule orders
+      '/admin/order-tracking',
+      '/admin/rider-reports',
+      '/admin/account',     // own account settings
+    ];
+  }
+
   const routes: string[] = [];
 
   const permRouteMap: Record<string, string[]> = {
