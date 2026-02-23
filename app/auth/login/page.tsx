@@ -34,16 +34,19 @@ export default function LoginPage() {
       if (data.user) {
         // Ensure the user has a record in the users table (may be missing for employee accounts)
         const meta = data.user.user_metadata || {};
-        await supabase
-          .from('users')
-          .upsert({
-            id: data.user.id,
-            email: data.user.email,
-            full_name: (meta.full_name as string) || data.user.email?.split('@')[0] || '',
-            is_active: true,
-            last_login: new Date().toISOString(),
-            last_activity: new Date().toISOString(),
-          }, { onConflict: 'id' });
+        try {
+          await supabase
+            .from('users')
+            .upsert({
+              id: data.user.id,
+              email: data.user.email,
+              full_name: (meta.full_name as string) || data.user.email?.split('@')[0] || '',
+              is_active: true,
+              last_login: new Date().toISOString(),
+            }, { onConflict: 'id' });
+        } catch {
+          // Non-critical: users table tracking should not block login
+        }
 
         logAudit({
           action: 'LOGIN',
