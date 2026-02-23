@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { mapToDb } from '@/lib/db-utils';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Certificate {
   id: string;
@@ -306,9 +307,21 @@ export default function EmployeesPage() {
       if (editingId) {
         const { error } = await supabase.from('employees').update(dbRow).eq('id', editingId);
         if (error) throw error;
+        logAudit({
+          action: 'UPDATE',
+          module: 'Employees',
+          record_id: editingId,
+          details: { name: `${dataToSave.firstName} ${dataToSave.lastName}`, category: dataToSave.category, department: dataToSave.department },
+        });
       } else {
         const { error } = await supabase.from('employees').insert(dbRow);
         if (error) throw error;
+        logAudit({
+          action: 'CREATE',
+          module: 'Employees',
+          record_id: dataToSave.employeeIdNumber || dataToSave.id,
+          details: { name: `${dataToSave.firstName} ${dataToSave.lastName}`, category: dataToSave.category, department: dataToSave.department },
+        });
       }
 
       // Create Supabase Auth user if system access is enabled and password is provided
@@ -365,9 +378,16 @@ export default function EmployeesPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this employee?')) {
+      const emp = employees.find(e => e.id === id);
       try {
         const { error } = await supabase.from('employees').delete().eq('id', id);
         if (error) throw error;
+        logAudit({
+          action: 'DELETE',
+          module: 'Employees',
+          record_id: id,
+          details: { name: emp ? `${emp.firstName} ${emp.lastName}` : id, category: emp?.category, department: emp?.department },
+        });
       } catch (err) { console.error('Delete error:', err); }
       setEmployees(employees.filter(emp => emp.id !== id));
     }

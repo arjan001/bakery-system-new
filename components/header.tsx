@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 import { useRouter } from 'next/navigation';
-import { Bell, ShoppingBag, Volume2, VolumeX } from 'lucide-react';
+import { Bell, ShoppingBag, Volume2, VolumeX, Download } from 'lucide-react';
 import Link from 'next/link';
+import { usePwaInstall } from '@/components/pwa-install-prompt';
 
 interface OnlineOrderNotif {
   id: string;
@@ -113,6 +115,7 @@ export function Header() {
   const notifRef = useRef<HTMLDivElement>(null);
   const [ringing, setRinging] = useState(false);
   const [muted, setMuted] = useState(false);
+  const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
   const alarmRef = useRef<OrderAlarm | null>(null);
   // Track IDs of orders that have been acknowledged (clicked/dismissed)
   const acknowledgedRef = useRef<Set<string>>(new Set());
@@ -254,6 +257,11 @@ export function Header() {
 
   const handleLogout = async () => {
     setShowDropdown(false);
+    logAudit({
+      action: 'LOGOUT',
+      module: 'Authentication',
+      details: { email: user.email },
+    });
     await supabase.auth.signOut();
     router.push('/');
     router.refresh();
@@ -333,6 +341,18 @@ export function Header() {
 
       {/* Right */}
       <div className="flex items-center gap-2">
+
+        {/* ── Install App Button ── */}
+        {canInstall && !isInstalled && (
+          <button
+            onClick={triggerInstall}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+            title="Install Snackoh App"
+          >
+            <Download size={14} strokeWidth={2.5} />
+            <span className="hidden sm:inline">Install App</span>
+          </button>
+        )}
 
         {/* ── Mute Toggle ── */}
         <button

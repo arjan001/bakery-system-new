@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { logAudit } from '@/lib/audit-logger';
 
 interface RecipeOption {
   id: string;
@@ -251,10 +252,22 @@ export default function FoodInfoPage() {
       if (editId) {
         const { error } = await supabase.from('food_info').update(row).eq('id', editId);
         if (error) throw error;
+        logAudit({
+          action: 'UPDATE',
+          module: 'Product Catalogue',
+          record_id: editId,
+          details: { product_name: row.product_name, code: row.code },
+        });
         showToast('Product updated successfully', 'success');
       } else {
         const { error } = await supabase.from('food_info').insert(row);
         if (error) throw error;
+        logAudit({
+          action: 'CREATE',
+          module: 'Product Catalogue',
+          record_id: row.code,
+          details: { product_name: row.product_name, code: row.code },
+        });
         showToast('Product created successfully', 'success');
       }
       await fetchItems();
@@ -313,11 +326,18 @@ export default function FoodInfoPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this product?')) return;
+    const itemToDelete = items.find(item => item.id === id);
     const { error } = await supabase.from('food_info').delete().eq('id', id);
     if (error) {
       showToast('Failed to delete: ' + error.message, 'error');
       return;
     }
+    logAudit({
+      action: 'DELETE',
+      module: 'Product Catalogue',
+      record_id: id,
+      details: { product_name: itemToDelete?.productName, code: itemToDelete?.code },
+    });
     setItems(prev => prev.filter(item => item.id !== id));
     setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     showToast('Product deleted', 'success');
@@ -332,6 +352,15 @@ export default function FoodInfoPage() {
       showToast('Failed to delete: ' + error.message, 'error');
       return;
     }
+    ids.forEach(id => {
+      const itemToDelete = items.find(item => item.id === id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Product Catalogue',
+        record_id: id,
+        details: { product_name: itemToDelete?.productName, code: itemToDelete?.code },
+      });
+    });
     setItems(prev => prev.filter(item => !selectedIds.has(item.id)));
     setSelectedIds(new Set());
     showToast(`${ids.length} product(s) deleted`, 'success');

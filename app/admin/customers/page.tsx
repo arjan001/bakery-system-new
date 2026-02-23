@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { MapPin, Search, Loader2 } from 'lucide-react';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Customer {
   id: string;
@@ -164,8 +165,25 @@ export default function CustomersPage() {
       delivery_instructions: formData.deliveryInstructions,
     };
     try {
-      if (editingId) await supabase.from('customers').update(row).eq('id', editingId);
-      else await supabase.from('customers').insert(row);
+      if (editingId) {
+        await supabase.from('customers').update(row).eq('id', editingId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Customers',
+          record_id: editingId,
+          details: { name: formData.name, type: formData.type, phone: formData.phone },
+        });
+      } else {
+        const { data: inserted } = await supabase.from('customers').insert(row).select().single();
+        if (inserted) {
+          logAudit({
+            action: 'CREATE',
+            module: 'Customers',
+            record_id: inserted.id,
+            details: { name: formData.name, type: formData.type, phone: formData.phone },
+          });
+        }
+      }
       await fetchData();
     } catch { /* continue */ }
     setEditingId(null);
@@ -192,7 +210,14 @@ export default function CustomersPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this customer?')) {
+      const customer = customers.find(c => c.id === id);
       await supabase.from('customers').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Customers',
+        record_id: id,
+        details: { name: customer?.name, type: customer?.type, phone: customer?.phone },
+      });
       setCustomers(customers.filter(c => c.id !== id));
     }
   };

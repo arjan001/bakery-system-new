@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface ContactPerson {
   name: string;
@@ -191,8 +192,23 @@ export default function DistributorsPage() {
       contacts: JSON.stringify(formData.contacts.filter(c => c.name.trim())),
     };
     try {
-      if (editingId) await supabase.from('distributors').update(row).eq('id', editingId);
-      else await supabase.from('distributors').insert(row);
+      if (editingId) {
+        await supabase.from('distributors').update(row).eq('id', editingId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Suppliers',
+          record_id: editingId,
+          details: { name: row.name, company_name: row.company_name, category: row.category, status: row.status },
+        });
+      } else {
+        const { data: inserted } = await supabase.from('distributors').insert(row).select('id').single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Suppliers',
+          record_id: inserted?.id ?? '',
+          details: { name: row.name, company_name: row.company_name, category: row.category, status: row.status },
+        });
+      }
       await fetchDistributors();
     } catch { /* fallback */ }
     setEditingId(null);
@@ -227,6 +243,12 @@ export default function DistributorsPage() {
   const handleDelete = async (id: string) => {
     if (confirm('Delete this supplier?')) {
       await supabase.from('distributors').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Suppliers',
+        record_id: id,
+        details: {},
+      });
       setDistributors(distributors.filter(d => d.id !== id));
     }
   };
@@ -236,8 +258,23 @@ export default function DistributorsPage() {
     e.preventDefault();
     const row = { name: categoryForm.name, description: categoryForm.description };
     try {
-      if (editingCategoryId) await supabase.from('distributor_categories').update(row).eq('id', editingCategoryId);
-      else await supabase.from('distributor_categories').insert(row);
+      if (editingCategoryId) {
+        await supabase.from('distributor_categories').update(row).eq('id', editingCategoryId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Suppliers',
+          record_id: editingCategoryId,
+          details: { table: 'distributor_categories', name: row.name, description: row.description },
+        });
+      } else {
+        const { data: inserted } = await supabase.from('distributor_categories').insert(row).select('id').single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Suppliers',
+          record_id: inserted?.id ?? '',
+          details: { table: 'distributor_categories', name: row.name, description: row.description },
+        });
+      }
       await fetchCategories();
     } catch { /* fallback */ }
     setEditingCategoryId(null);
@@ -254,6 +291,12 @@ export default function DistributorsPage() {
   const handleDeleteCategory = async (id: string) => {
     if (confirm('Delete this category?')) {
       await supabase.from('distributor_categories').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Suppliers',
+        record_id: id,
+        details: { table: 'distributor_categories' },
+      });
       setCategories(categories.filter(c => c.id !== id));
     }
   };

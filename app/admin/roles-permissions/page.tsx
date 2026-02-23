@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Permission {
   id: string;
@@ -87,9 +88,23 @@ export default function RolesPermissionsPage() {
         await supabase.from('roles').update({ name: roleFormData.name, description: roleFormData.description }).eq('id', editingRoleId);
         await supabase.from('role_permissions').delete().eq('role_id', editingRoleId);
         if (selectedPermissions.length > 0) await supabase.from('role_permissions').insert(selectedPermissions.map(pid => ({ role_id: editingRoleId, permission_id: pid })));
+        logAudit({
+          action: 'UPDATE',
+          module: 'Roles & Permissions',
+          record_id: editingRoleId,
+          details: { name: roleFormData.name, description: roleFormData.description, permissions: selectedPermissions },
+        });
       } else {
         const { data: created } = await supabase.from('roles').insert({ name: roleFormData.name, description: roleFormData.description }).select().single();
         if (created && selectedPermissions.length > 0) await supabase.from('role_permissions').insert(selectedPermissions.map(pid => ({ role_id: created.id, permission_id: pid })));
+        if (created) {
+          logAudit({
+            action: 'CREATE',
+            module: 'Roles & Permissions',
+            record_id: created.id,
+            details: { name: roleFormData.name, description: roleFormData.description, permissions: selectedPermissions },
+          });
+        }
       }
       await fetchRoles();
     } catch { /* fallback */ }
@@ -100,6 +115,12 @@ export default function RolesPermissionsPage() {
     if (confirm('Delete this role?')) {
       await supabase.from('role_permissions').delete().eq('role_id', id);
       await supabase.from('roles').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Roles & Permissions',
+        record_id: id,
+        details: { entity: 'role' },
+      });
       setRoles(roles.filter(r => r.id !== id));
     }
   };
@@ -142,8 +163,20 @@ export default function RolesPermissionsPage() {
     try {
       if (editingPermId) {
         await supabase.from('permissions').update({ name: permFormData.name, description: permFormData.description, category }).eq('id', editingPermId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Roles & Permissions',
+          record_id: editingPermId,
+          details: { name: permFormData.name, description: permFormData.description, category },
+        });
       } else {
         await supabase.from('permissions').insert({ name: permFormData.name, description: permFormData.description, category, enabled: true });
+        logAudit({
+          action: 'CREATE',
+          module: 'Roles & Permissions',
+          record_id: '',
+          details: { name: permFormData.name, description: permFormData.description, category },
+        });
       }
       await fetchPermissions();
     } catch { /* fallback */ }
@@ -154,6 +187,12 @@ export default function RolesPermissionsPage() {
     if (confirm('Delete this permission? It will be removed from all roles.')) {
       await supabase.from('role_permissions').delete().eq('permission_id', id);
       await supabase.from('permissions').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Roles & Permissions',
+        record_id: id,
+        details: { entity: 'permission' },
+      });
       setPermissions(permissions.filter(p => p.id !== id));
       setRoles(roles.map(r => ({ ...r, permissions: r.permissions.filter(p => p !== id) })));
     }

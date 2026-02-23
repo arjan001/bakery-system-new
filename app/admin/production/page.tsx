@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface ProductionRun {
   id: string;
@@ -43,8 +44,24 @@ export default function ProductionPage() {
     e.preventDefault();
     const row = { recipe_code: formData.recipeCode, batch_size: parseFloat(formData.batchSize) || 0, start_time: formData.startTime || null, end_time: formData.endTime || null, yield_qty: parseFloat(formData.yield) || 0, status: formData.status, notes: formData.notes, operator: formData.operator };
     try {
-      if (editId) await supabase.from('production_runs').update(row).eq('id', editId);
-      else await supabase.from('production_runs').insert(row);
+      if (editId) {
+        const oldRun = runs.find(r => r.id === editId);
+        await supabase.from('production_runs').update(row).eq('id', editId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Production',
+          record_id: editId,
+          details: { recipe: formData.recipeCode, operator: formData.operator, status: formData.status, previousStatus: oldRun?.status },
+        });
+      } else {
+        const { data: inserted } = await supabase.from('production_runs').insert(row).select('id').single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Production',
+          record_id: inserted?.id ?? '',
+          details: { recipe: formData.recipeCode, operator: formData.operator, status: formData.status },
+        });
+      }
       await fetchRuns();
     } catch { /* fallback */ }
     setEditId(null);
@@ -82,7 +99,14 @@ export default function ProductionPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this production run?')) {
+      const deletedRun = runs.find(r => r.id === id);
       await supabase.from('production_runs').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Production',
+        record_id: id,
+        details: { recipe: deletedRun?.recipeCode, operator: deletedRun?.operator, status: deletedRun?.status },
+      });
       setRuns(runs.filter(r => r.id !== id));
     }
   };

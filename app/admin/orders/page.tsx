@@ -5,6 +5,7 @@ import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { ShoppingBag, Globe, PhoneCall, CheckCircle, XCircle, CreditCard, Truck, Clock, Eye, MapPin, ExternalLink, Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import { logAudit } from '@/lib/audit-logger';
 
 interface OrderItem {
   productName: string;
@@ -217,10 +218,24 @@ export default function OrdersPage() {
         await supabase.from('order_items').delete().eq('order_id', editingId);
         if (formData.items.length > 0)
           await supabase.from('order_items').insert(formData.items.map(i => ({ order_id: editingId, product_name: i.productName, quantity: i.quantity, unit_price: i.unitPrice, total: i.quantity * i.unitPrice })));
+        logAudit({
+          action: 'UPDATE',
+          module: 'Orders',
+          record_id: editingId,
+          details: { orderNumber: formData.orderNumber, customer: formData.customerName, total: calculatedTotal, status: formData.status },
+        });
       } else {
         const { data: created } = await supabase.from('orders').insert(row).select().single();
         if (created && formData.items.length > 0)
           await supabase.from('order_items').insert(formData.items.map(i => ({ order_id: created.id, product_name: i.productName, quantity: i.quantity, unit_price: i.unitPrice, total: i.quantity * i.unitPrice })));
+        if (created) {
+          logAudit({
+            action: 'CREATE',
+            module: 'Orders',
+            record_id: created.id,
+            details: { orderNumber: formData.orderNumber, customer: formData.customerName, total: calculatedTotal, status: formData.status },
+          });
+        }
       }
       await fetchOrders();
     } catch (err) { console.error(err); }
@@ -257,14 +272,28 @@ export default function OrdersPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this order?')) {
+      const orderToDelete = orders.find(o => o.id === id);
       await supabase.from('order_items').delete().eq('order_id', id);
       await supabase.from('orders').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Orders',
+        record_id: id,
+        details: { orderNumber: orderToDelete?.orderNumber, customer: orderToDelete?.customerName, total: orderToDelete?.total },
+      });
       setOrders(orders.filter(o => o.id !== id));
     }
   };
 
   const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
+    const order = orders.find(o => o.id === orderId);
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+    logAudit({
+      action: 'UPDATE',
+      module: 'Orders',
+      record_id: orderId,
+      details: { orderNumber: order?.orderNumber, customer: order?.customerName, total: order?.total, status: newStatus, previousStatus: order?.status },
+    });
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     // Update detail modal if open
     if (showDetailModal && showDetailModal.id === orderId) {
@@ -273,7 +302,14 @@ export default function OrdersPage() {
   };
 
   const handleAssignDriver = async (orderId: string, driver: string) => {
+    const order = orders.find(o => o.id === orderId);
     await supabase.from('orders').update({ assigned_driver: driver, status: 'Shipped' }).eq('id', orderId);
+    logAudit({
+      action: 'UPDATE',
+      module: 'Orders',
+      record_id: orderId,
+      details: { orderNumber: order?.orderNumber, customer: order?.customerName, total: order?.total, status: 'Shipped', assignedDriver: driver },
+    });
     setOrders(orders.map(o => o.id === orderId ? { ...o, assignedDriver: driver, status: 'Shipped' } : o));
     if (showDetailModal && showDetailModal.id === orderId) {
       setShowDetailModal({ ...showDetailModal, assignedDriver: driver, status: 'Shipped' });
@@ -289,6 +325,12 @@ export default function OrdersPage() {
       payment_status: confirmPayment,
       fulfillment: confirmFulfillment,
     }).eq('id', showConfirmModal.id);
+    logAudit({
+      action: 'UPDATE',
+      module: 'Orders',
+      record_id: showConfirmModal.id,
+      details: { orderNumber: showConfirmModal.orderNumber, customer: showConfirmModal.customerName, total: showConfirmModal.total, status: 'Confirmed', previousStatus: showConfirmModal.status, paymentStatus: confirmPayment, fulfillment: confirmFulfillment },
+    });
     const updated = orders.map(o => o.id === showConfirmModal.id
       ? { ...o, status: 'Confirmed' as const, paymentStatus: confirmPayment, fulfillment: confirmFulfillment }
       : o);
@@ -306,6 +348,12 @@ export default function OrdersPage() {
       status: 'Rejected',
       rejection_reason: rejectReason,
     }).eq('id', showRejectModal.id);
+    logAudit({
+      action: 'UPDATE',
+      module: 'Orders',
+      record_id: showRejectModal.id,
+      details: { orderNumber: showRejectModal.orderNumber, customer: showRejectModal.customerName, total: showRejectModal.total, status: 'Rejected', previousStatus: showRejectModal.status, rejectionReason: rejectReason },
+    });
     const updated = orders.map(o => o.id === showRejectModal.id
       ? { ...o, status: 'Rejected' as const, rejectionReason: rejectReason }
       : o);
@@ -410,6 +458,15 @@ export default function OrdersPage() {
       for (const id of ids) await supabase.from('order_items').delete().eq('order_id', id);
       const { error } = await supabase.from('orders').delete().in('id', ids);
       if (error) throw error;
+      for (const id of ids) {
+        const orderToDelete = orders.find(o => o.id === id);
+        logAudit({
+          action: 'DELETE',
+          module: 'Orders',
+          record_id: id,
+          details: { orderNumber: orderToDelete?.orderNumber, customer: orderToDelete?.customerName, total: orderToDelete?.total },
+        });
+      }
       setOrders(prev => prev.filter(o => !selectedIds.has(o.id)));
       setSelectedIds(new Set());
       showToast(`${ids.length} order(s) deleted`, 'success');

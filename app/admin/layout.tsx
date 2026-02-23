@@ -97,8 +97,9 @@ export default function AdminLayout({
 
   return (
     <UserPermissionsProvider>
-      <AdminContent>{children}</AdminContent>
-      <PwaInstallPrompt />
+      <PwaInstallPrompt>
+        <AdminContent>{children}</AdminContent>
+      </PwaInstallPrompt>
     </UserPermissionsProvider>
   );
 }

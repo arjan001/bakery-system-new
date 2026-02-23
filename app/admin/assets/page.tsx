@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Asset {
   id: string;
@@ -354,6 +355,12 @@ export default function AssetsPage() {
             assigned_date: formData.assignmentDate || new Date().toISOString().split('T')[0],
             notes: formData.assignmentNotes,
           });
+          logAudit({
+            action: 'CREATE',
+            module: 'Asset Assignments',
+            record_id: editingId,
+            details: { asset_name: formData.name, employee_name: employeeName },
+          });
           // Mark previous assignment as returned
           if (existingAsset.assignedTo) {
             await supabase.from('asset_assignments')
@@ -364,8 +371,22 @@ export default function AssetsPage() {
           }
         }
         await supabase.from('assets').update(row).eq('id', editingId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Assets',
+          record_id: editingId,
+          details: { name: formData.name, status: formData.status },
+        });
       } else {
         const { data: inserted } = await supabase.from('assets').insert(row).select();
+        if (inserted && inserted[0]) {
+          logAudit({
+            action: 'CREATE',
+            module: 'Assets',
+            record_id: inserted[0].id as string,
+            details: { name: formData.name, status: formData.status },
+          });
+        }
         // Log initial assignment if provided
         if (formData.assignedTo && inserted && inserted[0]) {
           await supabase.from('asset_assignments').insert({
@@ -374,6 +395,12 @@ export default function AssetsPage() {
             employee_name: employeeName,
             assigned_date: formData.assignmentDate || new Date().toISOString().split('T')[0],
             notes: formData.assignmentNotes,
+          });
+          logAudit({
+            action: 'CREATE',
+            module: 'Asset Assignments',
+            record_id: inserted[0].id as string,
+            details: { asset_name: formData.name, employee_name: employeeName },
           });
         }
       }
@@ -391,8 +418,20 @@ export default function AssetsPage() {
     try {
       if (editingCatId) {
         await supabase.from('asset_categories').update({ name: categoryForm.name, description: categoryForm.description }).eq('id', editingCatId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Asset Categories',
+          record_id: editingCatId,
+          details: { name: categoryForm.name },
+        });
       } else {
         await supabase.from('asset_categories').insert({ name: categoryForm.name, description: categoryForm.description });
+        logAudit({
+          action: 'CREATE',
+          module: 'Asset Categories',
+          record_id: categoryForm.name,
+          details: { name: categoryForm.name, description: categoryForm.description },
+        });
       }
       await fetchCategories();
     } catch {
@@ -415,6 +454,12 @@ export default function AssetsPage() {
         performed_date: maintenanceFormData.performedDate || null,
         next_due_date: maintenanceFormData.nextDueDate || null,
         notes: maintenanceFormData.notes,
+      });
+      logAudit({
+        action: 'CREATE',
+        module: 'Asset Maintenance',
+        record_id: maintenanceFormData.assetId,
+        details: { asset_name: getAssetName(maintenanceFormData.assetId), maintenance_type: maintenanceFormData.maintenanceType, cost: maintenanceFormData.cost },
       });
 
       // Update the asset's maintenance fields
@@ -447,7 +492,14 @@ export default function AssetsPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this asset?')) {
+      const deletedAsset = assets.find(a => a.id === id);
       await supabase.from('assets').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Assets',
+        record_id: id,
+        details: { name: deletedAsset?.name, status: deletedAsset?.status },
+      });
       setAssets(assets.filter(a => a.id !== id));
     }
   };
@@ -460,7 +512,14 @@ export default function AssetsPage() {
 
   const handleDeleteCat = async (id: string) => {
     if (confirm('Delete this category?')) {
+      const deletedCat = categories.find(c => c.id === id);
       await supabase.from('asset_categories').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Asset Categories',
+        record_id: id,
+        details: { name: deletedCat?.name },
+      });
       setCategories(categories.filter(c => c.id !== id));
     }
   };

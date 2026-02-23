@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface WasteRecord {
   id: string;
@@ -253,8 +254,20 @@ export default function WasteControlPage() {
           approval_status: existing?.approvalStatus === 'Rejected' ? 'Pending' : existing?.approvalStatus || 'Pending',
         };
         await supabase.from('waste_records').update(updateRow).eq('id', editId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Waste Control',
+          record_id: editId,
+          details: { product_name: formData.productName, product_code: formData.productCode, quantity: formData.quantity, cost: formData.cost, reason: formData.reason },
+        });
       } else {
         await supabase.from('waste_records').insert(row);
+        logAudit({
+          action: 'CREATE',
+          module: 'Waste Control',
+          record_id: '',
+          details: { product_name: formData.productName, product_code: formData.productCode, quantity: formData.quantity, cost: formData.cost, reason: formData.reason },
+        });
       }
       await fetchRecords();
     } catch {
@@ -286,6 +299,12 @@ export default function WasteControlPage() {
   const handleDelete = async (id: string) => {
     if (confirm('Delete this waste record? This action cannot be undone.')) {
       await supabase.from('waste_records').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Waste Control',
+        record_id: id,
+        details: { entity: 'waste_record' },
+      });
       setRecords(records.filter((r) => r.id !== id));
     }
   };
@@ -311,6 +330,12 @@ export default function WasteControlPage() {
           approval_notes: approvalNotes,
         })
         .eq('id', selectedRecord.id);
+      logAudit({
+        action: 'UPDATE',
+        module: 'Waste Control',
+        record_id: selectedRecord.id,
+        details: { approval_status: approvalAction, approved_by: approvedByName, approval_notes: approvalNotes },
+      });
       await fetchRecords();
     } catch {
       /* fallback */

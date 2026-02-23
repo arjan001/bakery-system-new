@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { Search, ChevronLeft, ChevronRight, AlertTriangle, Package, Clock, CheckCircle, XCircle, Plus, RefreshCw } from 'lucide-react';
+import { logAudit } from '@/lib/audit-logger';
 
 // ── Interfaces ──
 
@@ -480,7 +481,7 @@ export default function StockReorderPage() {
 
     setSaving(true);
     try {
-      const { error } = await supabase.from('stock_requisitions').insert({
+      const { data: reqData, error } = await supabase.from('stock_requisitions').insert({
         product_name: reqFormData.productName.trim(),
         product_id: reqFormData.productId || null,
         quantity_requested: reqFormData.quantityRequested,
@@ -491,8 +492,19 @@ export default function StockReorderPage() {
         approved_by: null,
         notes: reqFormData.notes.trim() || null,
         linked_production_run_id: null,
-      });
+      }).select().single();
       if (error) throw error;
+      logAudit({
+        action: 'CREATE',
+        module: 'Stock Reorder',
+        record_id: reqData?.id || '',
+        details: {
+          product_name: reqFormData.productName.trim(),
+          quantity_requested: reqFormData.quantityRequested,
+          priority: reqFormData.priority,
+          requested_by: reqFormData.requestedBy.trim(),
+        },
+      });
       showToast('Requisition created successfully', 'success');
       await fetchRequisitions();
       setShowRequisitionForm(false);

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 import { Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -36,6 +37,13 @@ export default function LoginPage() {
           .from('users')
           .update({ last_login: new Date().toISOString() })
           .eq('id', data.user.id);
+
+        logAudit({
+          action: 'LOGIN',
+          module: 'Authentication',
+          record_id: data.user.id,
+          details: { email: data.user.email },
+        });
 
         // Check user role for redirect
         const email = data.user.email || '';

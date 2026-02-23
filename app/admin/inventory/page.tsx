@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Distributor {
   id: string;
@@ -173,10 +174,22 @@ export default function InventoryPage() {
       if (editingId) {
         const { error } = await supabase.from('inventory_items').update(row).eq('id', editingId);
         if (error) throw error;
+        logAudit({
+          action: 'UPDATE',
+          module: 'Inventory',
+          record_id: editingId,
+          details: { name: formData.name, quantity: formData.quantity },
+        });
         showToast('Item updated successfully', 'success');
       } else {
         const { error } = await supabase.from('inventory_items').insert(row);
         if (error) throw error;
+        logAudit({
+          action: 'CREATE',
+          module: 'Inventory',
+          record_id: formData.name,
+          details: { name: formData.name, quantity: formData.quantity },
+        });
         showToast('Item added successfully', 'success');
       }
       await fetchInventory();
@@ -202,6 +215,12 @@ export default function InventoryPage() {
         type: categoryForm.type,
       });
       if (error) throw error;
+      logAudit({
+        action: 'CREATE',
+        module: 'Inventory Categories',
+        record_id: categoryForm.name,
+        details: { name: categoryForm.name, type: categoryForm.type },
+      });
       showToast('Category added successfully', 'success');
       await fetchCategories();
       setCategoryForm({ id: '', name: '', type: 'Consumable' });
@@ -244,6 +263,13 @@ export default function InventoryPage() {
       showToast('Failed to delete: ' + error.message, 'error');
       return;
     }
+    const deletedItem = inventory.find(i => i.id === id);
+    logAudit({
+      action: 'DELETE',
+      module: 'Inventory',
+      record_id: id,
+      details: { name: deletedItem?.name },
+    });
     setInventory(prev => prev.filter(i => i.id !== id));
     setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     showToast('Item deleted', 'success');
@@ -258,6 +284,15 @@ export default function InventoryPage() {
       showToast('Failed to delete: ' + error.message, 'error');
       return;
     }
+    ids.forEach(id => {
+      const deletedItem = inventory.find(i => i.id === id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Inventory',
+        record_id: id,
+        details: { name: deletedItem?.name },
+      });
+    });
     setInventory(prev => prev.filter(i => !selectedIds.has(i.id)));
     setSelectedIds(new Set());
     showToast(`${ids.length} item(s) deleted`, 'success');
@@ -270,6 +305,13 @@ export default function InventoryPage() {
       showToast('Failed to delete category: ' + error.message, 'error');
       return;
     }
+    const deletedCategory = categories.find(c => c.id === id);
+    logAudit({
+      action: 'DELETE',
+      module: 'Inventory Categories',
+      record_id: id,
+      details: { name: deletedCategory?.name, type: deletedCategory?.type },
+    });
     setCategories(prev => prev.filter(c => c.id !== id));
     showToast('Category deleted', 'success');
   };
@@ -297,6 +339,13 @@ export default function InventoryPage() {
       }
       const { error: updateError } = await supabase.from('inventory_items').update(updateData).eq('id', item.id);
       if (updateError) throw updateError;
+
+      logAudit({
+        action: 'CREATE',
+        module: 'Inventory Transactions',
+        record_id: item.id,
+        details: { name: item.name, quantity: stockQty, type: txnType },
+      });
 
       await fetchInventory();
       await fetchTransactions();

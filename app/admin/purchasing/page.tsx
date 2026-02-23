@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface PurchaseItem {
   id: string;
@@ -98,9 +99,23 @@ export default function PurchasingPage() {
         await supabase.from('purchase_orders').update(row).eq('id', editId);
         await supabase.from('purchase_order_items').delete().eq('purchase_order_id', editId);
         if (formData.items.length > 0) await supabase.from('purchase_order_items').insert(formData.items.map(i => ({ purchase_order_id: editId, item_id: i.itemId, ingredient: i.ingredient, quantity: i.quantity, unit: i.unit, unit_price: i.unitPrice, total: i.total })));
+        logAudit({
+          action: 'UPDATE',
+          module: 'Purchasing',
+          record_id: editId,
+          details: { supplier: formData.supplier, total: formData.items.reduce((s, i) => s + i.total, 0), status: formData.status },
+        });
       } else {
         const { data: created } = await supabase.from('purchase_orders').insert(row).select().single();
         if (created && formData.items.length > 0) await supabase.from('purchase_order_items').insert(formData.items.map(i => ({ purchase_order_id: created.id, item_id: i.itemId, ingredient: i.ingredient, quantity: i.quantity, unit: i.unit, unit_price: i.unitPrice, total: i.total })));
+        if (created) {
+          logAudit({
+            action: 'CREATE',
+            module: 'Purchasing',
+            record_id: created.id,
+            details: { supplier: formData.supplier, total: formData.items.reduce((s, i) => s + i.total, 0), status: formData.status },
+          });
+        }
       }
       await fetchOrders();
     } catch { /* fallback */ }
@@ -140,6 +155,12 @@ export default function PurchasingPage() {
     if (confirm('Delete this purchase order?')) {
       await supabase.from('purchase_order_items').delete().eq('purchase_order_id', id);
       await supabase.from('purchase_orders').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Purchasing',
+        record_id: id,
+        details: {},
+      });
       setOrders(orders.filter(o => o.id !== id));
     }
   };

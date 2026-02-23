@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { ClipboardList } from 'lucide-react';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Customer {
   id: string;
@@ -308,8 +309,20 @@ export default function DeliveryPage() {
     try {
       if (editingId) {
         await supabase.from('deliveries').update(row).eq('id', editingId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Delivery',
+          record_id: editingId,
+          details: { driver: driver ? `${driver.firstName} ${driver.lastName}` : '', status: formData.status },
+        });
       } else {
-        await supabase.from('deliveries').insert(row);
+        const { data: inserted } = await supabase.from('deliveries').insert(row).select('id').single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Delivery',
+          record_id: inserted?.id || formData.trackingNumber,
+          details: { driver: driver ? `${driver.firstName} ${driver.lastName}` : '', status: formData.status },
+        });
       }
       await fetchDeliveries();
     } catch {
@@ -361,13 +374,27 @@ export default function DeliveryPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this delivery?')) {
+      const deletedDelivery = deliveries.find(d => d.id === id);
       await supabase.from('deliveries').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Delivery',
+        record_id: id,
+        details: { driver: deletedDelivery?.driverName || '', status: deletedDelivery?.status || '' },
+      });
       setDeliveries(deliveries.filter(d => d.id !== id));
     }
   };
 
   const handleStatusChange = async (id: string, newStatus: Delivery['status']) => {
+    const oldDelivery = deliveries.find(d => d.id === id);
     await supabase.from('deliveries').update({ status: newStatus }).eq('id', id);
+    logAudit({
+      action: 'UPDATE',
+      module: 'Delivery',
+      record_id: id,
+      details: { driver: oldDelivery?.driverName || '', status: newStatus, previousStatus: oldDelivery?.status || '' },
+    });
     setDeliveries(deliveries.map(d => d.id === id ? { ...d, status: newStatus } : d));
   };
 

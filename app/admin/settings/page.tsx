@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
+import { logAudit } from '@/lib/audit-logger';
 
 type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions';
 
@@ -300,6 +301,12 @@ export default function SettingsPage() {
         { key: 'navbarAds', value: navbarAds, updated_at: new Date().toISOString() },
         { onConflict: 'key' }
       );
+      logAudit({
+        action: 'UPDATE',
+        module: 'Settings',
+        record_id: 'navbarAds',
+        details: { key: 'navbarAds', items: navbarAds.items.length },
+      });
     } catch { /* table may not exist */ }
     setSaving(false);
     setSavedMsg('Navbar ads saved!');
@@ -315,6 +322,12 @@ export default function SettingsPage() {
         { key: 'newsletterModal', value: newsletterModal, updated_at: new Date().toISOString() },
         { onConflict: 'key' }
       );
+      logAudit({
+        action: 'UPDATE',
+        module: 'Settings',
+        record_id: 'newsletterModal',
+        details: { key: 'newsletterModal', title: newsletterModal.title },
+      });
     } catch { /* table may not exist */ }
     setSaving(false);
     setSavedMsg('Newsletter modal settings saved!');
@@ -324,6 +337,12 @@ export default function SettingsPage() {
   const deleteSubscriber = async (id: string) => {
     try {
       await supabase.from('newsletter_subscribers').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Settings',
+        record_id: id,
+        details: { table: 'newsletter_subscribers' },
+      });
       setSubscribers(prev => prev.filter(s => s.id !== id));
       setSavedMsg('Subscriber removed');
       setTimeout(() => setSavedMsg(''), 3000);
@@ -456,9 +475,21 @@ export default function SettingsPage() {
       if (editingOfferId) {
         const { error } = await supabase.from('offers').update(offerData).eq('id', editingOfferId);
         if (error) throw error;
+        logAudit({
+          action: 'UPDATE',
+          module: 'Settings',
+          record_id: editingOfferId,
+          details: { table: 'offers', title: offerForm.title },
+        });
       } else {
         const { error } = await supabase.from('offers').insert(offerData);
         if (error) throw error;
+        logAudit({
+          action: 'CREATE',
+          module: 'Settings',
+          record_id: offerForm.title,
+          details: { table: 'offers', title: offerForm.title },
+        });
       }
     } catch {
       // Fallback to localStorage if Supabase table doesn't exist
@@ -487,6 +518,12 @@ export default function SettingsPage() {
     try {
       const { error } = await supabase.from('offers').delete().eq('id', id);
       if (error) throw error;
+      logAudit({
+        action: 'DELETE',
+        module: 'Settings',
+        record_id: id,
+        details: { table: 'offers' },
+      });
     } catch {
       const localOffers = offers.filter(o => o.id !== id);
       localStorage.setItem('snackoh_offers', JSON.stringify(localOffers));
@@ -500,6 +537,12 @@ export default function SettingsPage() {
     try {
       const { error } = await supabase.from('offers').update({ is_active: !current }).eq('id', id);
       if (error) throw error;
+      logAudit({
+        action: 'UPDATE',
+        module: 'Settings',
+        record_id: id,
+        details: { table: 'offers', is_active: !current },
+      });
     } catch {
       const localOffers = offers.map(o => o.id === id ? { ...o, is_active: !current } : o);
       localStorage.setItem('snackoh_offers', JSON.stringify(localOffers));
@@ -604,6 +647,12 @@ export default function SettingsPage() {
           { onConflict: 'key' }
         );
       }
+      logAudit({
+        action: 'UPDATE',
+        module: 'Settings',
+        record_id: 'all',
+        details: { keys: Object.keys(settingsData) },
+      });
     } catch {
       // Table may not exist yet, localStorage is the fallback
     }
