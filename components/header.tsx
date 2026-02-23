@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Bell, ShoppingBag, Volume2, VolumeX, Download } from 'lucide-react';
 import Link from 'next/link';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
+import { useUserPermissions } from '@/lib/user-permissions';
 
 interface OnlineOrderNotif {
   id: string;
@@ -116,6 +117,7 @@ export function Header() {
   const [ringing, setRinging] = useState(false);
   const [muted, setMuted] = useState(false);
   const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
+  const { isAdmin } = useUserPermissions();
   const alarmRef = useRef<OrderAlarm | null>(null);
   // Track IDs of orders that have been acknowledged (clicked/dismissed)
   const acknowledgedRef = useRef<Set<string>>(new Set());
@@ -521,10 +523,12 @@ export function Header() {
                   className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors">
                   <span className="text-base">👤</span><span>My Profile</span>
                 </a>
-                <a href="/admin/roles-permissions" onClick={() => setShowDropdown(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors">
-                  <span className="text-base">🔐</span><span>Roles & Permissions</span>
-                </a>
+                {isAdmin && (
+                  <a href="/admin/roles-permissions" onClick={() => setShowDropdown(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors">
+                    <span className="text-base">🔐</span><span>Roles & Permissions</span>
+                  </a>
+                )}
               </div>
 
               <div className="border-t border-border py-1">

@@ -193,7 +193,8 @@ export function Sidebar() {
 
   // Filter nav groups based on permissions
   const navGroups = (() => {
-    if (permsLoading || isAdmin) return allNavGroups;
+    if (permsLoading) return []; // Don't show any nav items while permissions are loading
+    if (isAdmin) return allNavGroups;
 
     const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin);
 
