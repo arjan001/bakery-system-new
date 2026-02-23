@@ -60,8 +60,32 @@ function clearSession() {
 }
 
 export default function POSPage() {
-  // ── Auth (login disabled — anyone can use POS) ──
-  const [loggedCashier] = useState('Cashier');
+  // ── Auth — resolve actual cashier name from authenticated user ──
+  const [loggedCashier, setLoggedCashier] = useState('Cashier');
+
+  useEffect(() => {
+    async function resolveCashierName() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const meta = user.user_metadata || {};
+          const email = user.email || '';
+          // Try to get name from employee record first
+          const { data: emp } = await supabase
+            .from('employees')
+            .select('first_name, last_name')
+            .eq('login_email', email)
+            .single();
+          if (emp) {
+            setLoggedCashier(`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Cashier');
+          } else {
+            setLoggedCashier((meta.full_name as string) || email.split('@')[0] || 'Cashier');
+          }
+        }
+      } catch { /* use default */ }
+    }
+    resolveCashierName();
+  }, []);
 
   // ── Opening / Closing Balance ──
   // Check for existing session on mount
@@ -833,7 +857,7 @@ export default function POSPage() {
               <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />
               <p style={{ margin: '0', fontSize: '10px' }}>Receipt: {receiptData?.receiptNo}</p>
               <p style={{ margin: '2px 0', fontSize: '10px' }}>{receiptData?.date}</p>
-              {receiptSettings.showCashier && <p style={{ margin: '2px 0', fontSize: '10px' }}>Cashier: {receiptData?.cashier}</p>}
+              {receiptSettings.showCashier && <p style={{ margin: '2px 0', fontSize: '10px' }}>Served by: {receiptData?.cashier}</p>}
               {receiptSettings.showCustomer && <p style={{ margin: '2px 0', fontSize: '10px' }}>Customer: {receiptData?.customer}</p>}
             </div>
             <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '8px 0' }} />

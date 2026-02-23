@@ -453,19 +453,23 @@ export default function EmployeeProductivityPage() {
       }
     }
 
-    // Aggregate from pos_sales (cashier activity)
+    // Aggregate from pos_sales (cashier activity) — use cashier_name field
     const { data: posData } = await supabase
       .from('pos_sales')
-      .select('cashier, created_at');
+      .select('cashier_name, created_at, total, status')
+      .neq('status', 'Shift Close');
 
     if (posData && posData.length > 0) {
-      const salesCounts: Record<string, number> = {};
+      const salesCounts: Record<string, { count: number; revenue: number }> = {};
       for (const sale of posData) {
         const r = sale as Record<string, unknown>;
-        const cashier = (r.cashier || '') as string;
+        const cashier = ((r.cashier_name || '') as string).trim();
         const saleDate = ((r.created_at || '') as string).split('T')[0];
+        const saleTotal = (r.total || 0) as number;
         if (cashier && saleDate >= dateFrom && saleDate <= dateTo) {
-          salesCounts[cashier] = (salesCounts[cashier] || 0) + 1;
+          if (!salesCounts[cashier]) salesCounts[cashier] = { count: 0, revenue: 0 };
+          salesCounts[cashier].count += 1;
+          salesCounts[cashier].revenue += saleTotal;
         }
       }
       for (const emp of employees) {
@@ -477,9 +481,9 @@ export default function EmployeeProductivityPage() {
               id: `pos-${emp.id}`,
               employeeId: emp.id,
               metricType: 'pos_sales',
-              metricValue: salesCounts[fullName],
+              metricValue: salesCounts[fullName].count,
               date: dateTo,
-              notes: 'Aggregated from POS sales',
+              notes: `Auto-tracked: ${salesCounts[fullName].count} sales, revenue ${salesCounts[fullName].revenue.toLocaleString()}`,
               createdAt: new Date().toISOString(),
             });
           }
@@ -564,6 +568,83 @@ export default function EmployeeProductivityPage() {
             notes: 'Aggregated from deliveries',
             createdAt: new Date().toISOString(),
           });
+        }
+      }
+    }
+
+    // Aggregate system logins from audit_log
+    const { data: loginData } = await supabase
+      .from('audit_log')
+      .select('user_name, created_at')
+      .eq('action', 'LOGIN')
+      .gte('created_at', dateFrom + 'T00:00:00')
+      .lte('created_at', dateTo + 'T23:59:59');
+
+    if (loginData && loginData.length > 0) {
+      const loginCounts: Record<string, number> = {};
+      for (const log of loginData) {
+        const r = log as Record<string, unknown>;
+        const userName = ((r.user_name || '') as string).trim();
+        if (userName) {
+          loginCounts[userName] = (loginCounts[userName] || 0) + 1;
+        }
+      }
+      for (const emp of employees) {
+        const fullName = `${emp.firstName} ${emp.lastName}`.trim();
+        const matchedName = Object.keys(loginCounts).find(
+          name => name.toLowerCase() === fullName.toLowerCase() || name.toLowerCase() === (emp.email || '').toLowerCase()
+        );
+        if (matchedName) {
+          const existing = records.find(r => r.employeeId === emp.id && r.metricType === 'system_logins');
+          if (!existing) {
+            records.push({
+              id: `login-${emp.id}`,
+              employeeId: emp.id,
+              metricType: 'system_logins',
+              metricValue: loginCounts[matchedName],
+              date: dateTo,
+              notes: 'Auto-tracked from system login records',
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    }
+
+    // Aggregate from orders (order management activity)
+    const { data: orderData } = await supabase
+      .from('orders')
+      .select('created_at, status, delivery_notes')
+      .gte('created_at', dateFrom + 'T00:00:00')
+      .lte('created_at', dateTo + 'T23:59:59');
+
+    if (orderData && orderData.length > 0) {
+      // Track POS-facilitated orders by parsing delivery_notes for cashier info
+      const facilitatedCounts: Record<string, number> = {};
+      for (const order of orderData) {
+        const r = order as Record<string, unknown>;
+        const notes = ((r.delivery_notes || '') as string);
+        const cashierMatch = notes.match(/Cashier:\s*(.+?)$/);
+        if (cashierMatch) {
+          const cashierName = cashierMatch[1].trim();
+          facilitatedCounts[cashierName] = (facilitatedCounts[cashierName] || 0) + 1;
+        }
+      }
+      for (const emp of employees) {
+        const fullName = `${emp.firstName} ${emp.lastName}`.trim();
+        if (facilitatedCounts[fullName]) {
+          const existing = records.find(r => r.employeeId === emp.id && r.metricType === 'pos_facilitated');
+          if (!existing) {
+            records.push({
+              id: `facilitated-${emp.id}`,
+              employeeId: emp.id,
+              metricType: 'pos_facilitated',
+              metricValue: facilitatedCounts[fullName],
+              date: dateTo,
+              notes: 'Auto-tracked from order records facilitated via POS',
+              createdAt: new Date().toISOString(),
+            });
+          }
         }
       }
     }
@@ -941,17 +1022,43 @@ export default function EmployeeProductivityPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Employee Productivity</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Track and manage employee KPIs, performance scores, and productivity metrics across all departments.
+            Automated tracking of employee KPIs and performance across all modules — POS, Production, Delivery, Inventory, and more. Data is synced automatically from system activity.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => { fetchProductivityRecords(); fetchAuditActivity(); }}
+            disabled={loading}
+            className="px-4 py-2 text-sm border border-primary text-primary rounded-lg hover:bg-primary/10 font-medium transition-colors disabled:opacity-40"
+          >
+            {loading ? 'Syncing...' : 'Refresh Data'}
+          </button>
           <ExportButtons onCSV={handleExportCSV} onPDF={handleExportPDF} />
           <button
             onClick={() => handleOpenLogModal()}
             className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium transition-opacity"
           >
-            + Log Productivity
+            + Manual Entry
           </button>
+        </div>
+      </div>
+
+      {/* Auto-tracking info banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+            <span className="text-sm">&#9889;</span>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-blue-900">Automated Productivity Tracking</p>
+            <p className="text-xs text-blue-700 mt-0.5">
+              This module automatically tracks employee activity based on their role and permissions across the entire system.
+              <strong> Bakers:</strong> production runs completed &bull;
+              <strong> Riders/Drivers:</strong> deliveries completed vs assigned &bull;
+              <strong> Cashiers/Sales:</strong> POS transactions &bull;
+              <strong> All roles:</strong> system logins, audit trail actions, waste reporting, and module interactions.
+            </p>
+          </div>
         </div>
       </div>
 

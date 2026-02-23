@@ -324,21 +324,23 @@ export default function EmployeesPage() {
         });
       }
 
-      // Create Supabase Auth user if system access is enabled and password is provided
+      // Create Supabase Auth user via server-side API route
+      // This avoids session conflicts (admin stays logged in) and bypasses email confirmation
       if (dataToSave.systemAccess && loginPassword && dataToSave.loginEmail) {
         try {
-          const { error: signUpError } = await supabase.auth.signUp({
-            email: dataToSave.loginEmail,
-            password: loginPassword,
-            options: {
-              data: {
-                full_name: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
-                role: dataToSave.loginRole,
-              },
-            },
+          const res = await fetch('/api/auth/create-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: dataToSave.loginEmail,
+              password: loginPassword,
+              fullName: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
+              role: dataToSave.loginRole,
+            }),
           });
-          if (signUpError && !signUpError.message.includes('already registered')) {
-            console.error('Auth user creation error:', signUpError.message);
+          const result = await res.json();
+          if (!result.success) {
+            console.error('Auth user creation error:', result.message);
           }
         } catch (authErr) {
           console.error('Auth creation failed:', authErr);

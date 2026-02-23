@@ -31,12 +31,18 @@ export default function LoginPage() {
 
       if (authError) throw authError;
 
-      // Update last login in users table
       if (data.user) {
+        // Ensure the user has a record in the users table (may be missing for employee accounts)
+        const meta = data.user.user_metadata || {};
         await supabase
           .from('users')
-          .update({ last_login: new Date().toISOString() })
-          .eq('id', data.user.id);
+          .upsert({
+            id: data.user.id,
+            email: data.user.email,
+            full_name: (meta.full_name as string) || data.user.email?.split('@')[0] || '',
+            is_active: true,
+            last_login: new Date().toISOString(),
+          }, { onConflict: 'id' });
 
         logAudit({
           action: 'LOGIN',
@@ -45,20 +51,7 @@ export default function LoginPage() {
           details: { email: data.user.email },
         });
 
-        // Check user role for redirect
-        const email = data.user.email || '';
-        const { data: emp } = await supabase
-          .from('employees')
-          .select('login_role, system_access')
-          .eq('login_email', email)
-          .single();
-
-        if (emp && emp.system_access && emp.login_role !== 'Admin') {
-          // Non-admin users go to their account page first
-          router.push('/admin');
-        } else {
-          router.push('/admin');
-        }
+        router.push('/admin');
         return;
       }
 

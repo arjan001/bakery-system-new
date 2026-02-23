@@ -1,9 +1,10 @@
 {
-  "name": "Snackoh Bakers Admin",
-  "short_name": "Snackoh Admin",
-  "description": "Snackoh Bakers Management System",
+  "name": "Snackoh Bakers Management System",
+  "short_name": "Snackoh",
+  "description": "Snackoh Bakers — Complete Bakery Management System with POS, Inventory, Delivery & HR",
   "start_url": "/admin",
   "scope": "/",
+  "id": "/admin",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ea580c",
@@ -36,5 +37,6 @@
     }
   ],
   "screenshots": [],
-  "prefer_related_applications": false
+  "prefer_related_applications": false,
+  "related_applications": []
 }
