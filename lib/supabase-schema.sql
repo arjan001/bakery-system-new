@@ -55,6 +55,7 @@ ALTER TABLE users ADD CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES 
 -- =============================================
 CREATE TABLE IF NOT EXISTS employees (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  employee_id_number TEXT,
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   designation TEXT DEFAULT 'Mr',
@@ -69,10 +70,12 @@ CREATE TABLE IF NOT EXISTS employees (
   next_of_kin_phone TEXT,
   address TEXT,
   id_number TEXT,
+  profile_photo_url TEXT,
   driver_license_id TEXT,
   driver_license_expiry DATE,
   hygiene_cert_no TEXT,
   hygiene_cert_expiry DATE,
+  certificates JSONB DEFAULT '[]',
   bank_name TEXT,
   bank_account_no TEXT,
   nhif_no TEXT,
@@ -81,6 +84,12 @@ CREATE TABLE IF NOT EXISTS employees (
   emergency_contact TEXT,
   emergency_phone TEXT,
   notes TEXT,
+  system_access BOOLEAN DEFAULT false,
+  login_email TEXT,
+  login_role TEXT DEFAULT 'Viewer',
+  permissions JSONB DEFAULT '[]',
+  primary_outlet_id UUID,
+  primary_outlet_name TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -197,6 +206,10 @@ CREATE TABLE IF NOT EXISTS customers (
   email TEXT,
   location TEXT,
   address TEXT,
+  gps_lat DECIMAL DEFAULT 0,
+  gps_lng DECIMAL DEFAULT 0,
+  landmark TEXT,
+  delivery_instructions TEXT,
   credit_limit DECIMAL DEFAULT 0,
   purchase_volume DECIMAL DEFAULT 0,
   rating DECIMAL DEFAULT 0,
@@ -218,10 +231,14 @@ CREATE TABLE IF NOT EXISTS orders (
   total_amount DECIMAL DEFAULT 0,
   payment_status TEXT DEFAULT 'Unpaid',
   payment_method TEXT,
+  source TEXT DEFAULT 'Regular',
+  fulfillment TEXT DEFAULT 'Delivery',
+  rejection_reason TEXT,
   order_date DATE DEFAULT CURRENT_DATE,
   due_date DATE,
   assigned_driver TEXT,
   delivery_notes TEXT,
+  pos_sale_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -490,6 +507,7 @@ CREATE TABLE IF NOT EXISTS pos_sales (
   cashier_id UUID REFERENCES employees(id) ON DELETE SET NULL,
   cashier_name TEXT,
   status TEXT DEFAULT 'Completed',
+  outlet_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -696,3 +714,35 @@ ON CONFLICT (name) DO NOTHING;
 INSERT INTO customers (name, type, phone, location) VALUES
   ('Walk-in Customer', 'Retail', '', 'Counter')
 ON CONFLICT DO NOTHING;
+
+-- =============================================
+-- 27. EMPLOYEE CATEGORIES
+-- =============================================
+CREATE TABLE IF NOT EXISTS employee_categories (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO employee_categories (name) VALUES
+  ('Baker'), ('Driver'), ('Sales'), ('Admin'),
+  ('Quality'), ('Packer'), ('Supervisor'), ('Manager'),
+  ('Rider'), ('Cleaner'), ('Cashier')
+ON CONFLICT (name) DO NOTHING;
+
+-- =============================================
+-- 28. BUSINESS SETTINGS (KEY-VALUE)
+-- =============================================
+CREATE TABLE IF NOT EXISTS business_settings (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  key TEXT NOT NULL UNIQUE,
+  value JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- INDEX: employee login_email for fast lookups
+-- =============================================
+CREATE INDEX IF NOT EXISTS idx_employees_login_email ON employees(login_email);
+CREATE INDEX IF NOT EXISTS idx_employees_system_access ON employees(system_access);

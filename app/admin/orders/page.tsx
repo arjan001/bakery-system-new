@@ -585,7 +585,12 @@ export default function OrdersPage() {
         <p className="font-medium text-sm">{order.customerName}</p>
         <p className="text-xs text-muted-foreground">{order.customerPhone}</p>
       </td>
-      <td className="px-4 py-3 text-sm text-muted-foreground">{order.items.length} item(s)</td>
+      <td className="px-4 py-3 text-sm text-muted-foreground">
+        {order.items.length} item(s)
+        {order.items.some(i => i.isNonInventory) && (
+          <span className="ml-1 text-[10px] px-1 py-0.5 bg-amber-100 text-amber-700 rounded">+custom</span>
+        )}
+      </td>
       <td className="px-4 py-3 font-semibold text-sm">KES {order.total.toLocaleString()}</td>
       <td className="px-4 py-3">
         <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(order.status)}`}>{order.status}</span>
@@ -1310,7 +1315,15 @@ export default function OrdersPage() {
                 <tbody>
                   {showDetailModal.items.map((item, i) => (
                     <tr key={i} className="border-t border-border">
-                      <td className="px-3 py-2">{item.productName}</td>
+                      <td className="px-3 py-2">
+                        {item.productName}
+                        {item.isNonInventory && (
+                          <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-800">Non-inventory</span>
+                        )}
+                        {item.isNonInventory && item.unitCost ? (
+                          <span className="ml-1 text-[10px] text-muted-foreground">(cost: KES {item.unitCost.toLocaleString()}/unit)</span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2 text-center">{item.quantity}</td>
                       <td className="px-3 py-2 text-right">KES {item.unitPrice.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right font-semibold">KES {(item.quantity * item.unitPrice).toLocaleString()}</td>
@@ -1322,6 +1335,17 @@ export default function OrdersPage() {
                     <td colSpan={3} className="px-3 py-2 text-right font-bold">Total</td>
                     <td className="px-3 py-2 text-right font-bold text-primary">KES {showDetailModal.total.toLocaleString()}</td>
                   </tr>
+                  {showDetailModal.items.some(i => i.isNonInventory && i.unitCost) && (
+                    <tr>
+                      <td colSpan={3} className="px-3 py-1 text-right text-xs text-muted-foreground">Non-inventory cost total</td>
+                      <td className="px-3 py-1 text-right text-xs text-muted-foreground">
+                        KES {showDetailModal.items
+                          .filter(i => i.isNonInventory && i.unitCost)
+                          .reduce((sum, i) => sum + (i.unitCost || 0) * i.quantity, 0)
+                          .toLocaleString()}
+                      </td>
+                    </tr>
+                  )}
                 </tfoot>
               </table>
             </div>

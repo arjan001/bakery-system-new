@@ -109,6 +109,8 @@ function dbToEmployee(row: Record<string, unknown>): Employee {
     permissions: parsedPermissions,
     primaryOutletId: (row.primary_outlet_id as string) || '',
     primaryOutletName: (row.primary_outlet_name as string) || '',
+    lastLogin: (row.last_login as string) || null,
+    lastActivity: (row.last_activity as string) || null,
   } as Employee;
 }
 
@@ -176,15 +178,27 @@ export default function EmployeesPage() {
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
-    const empList = (!error && data && data.length > 0)
-      ? data.map(r => dbToEmployee(r as Record<string, unknown>))
-      : [];
+    let empList: Employee[] = [];
+
+    try {
+      const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
+      if (error) {
+        console.error('Error fetching employees:', error.message);
+      }
+      empList = (!error && data && data.length > 0)
+        ? data.map(r => dbToEmployee(r as Record<string, unknown>))
+        : [];
+    } catch (err) {
+      console.error('Failed to fetch employees:', err);
+    }
 
     // Fetch user activity data (last_login, last_activity) from users table
     let userActivityMap: Record<string, { lastLogin: string | null; lastActivity: string | null }> = {};
     try {
-      const { data: usersData } = await supabase.from('users').select('email, last_login, last_activity, full_name, id, role_id, is_active');
+      const { data: usersData, error: usersError } = await supabase.from('users').select('email, last_login, last_activity, full_name, id, role_id, is_active');
+      if (usersError) {
+        console.error('Error fetching users:', usersError.message);
+      }
       if (usersData && usersData.length > 0) {
         for (const u of usersData) {
           const email = ((u.email || '') as string).toLowerCase();
@@ -198,13 +212,23 @@ export default function EmployeesPage() {
 
         // Also add auth users who may not be in employees table (e.g. super admins)
         const existingEmails = new Set(empList.map(e => (e.loginEmail || e.email || '').toLowerCase()).filter(Boolean));
+        const defaultEmptyForm: Employee = {
+          id: '', employeeIdNumber: '', firstName: '', lastName: '', designation: 'Mr',
+          email: '', phone: '', department: 'Administration', role: '', category: 'Admin',
+          hireDate: '', status: 'Active', nextOfKin: '', nextOfKinPhone: '', address: '',
+          idNumber: '', profilePhotoUrl: '', driverLicenseId: '', driverLicenseExpiry: '',
+          hygieneCertNo: '', hygieneCertExpiry: '', certificates: [], bankName: '',
+          bankAccountNo: '', nhifNo: '', nssfNo: '', kraPin: '', emergencyContact: '',
+          emergencyPhone: '', notes: '', systemAccess: true, loginEmail: '', loginRole: 'Admin',
+          permissions: [...ALL_PERMISSIONS], lastLogin: null, lastActivity: null,
+        };
         for (const authUser of usersData) {
           const email = ((authUser.email || '') as string).toLowerCase();
           if (email && !existingEmails.has(email)) {
             const fullName = ((authUser.full_name || email.split('@')[0] || '') as string);
             const nameParts = fullName.split(' ');
             empList.push({
-              ...emptyForm,
+              ...defaultEmptyForm,
               id: authUser.id as string,
               firstName: nameParts[0] || '',
               lastName: nameParts.slice(1).join(' ') || '',
@@ -403,20 +427,38 @@ export default function EmployeesPage() {
     }));
   };
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError(null);
+    setSaveSuccess(null);
     const dataToSave = { ...formData };
     if (autoGenerateId && !editingId && !dataToSave.employeeIdNumber) {
       dataToSave.employeeIdNumber = generateEmployeeId(dataToSave.category);
     }
-    const dbRow = mapToDb(dataToSave as unknown as Record<string, unknown>, ['id', 'certificates', 'permissions']);
+    const dbRow = mapToDb(dataToSave as unknown as Record<string, unknown>, ['id', 'certificates', 'permissions', 'lastLogin', 'lastActivity']);
     // Store certificates and permissions as JSON strings
     (dbRow as Record<string, unknown>)['certificates'] = JSON.stringify(dataToSave.certificates);
     (dbRow as Record<string, unknown>)['permissions'] = JSON.stringify(dataToSave.permissions);
+    // Remove fields that come from users table join (not employee columns)
+    delete (dbRow as Record<string, unknown>)['last_login'];
+    delete (dbRow as Record<string, unknown>)['last_activity'];
+
+    let employeeSaved = false;
     try {
       if (editingId) {
         const { error } = await supabase.from('employees').update(dbRow).eq('id', editingId);
-        if (error) throw error;
+        if (error) {
+          // If columns don't exist, try with only basic fields
+          const basicRow = { ...dbRow };
+          const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name'];
+          for (const col of extendedCols) delete (basicRow as Record<string, unknown>)[col];
+          const { error: fallbackError } = await supabase.from('employees').update(basicRow).eq('id', editingId);
+          if (fallbackError) throw fallbackError;
+        }
+        employeeSaved = true;
         logAudit({
           action: 'UPDATE',
           module: 'Employees',
@@ -425,7 +467,15 @@ export default function EmployeesPage() {
         });
       } else {
         const { error } = await supabase.from('employees').insert(dbRow);
-        if (error) throw error;
+        if (error) {
+          // If columns don't exist, try with only basic fields
+          const basicRow = { ...dbRow };
+          const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name'];
+          for (const col of extendedCols) delete (basicRow as Record<string, unknown>)[col];
+          const { error: fallbackError } = await supabase.from('employees').insert(basicRow);
+          if (fallbackError) throw fallbackError;
+        }
+        employeeSaved = true;
         logAudit({
           action: 'CREATE',
           module: 'Employees',
@@ -433,43 +483,56 @@ export default function EmployeesPage() {
           details: { name: `${dataToSave.firstName} ${dataToSave.lastName}`, category: dataToSave.category, department: dataToSave.department },
         });
       }
-
-      // Create Supabase Auth user via server-side API route
-      // This avoids session conflicts (admin stays logged in) and bypasses email confirmation
-      if (dataToSave.systemAccess && loginPassword && dataToSave.loginEmail) {
-        try {
-          const res = await fetch('/api/auth/create-user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: dataToSave.loginEmail,
-              password: loginPassword,
-              fullName: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
-              role: dataToSave.loginRole,
-            }),
-          });
-          const result = await res.json();
-          if (!result.success) {
-            console.error('Auth user creation error:', result.message);
-          }
-        } catch (authErr) {
-          console.error('Auth creation failed:', authErr);
-        }
-      }
-
-      await fetchEmployees();
     } catch (err) {
       console.error('Employee save error:', err);
+      setSaveError(`Failed to save employee: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // Still add to local state so the UI shows the entry
       if (editingId) {
         setEmployees(employees.map(emp => emp.id === editingId ? { ...dataToSave, id: editingId } : emp));
       } else {
         setEmployees([...employees, { ...dataToSave, id: Date.now().toString() }]);
       }
     }
+
+    // Create Supabase Auth user via server-side API route
+    // This avoids session conflicts (admin stays logged in) and bypasses email confirmation
+    if (dataToSave.systemAccess && loginPassword && dataToSave.loginEmail) {
+      try {
+        const res = await fetch('/api/auth/create-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: dataToSave.loginEmail,
+            password: loginPassword,
+            fullName: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
+            role: dataToSave.loginRole,
+          }),
+        });
+        const result = await res.json();
+        if (!result.success) {
+          setSaveError(prev => (prev ? prev + ' | ' : '') + `Auth user: ${result.message}`);
+        } else {
+          setSaveSuccess(prev => (prev ? prev + ' | ' : '') + `System login created for ${dataToSave.loginEmail}`);
+        }
+      } catch (authErr) {
+        console.error('Auth creation failed:', authErr);
+        setSaveError(prev => (prev ? prev + ' | ' : '') + 'Failed to create system login. Please try again.');
+      }
+    }
+
+    if (employeeSaved) {
+      await fetchEmployees();
+      if (!saveError) {
+        setSaveSuccess(`Employee ${dataToSave.firstName} ${dataToSave.lastName} ${editingId ? 'updated' : 'created'} successfully.`);
+      }
+    }
+
     setEditingId(null);
     setLoginPassword('');
     resetForm();
     setShowForm(false);
+    // Auto-dismiss messages after 5 seconds
+    setTimeout(() => { setSaveError(null); setSaveSuccess(null); }, 5000);
   };
 
   const resetForm = () => {
@@ -565,11 +628,13 @@ export default function EmployeesPage() {
   const handleLoginAsUser = async (emp: Employee) => {
     const targetEmail = emp.loginEmail || emp.email;
     if (!targetEmail) {
-      alert('This employee does not have a login email configured.');
+      setSaveError('This employee does not have a login email configured. Edit the employee and set up System Access.');
+      setTimeout(() => setSaveError(null), 5000);
       return;
     }
     if (!emp.systemAccess) {
-      alert('This employee does not have system access enabled.');
+      setSaveError('This employee does not have system access enabled. Edit the employee and enable System Access.');
+      setTimeout(() => setSaveError(null), 5000);
       return;
     }
 
@@ -594,7 +659,8 @@ export default function EmployeesPage() {
 
       const result = await res.json();
       if (!result.success) {
-        alert(`Impersonation failed: ${result.message}`);
+        setSaveError(`Impersonation failed: ${result.message}`);
+        setTimeout(() => setSaveError(null), 5000);
         setImpersonating(null);
         return;
       }
@@ -622,7 +688,8 @@ export default function EmployeesPage() {
       });
     } catch (err) {
       console.error('Impersonation error:', err);
-      alert('Failed to initiate impersonation. Please try again.');
+      setSaveError('Failed to initiate impersonation. Please try again.');
+      setTimeout(() => setSaveError(null), 5000);
     } finally {
       setImpersonating(null);
     }
@@ -659,6 +726,19 @@ export default function EmployeesPage() {
 
   return (
     <div className="p-8">
+      {/* Toast notifications */}
+      {saveError && (
+        <div className="fixed top-4 right-4 z-[60] px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-red-600 text-white max-w-md">
+          {saveError}
+          <button onClick={() => setSaveError(null)} className="ml-3 text-white/80 hover:text-white">&times;</button>
+        </div>
+      )}
+      {saveSuccess && (
+        <div className="fixed top-4 right-4 z-[60] px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-green-600 text-white max-w-md">
+          {saveSuccess}
+          <button onClick={() => setSaveSuccess(null)} className="ml-3 text-white/80 hover:text-white">&times;</button>
+        </div>
+      )}
       <div className="mb-8">
         <h1 className="mb-2 text-2xl font-bold">Employee Management (HR)</h1>
         <p className="text-muted-foreground">Full HR system -- manage profiles, certificates, payroll details, system access, and compliance</p>
@@ -903,11 +983,11 @@ export default function EmployeesPage() {
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Primary Outlet</label>
                         <select
-                          value={(formData as Record<string, unknown>).primaryOutletId as string || ''}
+                          value={(formData as unknown as Record<string, unknown>).primaryOutletId as string || ''}
                           onChange={(e) => {
                             const outletId = e.target.value;
                             const outlet = outlets.find(o => o.id === outletId);
-                            setFormData({ ...formData, ...({ primaryOutletId: outletId || null, primaryOutletName: outlet?.name || '' } as Record<string, unknown>) } as Employee);
+                            setFormData({ ...formData, ...({ primaryOutletId: outletId || null, primaryOutletName: outlet?.name || '' } as unknown as Partial<Employee>) } as Employee);
                           }}
                           className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                         >
