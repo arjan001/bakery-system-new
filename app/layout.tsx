@@ -11,8 +11,8 @@ export const metadata: Metadata = {
   description: 'Fresh baked goods delivered to your door — Snackoh Bakers',
   manifest: '/manifest.json',
   icons: {
-    icon: '/company-logo.jpeg',
-    apple: '/company-logo.jpeg',
+    icon: '/icon-192.png',
+    apple: '/apple-icon.png',
   },
 }
 
@@ -27,7 +27,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#ea580c" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <link rel="apple-touch-icon" href="/company-logo.jpeg" />
+        <link rel="apple-touch-icon" href="/apple-icon.png" />
       </head>
       <body className="font-sans antialiased">
         {children}

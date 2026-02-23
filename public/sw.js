@@ -1,11 +1,13 @@
 // Snackoh Bakers Admin — Service Worker
 // Only caches /admin routes. Network-first strategy with app shell caching.
 
-const CACHE_NAME = 'snackoh-admin-v2';
+const CACHE_NAME = 'snackoh-admin-v3';
 
 const APP_SHELL_URLS = [
   '/admin',
   '/company-logo.jpeg',
+  '/icon-192.png',
+  '/icon-512.png',
   '/manifest.json',
 ];
 

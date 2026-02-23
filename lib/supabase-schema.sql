@@ -231,6 +231,9 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity DECIMAL NOT NULL,
   unit_price DECIMAL NOT NULL,
   total DECIMAL NOT NULL,
+  is_non_inventory BOOLEAN DEFAULT false,
+  unit_cost DECIMAL DEFAULT 0,
+  cost_total DECIMAL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -497,6 +500,9 @@ CREATE TABLE IF NOT EXISTS pos_sale_items (
   quantity DECIMAL NOT NULL,
   unit_price DECIMAL NOT NULL,
   total DECIMAL NOT NULL,
+  is_non_inventory BOOLEAN DEFAULT false,
+  unit_cost DECIMAL DEFAULT 0,
+  cost_total DECIMAL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

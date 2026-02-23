@@ -7,7 +7,7 @@ interface UserPermissions {
   userId: string;
   email: string;
   fullName: string;
-  role: string;         // loginRole from employee (Admin, Baker, Driver, Sales, Viewer)
+  role: string;         // loginRole from employee (Admin, Administrator, Baker, Driver, Sales, Cashier, Viewer)
   permissions: string[];
   isAdmin: boolean;
   loading: boolean;
@@ -33,10 +33,11 @@ export function useUserPermissions() {
 export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean): string[] {
   if (isAdmin) return []; // empty means all allowed
 
-  const routes: string[] = ['/admin/account']; // everyone can access account settings
+  const routes: string[] = [];
 
   const permRouteMap: Record<string, string[]> = {
     'View Dashboard': ['/admin'],
+    'Access POS': ['/admin/pos'],
     'Manage Orders': ['/admin/orders', '/admin/delivery'],
     'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets', '/admin/stock-reorder'],
     'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
@@ -55,17 +56,37 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     routes.push('/admin/orders');
     routes.push('/admin/delivery');
   }
+  if (role === 'Cashier') {
+    routes.push('/admin/pos');
+  }
 
   for (const perm of permissions) {
     const r = permRouteMap[perm];
     if (r) routes.push(...r);
   }
 
-  return [...new Set(routes)];
+  const unique = [...new Set(routes)];
+  if (!unique.includes('/admin/account')) unique.push('/admin/account');
+  return unique;
 }
 
 export function UserPermissionsProvider({ children }: { children: React.ReactNode }) {
   const [perms, setPerms] = useState<UserPermissions>(defaultPerms);
+
+  const fetchRolePermissions = useCallback(async (roleName: string): Promise<string[]> => {
+    if (!roleName) return [];
+    try {
+      const { data: role } = await supabase.from('roles').select('id').eq('name', roleName).single();
+      if (!role?.id) return [];
+      const { data: rp } = await supabase.from('role_permissions').select('permission_id').eq('role_id', role.id);
+      const permIds = (rp || []).map((r: Record<string, unknown>) => r.permission_id as string).filter(Boolean);
+      if (permIds.length === 0) return [];
+      const { data: permsData } = await supabase.from('permissions').select('name').in('id', permIds).eq('enabled', true);
+      return (permsData || []).map((p: Record<string, unknown>) => (p.name || '') as string).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }, []);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -95,7 +116,11 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
         } catch { parsedPermissions = []; }
 
         const loginRole = emp.login_role || 'Viewer';
-        const isAdmin = loginRole === 'Admin';
+        if (parsedPermissions.length === 0) {
+          const rolePerms = await fetchRolePermissions(loginRole);
+          if (rolePerms.length > 0) parsedPermissions = rolePerms;
+        }
+        const isAdmin = loginRole === 'Admin' || loginRole === 'Super Admin' || loginRole === 'Administrator';
 
         setPerms({
           userId: user.id,
@@ -121,7 +146,7 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
     } catch {
       setPerms({ ...defaultPerms, loading: false, isAdmin: true });
     }
-  }, []);
+  }, [fetchRolePermissions]);
 
   useEffect(() => { loadPermissions(); }, [loadPermissions]);
 
