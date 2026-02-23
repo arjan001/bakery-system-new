@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight } from 'lucide-react';
+import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 import { useUserPermissions } from '@/lib/user-permissions';
 
@@ -142,23 +142,37 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
-  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+  const [activeTab, setActiveTab] = useState<'available' | 'my_deliveries' | 'completed'>('available');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const perPage = 10;
 
   const fetchMyDeliveries = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
       .from('deliveries')
       .select('*')
-      .or(`driver.ilike.%${riderName}%,driver_name.ilike.%${riderName}%`)
       .order('created_at', { ascending: false });
     if (data) {
       setDeliveries(data.map((r: Record<string, unknown>) => dbToDelivery(r)));
     }
     setLoading(false);
-  }, [riderName]);
+  }, []);
 
   useEffect(() => { fetchMyDeliveries(); }, [fetchMyDeliveries]);
 
+  // Take an order (rider accepts it)
+  const handleTakeOrder = async (id: string) => {
+    await supabase.from('deliveries').update({
+      status: 'Assigned',
+      driver: riderName,
+      driver_name: riderName,
+    }).eq('id', id);
+    logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'Assigned', rider: riderName, action: 'Took order' } });
+    setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: 'Assigned' as const, driverName: riderName } : d));
+  };
+
+  // Pick up the order (start transit)
   const handlePickUp = async (id: string) => {
     await supabase.from('deliveries').update({ status: 'In Transit' }).eq('id', id);
     logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'In Transit', rider: riderName } });
@@ -186,165 +200,265 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
   const getMapLinkUrl = (lat: number, lng: number) =>
     `https://www.google.com/maps?q=${lat},${lng}`;
 
-  const activeDeliveries = deliveries.filter(d => d.status === 'Pending' || d.status === 'Assigned' || d.status === 'In Transit');
-  const completedDeliveries = deliveries.filter(d => d.status === 'Delivered' || d.status === 'Failed');
-  const displayList = activeTab === 'active' ? activeDeliveries : completedDeliveries;
+  const isMyDelivery = (d: Delivery) =>
+    d.driverName?.toLowerCase().includes(riderName.toLowerCase());
+
+  // Tab filtering
+  const availableDeliveries = deliveries.filter(d => d.status === 'Pending' && !isMyDelivery(d));
+  const myActiveDeliveries = deliveries.filter(d =>
+    isMyDelivery(d) && (d.status === 'Assigned' || d.status === 'In Transit')
+  );
+  const completedDeliveries = deliveries.filter(d =>
+    isMyDelivery(d) && (d.status === 'Delivered' || d.status === 'Failed')
+  );
+
+  const displayList = activeTab === 'available' ? availableDeliveries
+    : activeTab === 'my_deliveries' ? myActiveDeliveries
+    : completedDeliveries;
+
+  // Search filter
+  const filtered = displayList.filter(d => {
+    if (!searchTerm) return true;
+    return `${d.trackingNumber} ${d.customerName} ${d.customerLocation} ${d.customerPhone}`.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  useEffect(() => { setCurrentPage(1); }, [activeTab, searchTerm]);
 
   const getStatusBadge = (s: Delivery['status']) => {
     switch (s) {
-      case 'Pending': return 'bg-yellow-500 text-white';
-      case 'Assigned': return 'bg-purple-500 text-white';
-      case 'In Transit': return 'bg-blue-500 text-white';
-      case 'Delivered': return 'bg-green-500 text-white';
-      case 'Failed': return 'bg-red-500 text-white';
+      case 'Pending': return 'bg-secondary text-foreground border border-border';
+      case 'Assigned': return 'bg-foreground text-background';
+      case 'In Transit': return 'bg-foreground/80 text-background';
+      case 'Delivered': return 'bg-foreground text-background';
+      case 'Failed': return 'bg-red-600 text-white';
     }
   };
 
   const today = new Date().toISOString().split('T')[0];
-  const todayActive = activeDeliveries.filter(d => d.scheduledDate === today).length;
+  const todayActive = myActiveDeliveries.filter(d => d.scheduledDate === today).length;
   const todayCompleted = completedDeliveries.filter(d => d.scheduledDate === today).length;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Rider Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-5">
+    <div className="p-8">
+      {/* Header */}
+      <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-blue-200 text-sm">Hello,</p>
-            <h1 className="text-xl font-bold">{riderName || 'Rider'}</h1>
-          </div>
-          <div className="text-right">
-            <p className="text-blue-200 text-xs">Today</p>
-            <p className="text-sm font-semibold">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
-          </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-3 mt-4">
-          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold">{todayActive}</p>
-            <p className="text-xs text-blue-100">Active</p>
-          </div>
-          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold">{todayCompleted}</p>
-            <p className="text-xs text-blue-100">Completed</p>
-          </div>
-          <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold">{deliveries.length}</p>
-            <p className="text-xs text-blue-100">Total</p>
+            <h1 className="mb-1">My Deliveries</h1>
+            <p className="text-muted-foreground">Welcome back, {riderName || 'Rider'} &mdash; {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-border bg-card sticky top-0 z-10">
-        <button
-          onClick={() => setActiveTab('active')}
-          className={`flex-1 py-3 text-sm font-semibold text-center border-b-2 transition-colors ${
-            activeTab === 'active' ? 'border-blue-500 text-blue-600' : 'border-transparent text-muted-foreground'
-          }`}
-        >
-          Active ({activeDeliveries.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('completed')}
-          className={`flex-1 py-3 text-sm font-semibold text-center border-b-2 transition-colors ${
-            activeTab === 'completed' ? 'border-green-500 text-green-600' : 'border-transparent text-muted-foreground'
-          }`}
-        >
-          Completed ({completedDeliveries.length})
-        </button>
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Available Orders</p>
+          <p className="text-2xl font-bold">{availableDeliveries.length}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">My Active</p>
+          <p className="text-2xl font-bold">{myActiveDeliveries.length}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Today Active</p>
+          <p className="text-2xl font-bold">{todayActive}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Today Completed</p>
+          <p className="text-2xl font-bold">{todayCompleted}</p>
+        </div>
       </div>
 
-      {/* Delivery Cards */}
-      <div className="p-4 space-y-3">
-        {loading ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm">Loading deliveries...</p>
-          </div>
-        ) : displayList.length === 0 ? (
-          <div className="text-center py-12">
-            <Truck className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-muted-foreground font-medium">
-              {activeTab === 'active' ? 'No active deliveries' : 'No completed deliveries'}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {activeTab === 'active' ? 'Deliveries assigned to you will appear here' : 'Completed deliveries will appear here'}
-            </p>
-          </div>
-        ) : (
-          displayList.map((d) => (
-            <div
-              key={d.id}
-              onClick={() => setSelectedDelivery(d)}
-              className="border border-border rounded-2xl bg-card p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+      {/* Tabs & Search */}
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex border border-border rounded-lg overflow-hidden">
+          <button
+            onClick={() => setActiveTab('available')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors ${
+              activeTab === 'available' ? 'bg-foreground text-background' : 'bg-card text-foreground hover:bg-secondary'
+            }`}
+          >
+            Available ({availableDeliveries.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('my_deliveries')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-l border-border ${
+              activeTab === 'my_deliveries' ? 'bg-foreground text-background' : 'bg-card text-foreground hover:bg-secondary'
+            }`}
+          >
+            My Deliveries ({myActiveDeliveries.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('completed')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-l border-border ${
+              activeTab === 'completed' ? 'bg-foreground text-background' : 'bg-card text-foreground hover:bg-secondary'
+            }`}
+          >
+            Completed ({completedDeliveries.length})
+          </button>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search deliveries..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none w-64"
+          />
+        </div>
+      </div>
+
+      {/* Data Table */}
+      {loading ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <div className="w-6 h-6 border-2 border-foreground border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm">Loading deliveries...</p>
+        </div>
+      ) : (
+        <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary border-b border-border">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold">Tracking #</th>
+                <th className="px-4 py-3 text-left font-semibold">Customer</th>
+                <th className="px-4 py-3 text-left font-semibold">Location</th>
+                <th className="px-4 py-3 text-left font-semibold">Date / Slot</th>
+                <th className="px-4 py-3 text-center font-semibold">Items</th>
+                <th className="px-4 py-3 text-center font-semibold">Status</th>
+                <th className="px-4 py-3 text-center font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center">
+                    <Truck className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+                    <p className="text-muted-foreground font-medium">
+                      {activeTab === 'available' ? 'No available orders right now' : activeTab === 'my_deliveries' ? 'No active deliveries' : 'No completed deliveries yet'}
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                paginated.map((d) => (
+                  <tr key={d.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs font-medium">{d.trackingNumber}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{d.customerName || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{d.customerPhone}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm max-w-[200px] truncate">{d.customerLocation || d.customerAddress || '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="text-xs">{d.scheduledDate || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{d.timeSlot}</div>
+                    </td>
+                    <td className="px-4 py-3 text-center">{d.items.length}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 text-xs rounded font-semibold ${getStatusBadge(d.status)}`}>{d.status}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1">
+                        {/* Eye icon - view delivery details & destination */}
+                        <button
+                          onClick={() => setSelectedDelivery(d)}
+                          className="p-2 rounded-lg border border-border hover:bg-secondary transition-colors"
+                          title="View delivery details & destination"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+
+                        {/* Plus icon - take this order (only for available Pending orders) */}
+                        {activeTab === 'available' && d.status === 'Pending' && (
+                          <button
+                            onClick={() => handleTakeOrder(d.id)}
+                            className="p-2 rounded-lg bg-foreground text-background hover:opacity-80 transition-colors"
+                            title="Take this order"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        )}
+
+                        {/* Pick Up button (for assigned deliveries) */}
+                        {activeTab === 'my_deliveries' && d.status === 'Assigned' && (
+                          <button
+                            onClick={() => handlePickUp(d.id)}
+                            className="px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-semibold hover:opacity-80 transition-colors"
+                            title="Pick up delivery"
+                          >
+                            Pick Up
+                          </button>
+                        )}
+
+                        {/* Delivered / Failed buttons (only for In Transit) */}
+                        {activeTab === 'my_deliveries' && d.status === 'In Transit' && (
+                          <>
+                            <button
+                              onClick={() => handleComplete(d.id)}
+                              className="px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-semibold hover:opacity-80 transition-colors"
+                              title="Mark as delivered"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleFailed(d.id)}
+                              className="p-2 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+                              title="Mark as failed"
+                            >
+                              <AlertTriangle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {filtered.length > perPage && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, filtered.length)} of {filtered.length} deliveries
+          </p>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 border border-border rounded-lg text-sm hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {/* Card Header */}
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-mono text-xs font-semibold text-muted-foreground">{d.trackingNumber}</span>
-                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(d.status)}`}>{d.status}</span>
-              </div>
-
-              {/* Customer Info */}
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                  <User className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate">{d.customerName || 'Unknown'}</p>
-                  <p className="text-xs text-muted-foreground">{d.customerPhone || '---'}</p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-              </div>
-
-              {/* Location */}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
-                <MapPin className="w-4 h-4 text-red-500 shrink-0" />
-                <span className="truncate">{d.customerLocation || d.customerAddress || 'No location set'}</span>
-              </div>
-
-              {/* Items & Schedule */}
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Package className="w-3.5 h-3.5" />
-                  <span>{d.items.length} item(s)</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{d.scheduledDate || '---'} {d.timeSlot ? `| ${d.timeSlot}` : ''}</span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              {(d.status === 'Pending' || d.status === 'Assigned') && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handlePickUp(d.id); }}
-                  className="w-full mt-3 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Navigation className="w-4 h-4" /> Pick Up Delivery
-                </button>
-              )}
-              {d.status === 'In Transit' && (
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleComplete(d.id); }}
-                    className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle className="w-4 h-4" /> Delivered
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleFailed(d.id); }}
-                    className="py-2.5 px-4 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <AlertTriangle className="w-4 h-4" /> Failed
-                  </button>
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
+              Previous
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`px-3 py-1.5 border rounded-lg text-sm font-medium ${
+                  page === currentPage
+                    ? 'bg-foreground text-background border-foreground'
+                    : 'border-border hover:bg-secondary'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 border border-border rounded-lg text-sm hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Delivery Detail Modal (Rider View) ── */}
       <Modal
@@ -357,7 +471,7 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
           <div className="space-y-5 max-h-[80vh] overflow-y-auto">
             {/* Status */}
             <div className="flex items-center justify-between">
-              <span className={`px-3 py-1.5 rounded-full text-sm font-bold ${getStatusBadge(selectedDelivery.status)}`}>{selectedDelivery.status}</span>
+              <span className={`px-3 py-1.5 rounded-lg text-sm font-bold ${getStatusBadge(selectedDelivery.status)}`}>{selectedDelivery.status}</span>
               <span className="text-xs text-muted-foreground">{selectedDelivery.scheduledDate} {selectedDelivery.timeSlot}</span>
             </div>
 
@@ -370,7 +484,7 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
                 const isFailed = selectedDelivery.status === 'Failed';
                 return (
                   <div key={s} className="flex-1">
-                    <div className={`h-1.5 rounded-full ${isFailed && idx === currentIdx ? 'bg-red-500' : isActive ? 'bg-green-500' : 'bg-gray-200'}`} />
+                    <div className={`h-1.5 rounded-full ${isFailed && idx === currentIdx ? 'bg-red-500' : isActive ? 'bg-foreground' : 'bg-secondary'}`} />
                     <p className={`text-[10px] mt-1 text-center ${isActive ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{s}</p>
                   </div>
                 );
@@ -378,22 +492,22 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
             </div>
 
             {/* Customer Card */}
-            <div className="border border-border rounded-2xl p-4">
+            <div className="border border-border rounded-lg p-4">
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Customer</p>
               <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                  <User className="w-6 h-6 text-blue-600" />
+                <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                  <User className="w-6 h-6 text-foreground" />
                 </div>
                 <div className="flex-1">
                   <p className="font-bold text-lg">{selectedDelivery.customerName || 'Unknown'}</p>
                   {selectedDelivery.customerPhone && (
-                    <a href={`tel:${selectedDelivery.customerPhone}`} className="flex items-center gap-1 text-blue-600 text-sm mt-1 hover:underline">
+                    <a href={`tel:${selectedDelivery.customerPhone}`} className="flex items-center gap-1 text-foreground text-sm mt-1 hover:underline">
                       <Phone className="w-3.5 h-3.5" /> {selectedDelivery.customerPhone}
                     </a>
                   )}
                   {selectedDelivery.customerLocation && (
                     <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                      <MapPin className="w-3.5 h-3.5 text-red-500" /> {selectedDelivery.customerLocation}
+                      <MapPin className="w-3.5 h-3.5" /> {selectedDelivery.customerLocation}
                     </div>
                   )}
                   {selectedDelivery.customerAddress && (
@@ -411,7 +525,7 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
                       href={getMapLinkUrl(selectedDelivery.customerGpsLat, selectedDelivery.customerGpsLng)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                      className="text-xs text-foreground hover:underline font-semibold flex items-center gap-1"
                     >
                       <Navigation className="w-3 h-3" /> Navigate
                     </a>
@@ -420,7 +534,7 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
                     src={getMapUrl(selectedDelivery.customerGpsLat, selectedDelivery.customerGpsLng)}
                     width="100%"
                     height="200"
-                    className="rounded-xl border border-border"
+                    className="rounded-lg border border-border"
                     style={{ border: 0 }}
                     loading="lazy"
                   />
@@ -429,7 +543,7 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
             </div>
 
             {/* Delivery Info */}
-            <div className="border border-border rounded-2xl p-4">
+            <div className="border border-border rounded-lg p-4">
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Delivery Details</p>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-muted-foreground">Tracking:</span> <span className="font-mono font-semibold ml-1">{selectedDelivery.trackingNumber}</span></div>
@@ -441,22 +555,28 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
 
             {/* Items */}
             {selectedDelivery.items.length > 0 && (
-              <div className="border border-border rounded-2xl p-4">
+              <div className="border border-border rounded-lg p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Items for Delivery ({selectedDelivery.items.length})</p>
-                <div className="space-y-2">
-                  {selectedDelivery.items.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-xs font-bold text-orange-600">{idx + 1}</div>
-                        <span className="font-medium">{item.name}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-bold">{item.quantity}</span>
-                        <span className="text-xs text-muted-foreground ml-1">{item.unit}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 text-muted-foreground font-medium">#</th>
+                      <th className="text-left py-2 text-muted-foreground font-medium">Item</th>
+                      <th className="text-right py-2 text-muted-foreground font-medium">Qty</th>
+                      <th className="text-left py-2 pl-3 text-muted-foreground font-medium">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDelivery.items.map((item, idx) => (
+                      <tr key={idx} className="border-b border-border/50 last:border-0">
+                        <td className="py-2 text-muted-foreground">{idx + 1}</td>
+                        <td className="py-2 font-medium">{item.name}</td>
+                        <td className="py-2 text-right font-bold">{item.quantity}</td>
+                        <td className="py-2 pl-3 text-muted-foreground">{item.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
 
@@ -464,15 +584,15 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
             {(selectedDelivery.notes || selectedDelivery.specialInstructions) && (
               <div className="space-y-3">
                 {selectedDelivery.notes && (
-                  <div className="border border-border rounded-2xl p-4">
+                  <div className="border border-border rounded-lg p-4">
                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">Delivery Notes</p>
                     <p className="text-sm">{selectedDelivery.notes}</p>
                   </div>
                 )}
                 {selectedDelivery.specialInstructions && (
-                  <div className="border border-yellow-200 bg-yellow-50 rounded-2xl p-4">
-                    <p className="text-xs font-bold text-yellow-800 uppercase tracking-wide mb-2">Special Instructions</p>
-                    <p className="text-sm text-yellow-700">{selectedDelivery.specialInstructions}</p>
+                  <div className="border border-border rounded-lg p-4 bg-secondary">
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">Special Instructions</p>
+                    <p className="text-sm">{selectedDelivery.specialInstructions}</p>
                   </div>
                 )}
               </div>
@@ -480,10 +600,18 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
 
             {/* Actions */}
             <div className="space-y-2 pt-3 border-t border-border">
-              {(selectedDelivery.status === 'Pending' || selectedDelivery.status === 'Assigned') && (
+              {selectedDelivery.status === 'Pending' && !isMyDelivery(selectedDelivery) && (
+                <button
+                  onClick={() => { handleTakeOrder(selectedDelivery.id); setSelectedDelivery(prev => prev ? { ...prev, status: 'Assigned' as const, driverName: riderName } : null); }}
+                  className="w-full py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-80 flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Take This Order
+                </button>
+              )}
+              {(selectedDelivery.status === 'Pending' || selectedDelivery.status === 'Assigned') && isMyDelivery(selectedDelivery) && (
                 <button
                   onClick={() => handlePickUp(selectedDelivery.id)}
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-80 flex items-center justify-center gap-2"
                 >
                   <Navigation className="w-4 h-4" /> Pick Up Delivery
                 </button>
@@ -492,13 +620,13 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleComplete(selectedDelivery.id)}
-                    className="flex-1 py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 flex items-center justify-center gap-2"
+                    className="flex-1 py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-80 flex items-center justify-center gap-2"
                   >
                     <CheckCircle className="w-4 h-4" /> Mark as Delivered
                   </button>
                   <button
                     onClick={() => handleFailed(selectedDelivery.id)}
-                    className="py-3 px-4 bg-red-100 text-red-700 rounded-xl text-sm font-bold hover:bg-red-200 flex items-center justify-center gap-2"
+                    className="py-3 px-4 border border-red-300 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 flex items-center justify-center gap-2"
                   >
                     <AlertTriangle className="w-4 h-4" /> Failed
                   </button>
@@ -506,7 +634,7 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
               )}
               <button
                 onClick={() => setSelectedDelivery(null)}
-                className="w-full py-2.5 border border-border rounded-xl text-sm hover:bg-secondary"
+                className="w-full py-2.5 border border-border rounded-lg text-sm hover:bg-secondary"
               >
                 Close
               </button>
