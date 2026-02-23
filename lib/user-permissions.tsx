@@ -20,9 +20,9 @@ const defaultPerms: UserPermissions = {
   userId: '',
   email: '',
   fullName: '',
-  role: 'Admin',
+  role: 'Viewer',
   permissions: [],
-  isAdmin: true,
+  isAdmin: false,
   loading: true,
   outletId: null,
   outletName: null,
@@ -48,7 +48,7 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets', '/admin/stock-reorder'],
     'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
     'Manage Customers': ['/admin/customers'],
-    'Manage Deliveries': ['/admin/delivery', '/admin/orders', '/admin/rider-reports'],
+    'Manage Deliveries': ['/admin/delivery', '/admin/orders', '/admin/order-tracking', '/admin/rider-reports'],
     'View Reports': ['/admin/reports', '/admin/employee-productivity'],
     'Manage Recipes': ['/admin/recipes', '/admin/food-info', '/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
     'Manage Pricing': ['/admin/pricing'],
@@ -62,17 +62,11 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
   };
 
   // Role-based defaults
-  if (role === 'Rider') {
+  if (role === 'Rider' || role === 'Driver') {
     routes.push('/admin'); // dashboard
     routes.push('/admin/delivery');
+    routes.push('/admin/order-tracking');
     routes.push('/admin/rider-reports');
-    routes.push('/admin/employee-productivity');
-  }
-  if (role === 'Driver') {
-    routes.push('/admin'); // dashboard
-    routes.push('/admin/delivery');
-    routes.push('/admin/rider-reports');
-    routes.push('/admin/employee-productivity');
   }
   if (role === 'Sales') {
     routes.push('/admin'); // dashboard
@@ -191,8 +185,22 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           outletName,
           isOutletAdmin,
         });
+      } else if (emp && !emp.system_access) {
+        // Employee exists but system_access is disabled — restrict to Viewer with no permissions
+        setPerms({
+          userId: user.id,
+          email,
+          fullName,
+          role: emp.login_role || 'Viewer',
+          permissions: [],
+          isAdmin: false,
+          loading: false,
+          outletId: null,
+          outletName: null,
+          isOutletAdmin: false,
+        });
       } else {
-        // No employee record or no system access configured = treat as admin (owner/super admin)
+        // No employee record found — this is likely the owner/super admin account
         setPerms({
           userId: user.id,
           email,
@@ -207,7 +215,7 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
         });
       }
     } catch {
-      setPerms({ ...defaultPerms, loading: false, isAdmin: true });
+      setPerms({ ...defaultPerms, loading: false });
     }
   }, [fetchRolePermissions]);
 
