@@ -40,6 +40,7 @@ import {
   Store,
   PackageSearch,
   ClipboardCopy,
+  AlertTriangle,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 
@@ -117,6 +118,7 @@ export function Sidebar() {
         { label: 'Orders', href: '/admin/orders', tip: 'Create & manage customer orders with delivery', icon: FileText },
         { label: 'Order Tracking', href: '/admin/order-tracking', tip: 'Track order status & delivery progress', icon: MapPinned },
         { label: 'Delivery', href: '/admin/delivery', tip: 'Schedule deliveries & assign drivers', icon: Truck },
+        { label: 'Rider Reports', href: '/admin/rider-reports', tip: 'Waste & damage reports from riders/drivers', icon: AlertTriangle },
         { label: 'Pricing', href: '/admin/pricing', tip: 'Set retail & wholesale pricing tiers', icon: Tag },
       ],
     },
