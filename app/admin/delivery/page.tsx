@@ -5,7 +5,7 @@ import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
-import { useUserPermissions } from '@/lib/user-permissions';
+import { useUserPermissions, isRiderRole } from '@/lib/user-permissions';
 
 interface Customer {
   id: string;
@@ -124,7 +124,7 @@ interface RecentOrder {
 
 export default function DeliveryPage() {
   const { role, isAdmin, fullName } = useUserPermissions();
-  const isRider = role === 'Driver' || role === 'Rider';
+  const isRider = isRiderRole(role);
 
   // If rider, show the rider-specific view
   if (isRider && !isAdmin) {

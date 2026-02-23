@@ -75,15 +75,6 @@ export function Sidebar() {
   useEffect(() => {
     async function loadBranding() {
       try {
-        const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'general').single();
-        if (!error && data?.value) {
-          const g = data.value as Record<string, string>;
-          if (g.logoUrl) setLogoUrl(g.logoUrl);
-          if (g.businessName) setBusinessName(g.businessName);
-          return;
-        }
-      } catch { /* table may not exist */ }
-      try {
         const saved = localStorage.getItem('snackoh_settings');
         if (saved) {
           const parsed = JSON.parse(saved);
@@ -91,6 +82,21 @@ export function Sidebar() {
           if (parsed.general?.businessName) setBusinessName(parsed.general.businessName);
         }
       } catch { /* ignore */ }
+      try {
+        const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'general').single();
+        if (!error && data?.value) {
+          const g = data.value as Record<string, string>;
+          if (g.logoUrl) setLogoUrl(g.logoUrl);
+          if (g.businessName) setBusinessName(g.businessName);
+          try {
+            const cached = localStorage.getItem('snackoh_settings');
+            const parsed = cached ? JSON.parse(cached) : {};
+            const next = { ...(parsed || {}), general: { ...(parsed?.general || {}), ...g } };
+            localStorage.setItem('snackoh_settings', JSON.stringify(next));
+          } catch { /* ignore */ }
+          return;
+        }
+      } catch { /* table may not exist */ }
     }
     loadBranding();
   }, []);

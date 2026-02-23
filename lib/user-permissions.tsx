@@ -3,6 +3,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
+const PERMS_CACHE_KEY = 'snackoh_user_permissions_v1';
+const PERMS_CACHE_TTL_MS = 5 * 60 * 1000;
+
 interface UserPermissions {
   userId: string;
   email: string;
@@ -35,13 +38,22 @@ export function useUserPermissions() {
   return useContext(UserPermissionsContext);
 }
 
+export function normalizeRole(role: string): string {
+  return (role || '').trim().toLowerCase();
+}
+
+export function isRiderRole(role: string): boolean {
+  const key = normalizeRole(role);
+  return key === 'rider' || key === 'driver';
+}
+
 // Map permissions to allowed sidebar routes
 export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean): string[] {
   if (isAdmin) return []; // empty means all allowed
 
   // Strict role-based restrictions for Rider and Driver — these roles can ONLY access
   // the routes listed below, regardless of any additional permissions in the database.
-  if (role === 'Rider' || role === 'Driver') {
+  if (isRiderRole(role)) {
     return [
       '/admin',             // dashboard
       '/admin/delivery',    // delivery/schedule orders
@@ -79,23 +91,23 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
 
   // Role-based defaults: each role gets ONLY the modules relevant to their job + account settings
   // Any additional permissions assigned to the employee record or via the roles table will extend access beyond these defaults.
-
-  if (role === 'Rider' || role === 'Driver') {
+  const roleKey = normalizeRole(role);
+  if (isRiderRole(roleKey)) {
     // Riders/Drivers: delivery management, order tracking, and rider reports only
     routes.push('/admin/delivery');
     routes.push('/admin/order-tracking');
     routes.push('/admin/rider-reports');
-  } else if (role === 'Cashier') {
+  } else if (roleKey === 'cashier') {
     // Cashiers: POS, orders, and account settings only
     routes.push('/admin/pos');
     routes.push('/admin/orders');
-  } else if (role === 'Sales') {
+  } else if (roleKey === 'sales') {
     // Sales: orders, delivery, customers, and pricing
     routes.push('/admin/orders');
     routes.push('/admin/delivery');
     routes.push('/admin/customers');
     routes.push('/admin/pricing');
-  } else if (role === 'Baker') {
+  } else if (roleKey === 'baker') {
     // Bakers: production-related modules only
     routes.push('/admin/recipes');
     routes.push('/admin/food-info');
@@ -103,7 +115,7 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     routes.push('/admin/picking-lists');
     routes.push('/admin/lot-tracking');
     routes.push('/admin/waste-control');
-  } else if (role === 'Viewer') {
+  } else if (roleKey === 'viewer') {
     // Viewers: account settings only (no other module access)
     // No additional routes — they only get /admin/account appended below
   }
@@ -120,7 +132,19 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
 }
 
 export function UserPermissionsProvider({ children }: { children: React.ReactNode }) {
-  const [perms, setPerms] = useState<UserPermissions>(defaultPerms);
+  const [perms, setPerms] = useState<UserPermissions>(() => {
+    if (typeof window === 'undefined') return defaultPerms;
+    try {
+      const cachedRaw = localStorage.getItem(PERMS_CACHE_KEY);
+      if (!cachedRaw) return defaultPerms;
+      const cached = JSON.parse(cachedRaw) as { ts: number; data: UserPermissions };
+      if (!cached?.data || !cached?.ts) return defaultPerms;
+      if (Date.now() - cached.ts > PERMS_CACHE_TTL_MS) return defaultPerms;
+      return { ...cached.data, loading: false };
+    } catch {
+      return defaultPerms;
+    }
+  });
 
   const fetchRolePermissions = useCallback(async (roleName: string): Promise<string[]> => {
     if (!roleName) return [];
@@ -152,7 +176,7 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
       // Check if this user has an employee record with specific role/permissions
       const { data: emp } = await supabase
         .from('employees')
-        .select('login_role, permissions, system_access')
+        .select('id, login_role, permissions, system_access')
         .eq('login_email', email)
         .single();
 
@@ -176,16 +200,11 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
         let outletName: string | null = null;
         let isOutletAdmin = false;
         try {
-          const { data: empRecord } = await supabase
-            .from('employees')
-            .select('id')
-            .eq('login_email', email)
-            .single();
-          if (empRecord?.id) {
+          if (emp?.id) {
             const { data: outletEmp } = await supabase
               .from('outlet_employees')
               .select('outlet_id, is_outlet_admin, outlet_role')
-              .eq('employee_id', empRecord.id)
+              .eq('employee_id', emp.id)
               .eq('status', 'Active')
               .in('outlet_role', ['Admin', 'Manager'])
               .limit(1)
@@ -205,7 +224,7 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           }
         } catch { /* outlet tables may not exist yet */ }
 
-        setPerms({
+        const nextPerms = {
           userId: user.id,
           email,
           fullName,
@@ -216,10 +235,14 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           outletId,
           outletName,
           isOutletAdmin,
-        });
+        };
+        setPerms(nextPerms);
+        try {
+          localStorage.setItem(PERMS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: nextPerms }));
+        } catch { /* ignore cache write */ }
       } else if (emp && !emp.system_access) {
         // Employee exists but system_access is disabled — restrict to Viewer with no permissions
-        setPerms({
+        const nextPerms = {
           userId: user.id,
           email,
           fullName,
@@ -230,10 +253,14 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           outletId: null,
           outletName: null,
           isOutletAdmin: false,
-        });
+        };
+        setPerms(nextPerms);
+        try {
+          localStorage.setItem(PERMS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: nextPerms }));
+        } catch { /* ignore cache write */ }
       } else {
         // No employee record found — this is likely the owner/super admin account
-        setPerms({
+        const nextPerms = {
           userId: user.id,
           email,
           fullName,
@@ -244,7 +271,11 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           outletId: null,
           outletName: null,
           isOutletAdmin: false,
-        });
+        };
+        setPerms(nextPerms);
+        try {
+          localStorage.setItem(PERMS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: nextPerms }));
+        } catch { /* ignore cache write */ }
       }
     } catch {
       setPerms({ ...defaultPerms, loading: false });

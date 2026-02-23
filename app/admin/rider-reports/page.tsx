@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
-import { useUserPermissions } from '@/lib/user-permissions';
+import { useUserPermissions, isRiderRole } from '@/lib/user-permissions';
 import {
   AlertTriangle,
   Plus,
@@ -100,7 +100,7 @@ function getStatusIcon(s: string) {
 
 export default function RiderReportsPage() {
   const { fullName, isAdmin, role } = useUserPermissions();
-  const isRider = role === 'Driver' || role === 'Rider';
+  const isRider = isRiderRole(role);
 
   const [activeTab, setActiveTab] = useState<'waste' | 'damage'>('waste');
   const [wasteReports, setWasteReports] = useState<WasteReport[]>([]);
