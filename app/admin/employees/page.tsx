@@ -50,6 +50,8 @@ interface Employee {
   loginEmail: string;
   loginRole: string;
   permissions: string[];
+  primaryOutletId: string;
+  primaryOutletName: string;
   // Activity tracking fields (from users table)
   lastLogin: string | null;
   lastActivity: string | null;
@@ -405,6 +407,8 @@ export default function EmployeesPage() {
     loginEmail: '',
     loginRole: 'Viewer',
     permissions: [],
+    primaryOutletId: '',
+    primaryOutletName: '',
     lastLogin: null,
     lastActivity: null,
   };
@@ -434,6 +438,7 @@ export default function EmployeesPage() {
     e.preventDefault();
     setSaveError(null);
     setSaveSuccess(null);
+    let localError: string | null = null;
     const dataToSave = { ...formData };
     if (autoGenerateId && !editingId && !dataToSave.employeeIdNumber) {
       dataToSave.employeeIdNumber = generateEmployeeId(dataToSave.category);
@@ -457,14 +462,19 @@ export default function EmployeesPage() {
     let employeeSaved = false;
     try {
       if (editingId) {
-        const { error } = await supabase.from('employees').update(dbRow).eq('id', editingId);
+        const { data, error } = await supabase.from('employees').update(dbRow).eq('id', editingId).select();
         if (error) {
           // If columns don't exist, try with only basic fields
           const basicRow = { ...dbRow };
           const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name'];
           for (const col of extendedCols) delete (basicRow as Record<string, unknown>)[col];
-          const { error: fallbackError } = await supabase.from('employees').update(basicRow).eq('id', editingId);
+          const { data: fallbackData, error: fallbackError } = await supabase.from('employees').update(basicRow).eq('id', editingId).select();
           if (fallbackError) throw fallbackError;
+          if (!fallbackData || fallbackData.length === 0) {
+            throw new Error('Update failed — no rows were changed. The employee record may be protected by database policies. Please contact your administrator.');
+          }
+        } else if (!data || data.length === 0) {
+          throw new Error('Update failed — no rows were changed. The employee record may be protected by database policies. Please contact your administrator.');
         }
         employeeSaved = true;
         logAudit({
@@ -474,14 +484,19 @@ export default function EmployeesPage() {
           details: { name: `${dataToSave.firstName} ${dataToSave.lastName}`, category: dataToSave.category, department: dataToSave.department },
         });
       } else {
-        const { error } = await supabase.from('employees').insert(dbRow);
+        const { data, error } = await supabase.from('employees').insert(dbRow).select();
         if (error) {
           // If columns don't exist, try with only basic fields
           const basicRow = { ...dbRow };
           const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name'];
           for (const col of extendedCols) delete (basicRow as Record<string, unknown>)[col];
-          const { error: fallbackError } = await supabase.from('employees').insert(basicRow);
+          const { data: fallbackData, error: fallbackError } = await supabase.from('employees').insert(basicRow).select();
           if (fallbackError) throw fallbackError;
+          if (!fallbackData || fallbackData.length === 0) {
+            throw new Error('Insert failed — no rows were created. Please check database policies or contact your administrator.');
+          }
+        } else if (!data || data.length === 0) {
+          throw new Error('Insert failed — no rows were created. Please check database policies or contact your administrator.');
         }
         employeeSaved = true;
         logAudit({
@@ -493,13 +508,8 @@ export default function EmployeesPage() {
       }
     } catch (err) {
       console.error('Employee save error:', err);
-      setSaveError(`Failed to save employee: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      // Still add to local state so the UI shows the entry
-      if (editingId) {
-        setEmployees(employees.map(emp => emp.id === editingId ? { ...dataToSave, id: editingId } : emp));
-      } else {
-        setEmployees([...employees, { ...dataToSave, id: Date.now().toString() }]);
-      }
+      localError = `Failed to save employee: ${err instanceof Error ? err.message : 'Unknown error'}`;
+      setSaveError(localError);
     }
 
     // Create Supabase Auth user via server-side API route
@@ -518,19 +528,21 @@ export default function EmployeesPage() {
         });
         const result = await res.json();
         if (!result.success) {
-          setSaveError(prev => (prev ? prev + ' | ' : '') + `Auth user: ${result.message}`);
+          localError = (localError ? localError + ' | ' : '') + `Auth user: ${result.message}`;
+          setSaveError(localError);
         } else {
           setSaveSuccess(prev => (prev ? prev + ' | ' : '') + `System login created for ${dataToSave.loginEmail}`);
         }
       } catch (authErr) {
         console.error('Auth creation failed:', authErr);
-        setSaveError(prev => (prev ? prev + ' | ' : '') + 'Failed to create system login. Please try again.');
+        localError = (localError ? localError + ' | ' : '') + 'Failed to create system login. Please try again.';
+        setSaveError(localError);
       }
     }
 
     if (employeeSaved) {
       await fetchEmployees();
-      if (!saveError) {
+      if (!localError) {
         setSaveSuccess(`Employee ${dataToSave.firstName} ${dataToSave.lastName} ${editingId ? 'updated' : 'created'} successfully.`);
       }
     }
@@ -991,11 +1003,11 @@ export default function EmployeesPage() {
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Primary Outlet</label>
                         <select
-                          value={(formData as unknown as Record<string, unknown>).primaryOutletId as string || ''}
+                          value={formData.primaryOutletId || ''}
                           onChange={(e) => {
                             const outletId = e.target.value;
                             const outlet = outlets.find(o => o.id === outletId);
-                            setFormData({ ...formData, ...({ primaryOutletId: outletId || null, primaryOutletName: outlet?.name || '' } as unknown as Partial<Employee>) } as Employee);
+                            setFormData({ ...formData, primaryOutletId: outletId || '', primaryOutletName: outlet?.name || '' });
                           }}
                           className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                         >

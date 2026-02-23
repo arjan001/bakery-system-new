@@ -496,11 +496,15 @@ export default function OutletEmployeesPage() {
         notes: editForm.notes.trim() || null,
       };
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('outlet_employees')
         .update(row)
-        .eq('id', showEditModal);
+        .eq('id', showEditModal)
+        .select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Update failed — no rows were changed. The record may be protected by database policies.');
+      }
 
       const oe = outletEmployees.find(o => o.id === showEditModal);
       logAudit({
@@ -528,11 +532,15 @@ export default function OutletEmployeesPage() {
 
   const handleRemove = async (id: string) => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('outlet_employees')
         .update({ status: 'Inactive' })
-        .eq('id', id);
+        .eq('id', id)
+        .select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Update failed — no rows were changed. The record may be protected by database policies.');
+      }
 
       const oe = outletEmployees.find(o => o.id === id);
       logAudit({
@@ -575,11 +583,15 @@ export default function OutletEmployeesPage() {
       if (!oe) throw new Error('Assignment not found');
 
       // Mark old assignment as Transferred
-      const { error: updateError } = await supabase
+      const { data: transferData, error: updateError } = await supabase
         .from('outlet_employees')
         .update({ status: 'Transferred' })
-        .eq('id', showTransferModal);
+        .eq('id', showTransferModal)
+        .select();
       if (updateError) throw updateError;
+      if (!transferData || transferData.length === 0) {
+        throw new Error('Transfer failed — could not update the old assignment. The record may be protected by database policies.');
+      }
 
       // Create new assignment at target outlet
       const newRow = {
