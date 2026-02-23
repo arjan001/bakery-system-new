@@ -5,7 +5,7 @@ import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
 
-interface CartItem { id: string; name: string; sku: string; price: number; quantity: number; stock: number; }
+interface CartItem { id: string; name: string; sku: string; price: number; quantity: number; stock: number; isNonInventory?: boolean; unitCost?: number; }
 interface Product { id: string; name: string; sku: string; retailPrice: number; wholesalePrice: number; stock: number; category: string; }
 interface Customer { id: string; name: string; phone: string; type: string; }
 interface HeldOrder { id: string; name: string; items: CartItem[]; customer: Customer; saleType: string; time: string; }
@@ -182,6 +182,8 @@ export default function POSPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer>(customers[0]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
+  const [showCustomItem, setShowCustomItem] = useState(false);
+  const [customItem, setCustomItem] = useState({ name: '', price: '', quantity: '1', unitCost: '', sku: '' });
 
   // ── Held Orders (restore from session) ──
   const [heldOrders, setHeldOrders] = useState<HeldOrder[]>(existingSession?.heldOrders ?? []);
@@ -279,6 +281,30 @@ export default function POSPage() {
   const updateQty = (id: string, qty: number) => { if (qty <= 0) setCartItems(cartItems.filter(i => i.id !== id)); else setCartItems(cartItems.map(i => i.id === id ? { ...i, quantity: Math.min(qty, i.stock) } : i)); };
   const removeItem = (id: string) => setCartItems(cartItems.filter(i => i.id !== id));
   const clearCart = () => { if (cartItems.length > 0 && confirm('Clear cart?')) setCartItems([]); };
+
+  const addCustomItem = () => {
+    const name = customItem.name.trim();
+    const price = parseFloat(customItem.price);
+    const quantity = Math.max(1, parseInt(customItem.quantity, 10) || 1);
+    const unitCost = parseFloat(customItem.unitCost) || 0;
+    if (!name || Number.isNaN(price) || price <= 0) return;
+    const sku = customItem.sku.trim() || 'CUSTOM';
+    setCartItems([
+      ...cartItems,
+      {
+        id: `custom-${Date.now()}`,
+        name,
+        sku,
+        price,
+        quantity,
+        stock: 999999,
+        isNonInventory: true,
+        unitCost,
+      },
+    ]);
+    setCustomItem({ name: '', price: '', quantity: '1', unitCost: '', sku: '' });
+    setShowCustomItem(false);
+  };
 
   // ── Hold/Recall ──
   const holdOrder = () => {
@@ -438,20 +464,54 @@ export default function POSPage() {
       }
     } catch { /* continue */ }
 
+    const posItemsPayload = cartItems.map(item => ({
+      sale_id: posSaleId,
+      product_name: item.name,
+      sku: item.sku,
+      quantity: item.quantity,
+      unit_price: item.price,
+      total: item.price * item.quantity,
+      is_non_inventory: !!item.isNonInventory,
+      unit_cost: item.unitCost || 0,
+      cost_total: (item.unitCost || 0) * item.quantity,
+    }));
+
     // Also save POS sale items
     if (posSaleId) {
       try {
-        await supabase.from('pos_sale_items').insert(
-          cartItems.map(item => ({
-            sale_id: posSaleId,
-            product_name: item.name,
-            sku: item.sku,
-            quantity: item.quantity,
-            unit_price: item.price,
-            total: item.price * item.quantity,
-          }))
-        );
-      } catch { /* continue */ }
+        await supabase.from('pos_sale_items').insert(posItemsPayload);
+      } catch {
+        try {
+          const fallback = posItemsPayload.map(({ is_non_inventory, unit_cost, cost_total, ...rest }) => rest);
+          await supabase.from('pos_sale_items').insert(fallback);
+        } catch { /* continue */ }
+      }
+    }
+
+    // Track non-inventory item costs for P&L
+    if (posSaleId) {
+      const costEntries = cartItems
+        .filter(item => item.isNonInventory && (item.unitCost || 0) > 0)
+        .map(item => ({
+          date: new Date().toISOString().split('T')[0],
+          category: 'Non-Inventory',
+          description: `${rNo} - ${item.name}`,
+          amount: (item.unitCost || 0) * item.quantity,
+          payment_status: 'Paid',
+          reference: `POS:${rNo}`,
+          notes: 'Auto: non-inventory POS item',
+          cost_type: 'direct_cost',
+        }));
+      if (costEntries.length > 0) {
+        try {
+          await supabase.from('cost_entries').insert(costEntries);
+        } catch {
+          try {
+            const fallback = costEntries.map(({ cost_type, ...rest }) => rest);
+            await supabase.from('cost_entries').insert(fallback);
+          } catch { /* continue */ }
+        }
+      }
     }
 
     // Save as regular order in orders table for unified order management
@@ -472,15 +532,22 @@ export default function POSPage() {
       }).select('id').single();
 
       if (orderData) {
-        await supabase.from('order_items').insert(
-          cartItems.map(item => ({
-            order_id: orderData.id,
-            product_name: item.name,
-            quantity: item.quantity,
-            unit_price: item.price,
-            total: item.price * item.quantity,
-          }))
-        );
+        const orderItemsPayload = cartItems.map(item => ({
+          order_id: orderData.id,
+          product_name: item.name,
+          quantity: item.quantity,
+          unit_price: item.price,
+          total: item.price * item.quantity,
+          is_non_inventory: !!item.isNonInventory,
+          unit_cost: item.unitCost || 0,
+          cost_total: (item.unitCost || 0) * item.quantity,
+        }));
+        try {
+          await supabase.from('order_items').insert(orderItemsPayload);
+        } catch {
+          const fallback = orderItemsPayload.map(({ is_non_inventory, unit_cost, cost_total, ...rest }) => rest);
+          await supabase.from('order_items').insert(fallback);
+        }
       }
     } catch { /* continue — order table may not have the new columns yet */ }
     setProducts(products.map(p => { const ci = cartItems.find(i => i.id === p.id); return ci ? { ...p, stock: Math.max(0, p.stock - ci.quantity) } : p; }));
@@ -592,6 +659,9 @@ export default function POSPage() {
           <div className="flex gap-2 mb-3">
             <input type="text" placeholder="Search products..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 px-3 py-2 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none bg-card text-sm" />
             <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="px-3 py-2 border border-border rounded-xl focus:ring-2 focus:ring-primary/50 outline-none bg-card text-sm">{['All', ...categories].map(c => <option key={c}>{c}</option>)}</select>
+            <button onClick={() => setShowCustomItem(true)} className="px-3 py-2 border border-border rounded-xl text-xs font-semibold hover:bg-secondary">
+              + Custom Item
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto">
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
@@ -627,7 +697,13 @@ export default function POSPage() {
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground"><p className="text-2xl mb-1">🛒</p><p className="text-xs">Tap products to add</p></div>
             ) : cartItems.map(item => (
               <div key={item.id} className="flex items-center gap-2 bg-secondary/50 p-2 rounded-lg">
-                <div className="flex-1 min-w-0"><p className="font-medium text-xs truncate">{item.name}</p><p className="text-[10px] text-muted-foreground">{cur} {item.price} x {item.quantity}</p></div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-xs truncate">
+                    {item.name}
+                    {item.isNonInventory && <span className="ml-1 text-[9px] px-1 py-0.5 bg-amber-100 text-amber-800 rounded">Custom</span>}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">{cur} {item.price} x {item.quantity}</p>
+                </div>
                 <div className="flex items-center gap-0.5">
                   <button onClick={() => updateQty(item.id, item.quantity - 1)} className="w-6 h-6 rounded bg-background border border-border text-xs font-bold hover:bg-red-50">-</button>
                   <span className="w-6 text-center text-xs font-bold">{item.quantity}</span>
@@ -651,6 +727,71 @@ export default function POSPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Custom Item Modal ── */}
+      <Modal isOpen={showCustomItem} onClose={() => setShowCustomItem(false)} title="Add Custom Item" size="sm">
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">Use this for custom cakes or items not in inventory.</p>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Item Name *</label>
+            <input
+              type="text"
+              value={customItem.name}
+              onChange={(e) => setCustomItem({ ...customItem, name: e.target.value })}
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+              placeholder="e.g. Custom Birthday Cake"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Price *</label>
+              <input
+                type="number"
+                value={customItem.price}
+                onChange={(e) => setCustomItem({ ...customItem, price: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                placeholder="KES"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
+              <input
+                type="number"
+                min="1"
+                value={customItem.quantity}
+                onChange={(e) => setCustomItem({ ...customItem, quantity: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Unit Cost</label>
+              <input
+                type="number"
+                value={customItem.unitCost}
+                onChange={(e) => setCustomItem({ ...customItem, unitCost: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                placeholder="KES"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">SKU (optional)</label>
+              <input
+                type="text"
+                value={customItem.sku}
+                onChange={(e) => setCustomItem({ ...customItem, sku: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                placeholder="CUSTOM"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+            <button onClick={() => setShowCustomItem(false)} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm">Cancel</button>
+            <button onClick={addCustomItem} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium">Add Item</button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Held Orders Modal ── */}
       <Modal isOpen={showHeld} onClose={() => setShowHeld(false)} title={`Held Orders (${heldOrders.length})`} size="md">

@@ -11,6 +11,8 @@ interface OrderItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  isNonInventory?: boolean;
+  unitCost?: number;
 }
 
 interface Order {
@@ -82,7 +84,7 @@ export default function OrdersPage() {
     orderNumber: '',
     customerName: '',
     customerPhone: '',
-    items: [{ productName: '', quantity: 1, unitPrice: 0 }],
+    items: [{ productName: '', quantity: 1, unitPrice: 0, isNonInventory: false, unitCost: 0 }],
     status: 'Pending',
     source: 'Regular',
     orderDate: new Date().toISOString().split('T')[0],
@@ -111,6 +113,8 @@ export default function OrdersPage() {
             productName: i.product_name as string,
             quantity: i.quantity as number,
             unitPrice: i.unit_price as number,
+            isNonInventory: Boolean(i.is_non_inventory),
+            unitCost: (i.unit_cost as number) || 0,
           })),
           total: (r.total_amount || 0) as number,
           status: (r.status || 'Pending') as Order['status'],
@@ -212,12 +216,66 @@ export default function OrdersPage() {
       payment_status: formData.paymentStatus,
       fulfillment: formData.fulfillment,
     };
+    const syncNonInventoryCosts = async (orderNumber: string, items: OrderItem[]) => {
+      const ref = `ORDER:${orderNumber}`;
+      const entries = items
+        .filter(i => i.isNonInventory && (i.unitCost || 0) > 0)
+        .map(i => ({
+          date: formData.orderDate || null,
+          category: 'Non-Inventory',
+          description: `${orderNumber} - ${i.productName || 'Custom Item'}`,
+          amount: (i.unitCost || 0) * i.quantity,
+          payment_status: formData.paymentStatus === 'Paid' ? 'Paid' : 'Pending',
+          reference: ref,
+          notes: 'Auto: non-inventory order item',
+          cost_type: 'direct_cost',
+        }));
+      try {
+        await supabase.from('cost_entries').delete().eq('reference', ref);
+        if (entries.length > 0) {
+          await supabase.from('cost_entries').insert(entries);
+        }
+      } catch {
+        try {
+          await supabase.from('cost_entries').delete().eq('reference', ref);
+          if (entries.length > 0) {
+            const fallback = entries.map(({ cost_type, ...rest }) => rest);
+            await supabase.from('cost_entries').insert(fallback);
+          }
+        } catch { /* ignore */ }
+      }
+    };
+
+    const buildOrderItems = (orderId: string) => (
+      formData.items.map(i => ({
+        order_id: orderId,
+        product_name: i.productName,
+        quantity: i.quantity,
+        unit_price: i.unitPrice,
+        total: i.quantity * i.unitPrice,
+        is_non_inventory: !!i.isNonInventory,
+        unit_cost: i.unitCost || 0,
+        cost_total: (i.unitCost || 0) * i.quantity,
+      }))
+    );
+
+    const insertOrderItems = async (orderId: string) => {
+      if (formData.items.length === 0) return;
+      const payload = buildOrderItems(orderId);
+      try {
+        await supabase.from('order_items').insert(payload);
+      } catch {
+        const fallback = payload.map(({ is_non_inventory, unit_cost, cost_total, ...rest }) => rest);
+        await supabase.from('order_items').insert(fallback);
+      }
+    };
+
     try {
       if (editingId) {
         await supabase.from('orders').update(row).eq('id', editingId);
         await supabase.from('order_items').delete().eq('order_id', editingId);
-        if (formData.items.length > 0)
-          await supabase.from('order_items').insert(formData.items.map(i => ({ order_id: editingId, product_name: i.productName, quantity: i.quantity, unit_price: i.unitPrice, total: i.quantity * i.unitPrice })));
+        await insertOrderItems(editingId);
+        await syncNonInventoryCosts(formData.orderNumber, formData.items);
         logAudit({
           action: 'UPDATE',
           module: 'Orders',
@@ -226,8 +284,10 @@ export default function OrdersPage() {
         });
       } else {
         const { data: created } = await supabase.from('orders').insert(row).select().single();
-        if (created && formData.items.length > 0)
-          await supabase.from('order_items').insert(formData.items.map(i => ({ order_id: created.id, product_name: i.productName, quantity: i.quantity, unit_price: i.unitPrice, total: i.quantity * i.unitPrice })));
+        if (created) {
+          await insertOrderItems(created.id as string);
+          await syncNonInventoryCosts(formData.orderNumber, formData.items);
+        }
         if (created) {
           logAudit({
             action: 'CREATE',
@@ -247,7 +307,7 @@ export default function OrdersPage() {
     setFormData({
       orderNumber: `ORD-${Date.now().toString(36).toUpperCase()}`,
       customerName: '', customerPhone: '',
-      items: [{ productName: '', quantity: 1, unitPrice: 0 }],
+      items: [{ productName: '', quantity: 1, unitPrice: 0, isNonInventory: false, unitCost: 0 }],
       status: 'Pending', source: 'Regular',
       orderDate: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
@@ -260,7 +320,7 @@ export default function OrdersPage() {
   const handleEdit = (order: Order) => {
     setFormData({
       orderNumber: order.orderNumber, customerName: order.customerName, customerPhone: order.customerPhone,
-      items: order.items.length > 0 ? order.items : [{ productName: '', quantity: 1, unitPrice: 0 }],
+      items: order.items.length > 0 ? order.items : [{ productName: '', quantity: 1, unitPrice: 0, isNonInventory: false, unitCost: 0 }],
       status: order.status, source: order.source,
       orderDate: order.orderDate, dueDate: order.dueDate,
       assignedDriver: order.assignedDriver || '', deliveryNotes: order.deliveryNotes,
@@ -365,8 +425,8 @@ export default function OrdersPage() {
     setRejectReason('');
   };
 
-  const addItem = () => setFormData({ ...formData, items: [...formData.items, { productName: '', quantity: 1, unitPrice: 0 }] });
-  const updateItem = (idx: number, field: string, value: string | number) => {
+  const addItem = () => setFormData({ ...formData, items: [...formData.items, { productName: '', quantity: 1, unitPrice: 0, isNonInventory: false, unitCost: 0 }] });
+  const updateItem = (idx: number, field: string, value: string | number | boolean) => {
     const updated = [...formData.items];
     updated[idx] = { ...updated[idx], [field]: value };
     setFormData({ ...formData, items: updated });
@@ -971,6 +1031,23 @@ export default function OrdersPage() {
                   <input type="number" placeholder="KES" value={item.unitPrice}
                     onChange={e => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
                     className="w-24 px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none" />
+                  <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={!!item.isNonInventory}
+                      onChange={(e) => updateItem(idx, 'isNonInventory', e.target.checked)}
+                      className="rounded border-border"
+                    />
+                    Non-inv
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="Cost"
+                    value={item.unitCost || ''}
+                    onChange={e => updateItem(idx, 'unitCost', parseFloat(e.target.value) || 0)}
+                    className="w-24 px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                    disabled={!item.isNonInventory}
+                  />
                   {formData.items.length > 1 && (
                     <button type="button" onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700 text-xs font-bold px-1">&times;</button>
                   )}

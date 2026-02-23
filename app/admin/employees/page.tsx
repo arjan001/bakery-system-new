@@ -47,7 +47,7 @@ interface Employee {
   notes: string;
   systemAccess: boolean;
   loginEmail: string;
-  loginRole: 'Admin' | 'Baker' | 'Driver' | 'Sales' | 'Viewer';
+  loginRole: string;
   permissions: string[];
 }
 
@@ -134,21 +134,32 @@ function isExpired(dateStr: string): boolean {
 
 const ALL_PERMISSIONS = [
   'View Dashboard',
+  'Access POS',
   'Manage Orders',
+  'View Orders',
   'Manage Inventory',
   'Manage Employees',
   'Manage Customers',
   'Manage Deliveries',
+  'View Deliveries',
   'View Reports',
   'Manage Recipes',
+  'Manage Production',
+  'View Production',
   'Manage Pricing',
   'Manage Purchases',
+  'Manage Users',
+  'Manage Finance',
+  'View Finance',
   'System Settings',
 ];
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rolePermissionsMap, setRolePermissionsMap] = useState<Record<string, string[]>>({});
+  const [availablePermissions, setAvailablePermissions] = useState<string[]>(ALL_PERMISSIONS);
+  const [loginRoles, setLoginRoles] = useState<string[]>(['Admin', 'Administrator', 'Baker', 'Driver', 'Sales', 'Cashier', 'Viewer']);
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -191,11 +202,55 @@ export default function EmployeesPage() {
       // users table may not exist or not be accessible
     }
 
+    const existingRoles = empList.map(e => e.loginRole).filter(Boolean);
+    if (existingRoles.length > 0) {
+      setLoginRoles(prev => Array.from(new Set([...prev, ...existingRoles])).sort());
+    }
     setEmployees(empList);
     setLoading(false);
   }, []);
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
+
+  // Fetch system roles + permissions for login access control
+  useEffect(() => {
+    async function fetchRolesAndPermissions() {
+      try {
+        const { data: rolesData } = await supabase.from('roles').select('id, name').order('name');
+        const { data: permsData } = await supabase.from('permissions').select('id, name, enabled').order('name');
+        const enabledPerms = (permsData || []).filter((p: Record<string, unknown>) => p.enabled !== false);
+        const permNameById: Record<string, string> = {};
+        enabledPerms.forEach((p: Record<string, unknown>) => {
+          if (p.id && p.name) permNameById[p.id as string] = p.name as string;
+        });
+        const { data: rpData } = await supabase.from('role_permissions').select('role_id, permission_id');
+        const map: Record<string, string[]> = {};
+        (rolesData || []).forEach((r: Record<string, unknown>) => {
+          map[r.name as string] = [];
+        });
+        (rpData || []).forEach((r: Record<string, unknown>) => {
+          const role = (rolesData || []).find((rr: Record<string, unknown>) => rr.id === r.role_id);
+          const permName = permNameById[r.permission_id as string];
+          if (role?.name && permName) {
+            if (!map[role.name as string]) map[role.name as string] = [];
+            map[role.name as string].push(permName);
+          }
+        });
+        setRolePermissionsMap(map);
+        if (rolesData && rolesData.length > 0) {
+          const roleNames = rolesData.map((r: Record<string, unknown>) => r.name as string).filter(Boolean);
+          setLoginRoles(prev => Array.from(new Set([...prev, ...roleNames])).sort());
+        }
+        if (enabledPerms.length > 0) {
+          const names = enabledPerms.map((p: Record<string, unknown>) => p.name as string).filter(Boolean);
+          setAvailablePermissions(Array.from(new Set([...ALL_PERMISSIONS, ...names])).sort());
+        }
+      } catch {
+        // fallback to defaults if roles/permissions tables are unavailable
+      }
+    }
+    fetchRolesAndPermissions();
+  }, []);
 
   // Fetch employee categories from database
   useEffect(() => {
@@ -291,7 +346,14 @@ export default function EmployeesPage() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const designations: Employee['designation'][] = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof'];
-  const loginRoles: Employee['loginRole'][] = ['Admin', 'Baker', 'Driver', 'Sales', 'Viewer'];
+  const applyRolePermissions = (roleName: string, keepExisting = false) => {
+    const rolePerms = rolePermissionsMap[roleName];
+    if (!rolePerms || rolePerms.length === 0) return;
+    setFormData(prev => ({
+      ...prev,
+      permissions: keepExisting ? Array.from(new Set([...prev.permissions, ...rolePerms])) : rolePerms,
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -826,11 +888,24 @@ export default function EmployeesPage() {
                         <label className="block text-xs text-muted-foreground mb-1">Login Role</label>
                         <select
                           value={formData.loginRole}
-                          onChange={(e) => setFormData({ ...formData, loginRole: e.target.value as Employee['loginRole'] })}
+                          onChange={(e) => {
+                            const nextRole = e.target.value;
+                            setFormData({ ...formData, loginRole: nextRole });
+                            applyRolePermissions(nextRole);
+                          }}
                           className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                         >
                           {loginRoles.map(role => <option key={role} value={role}>{role}</option>)}
                         </select>
+                        {rolePermissionsMap[formData.loginRole]?.length ? (
+                          <button
+                            type="button"
+                            onClick={() => applyRolePermissions(formData.loginRole)}
+                            className="mt-2 text-xs text-primary hover:text-primary/80 font-medium"
+                          >
+                            Apply {formData.loginRole} permissions
+                          </button>
+                        ) : null}
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs text-muted-foreground mb-1">
@@ -854,7 +929,7 @@ export default function EmployeesPage() {
                     <div>
                       <p className="text-sm font-medium mb-3">Permissions</p>
                       <div className="grid grid-cols-3 gap-2">
-                        {ALL_PERMISSIONS.map(perm => (
+                        {availablePermissions.map(perm => (
                           <label key={perm} className="flex items-center gap-2 p-2 border border-border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors text-sm">
                             <input
                               type="checkbox"
@@ -869,7 +944,7 @@ export default function EmployeesPage() {
                       <div className="flex gap-2 mt-3">
                         <button
                           type="button"
-                          onClick={() => setFormData({ ...formData, permissions: [...ALL_PERMISSIONS] })}
+                          onClick={() => setFormData({ ...formData, permissions: [...availablePermissions] })}
                           className="text-xs text-primary hover:text-primary/80 font-medium"
                         >
                           Select All
