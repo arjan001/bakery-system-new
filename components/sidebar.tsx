@@ -136,9 +136,9 @@ export function Sidebar() {
       title: 'OUTLETS',
       color: 'border-l-orange-500',
       items: [
-        { label: 'Outlet Management', href: '/admin/outlets', tip: 'Manage branches, coffee shops & retail outlets', icon: Store },
+        { label: 'Branch Management', href: '/admin/outlets', tip: 'Manage main bakery and branch outlets', icon: Store },
         { label: 'Outlet Inventory', href: '/admin/outlet-inventory', tip: 'Manage inventory for individual outlets', icon: PackageSearch },
-        { label: 'Outlet Requisitions', href: '/admin/outlet-requisitions', tip: 'Outlet product requests from main bakery', icon: ClipboardCopy },
+        { label: 'Outlet Requisitions', href: '/admin/outlet-requisitions', tip: 'Branch product requests from main bakery', icon: ClipboardCopy },
       ],
     },
     {
