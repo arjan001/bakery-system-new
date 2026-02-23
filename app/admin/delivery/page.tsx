@@ -184,9 +184,9 @@ export default function DeliveryPage() {
     }
   }, []);
 
-  // Fetch drivers (employees where category = 'Driver')
+  // Fetch drivers (employees where category = 'Driver' or 'Rider')
   const fetchDrivers = useCallback(async () => {
-    const { data } = await supabase.from('employees').select('*').eq('category', 'Driver').order('first_name', { ascending: true });
+    const { data } = await supabase.from('employees').select('*').in('category', ['Driver', 'Rider']).order('first_name', { ascending: true });
     if (data) {
       setDrivers(data.map((r: Record<string, unknown>) => ({
         id: r.id as string,
@@ -450,6 +450,84 @@ export default function DeliveryPage() {
   const inTransitCount = deliveries.filter(d => d.status === 'In Transit').length;
   const deliveredTodayCount = deliveries.filter(d => d.status === 'Delivered' && d.scheduledDate === today).length;
 
+  // ── Batch Delivery Selection ──
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
+  const [batchDriverId, setBatchDriverId] = useState('');
+  const [batchVehicleId, setBatchVehicleId] = useState('');
+
+  const pendingDeliveries = deliveries.filter(d => d.status === 'Pending' || d.status === 'Assigned');
+
+  const toggleBatchSelect = (id: string) => {
+    setSelectedBatchIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllBatch = () => {
+    if (selectedBatchIds.size === pendingDeliveries.length) {
+      setSelectedBatchIds(new Set());
+    } else {
+      setSelectedBatchIds(new Set(pendingDeliveries.map(d => d.id)));
+    }
+  };
+
+  const handleBatchDispatch = async () => {
+    if (selectedBatchIds.size === 0) return;
+    const driver = drivers.find(d => d.id === batchDriverId);
+    const vehicle = vehicles.find(v => v.id === batchVehicleId);
+    const driverName = driver ? `${driver.firstName} ${driver.lastName}` : '';
+
+    for (const deliveryId of selectedBatchIds) {
+      const updateData: Record<string, unknown> = {
+        status: 'In Transit',
+      };
+      if (batchDriverId) {
+        updateData.driver_id = batchDriverId;
+        updateData.driver = driverName;
+        updateData.driver_name = driverName;
+      }
+      if (batchVehicleId) {
+        updateData.vehicle_id = batchVehicleId;
+        updateData.vehicle = vehicle?.name || '';
+        updateData.vehicle_name = vehicle?.name || '';
+      }
+      await supabase.from('deliveries').update(updateData).eq('id', deliveryId);
+      logAudit({
+        action: 'UPDATE',
+        module: 'Delivery',
+        record_id: deliveryId,
+        details: { driver: driverName, status: 'In Transit', batchDispatch: true, batchSize: selectedBatchIds.size },
+      });
+    }
+
+    await fetchDeliveries();
+    setSelectedBatchIds(new Set());
+    setBatchDriverId('');
+    setBatchVehicleId('');
+    setShowBatchModal(false);
+  };
+
+  const handleBatchComplete = async () => {
+    if (selectedBatchIds.size === 0) return;
+    for (const deliveryId of selectedBatchIds) {
+      await supabase.from('deliveries').update({ status: 'Delivered' }).eq('id', deliveryId);
+      const del = deliveries.find(d => d.id === deliveryId);
+      logAudit({
+        action: 'UPDATE',
+        module: 'Delivery',
+        record_id: deliveryId,
+        details: { driver: del?.driverName || '', status: 'Delivered', batchComplete: true, batchSize: selectedBatchIds.size },
+      });
+    }
+    await fetchDeliveries();
+    setSelectedBatchIds(new Set());
+    setShowBatchModal(false);
+  };
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -496,12 +574,22 @@ export default function DeliveryPage() {
             {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <button
+        <div className="flex gap-2">
+          {pendingDeliveries.length > 1 && (
+            <button
+              onClick={() => setShowBatchModal(true)}
+              className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary/10 font-medium"
+            >
+              Batch Deliver ({pendingDeliveries.length} pending)
+            </button>
+          )}
+          <button
           onClick={openNewForm}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
         >
           + Schedule Delivery
         </button>
+        </div>
       </div>
 
       {/* ── Schedule / Edit Delivery Modal ── */}
@@ -1041,6 +1129,143 @@ export default function DeliveryPage() {
           </div>
         </div>
       )}
+
+      {/* ── Batch Delivery Modal ── */}
+      <Modal
+        isOpen={showBatchModal}
+        onClose={() => { setShowBatchModal(false); setSelectedBatchIds(new Set()); }}
+        title={`Batch Delivery (${pendingDeliveries.length} pending)`}
+        size="3xl"
+      >
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+            <p className="text-sm font-semibold text-blue-900">Select Multiple Deliveries</p>
+            <p className="text-xs text-blue-700 mt-0.5">
+              Select deliveries going in the same direction and dispatch or complete them all at once. This improves rider productivity by combining trips.
+            </p>
+          </div>
+
+          {/* Driver & Vehicle Selection for batch */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Assign Driver</label>
+              <select
+                value={batchDriverId}
+                onChange={(e) => setBatchDriverId(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+              >
+                <option value="">Keep existing drivers</option>
+                {drivers.map(d => (
+                  <option key={d.id} value={d.id}>{d.firstName} {d.lastName}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Assign Vehicle</label>
+              <select
+                value={batchVehicleId}
+                onChange={(e) => setBatchVehicleId(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+              >
+                <option value="">Keep existing vehicles</option>
+                {vehicles.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Select All */}
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedBatchIds.size === pendingDeliveries.length && pendingDeliveries.length > 0}
+                onChange={selectAllBatch}
+                className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              />
+              <span className="text-sm font-medium">Select All ({pendingDeliveries.length})</span>
+            </label>
+            <span className="text-xs text-muted-foreground">{selectedBatchIds.size} selected</span>
+          </div>
+
+          {/* Delivery list */}
+          <div className="border border-border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary border-b border-border">
+                <tr>
+                  <th className="px-3 py-2 w-8"></th>
+                  <th className="px-3 py-2 text-left font-semibold">Tracking #</th>
+                  <th className="px-3 py-2 text-left font-semibold">Customer</th>
+                  <th className="px-3 py-2 text-left font-semibold">Location</th>
+                  <th className="px-3 py-2 text-left font-semibold">Driver</th>
+                  <th className="px-3 py-2 text-center font-semibold">Items</th>
+                  <th className="px-3 py-2 text-center font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingDeliveries.map(d => (
+                  <tr
+                    key={d.id}
+                    className={`border-b border-border cursor-pointer transition-colors ${selectedBatchIds.has(d.id) ? 'bg-orange-50' : 'hover:bg-secondary/50'}`}
+                    onClick={() => toggleBatchSelect(d.id)}
+                  >
+                    <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedBatchIds.has(d.id)}
+                        onChange={() => toggleBatchSelect(d.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">{d.trackingNumber}</td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{d.customerName || '-'}</div>
+                      <div className="text-xs text-muted-foreground">{d.customerPhone}</div>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">{d.customerLocation || '-'}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{d.driverName || '-'}</td>
+                    <td className="px-3 py-2 text-center">{d.items.length}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`px-2 py-0.5 text-xs rounded font-semibold ${getStatusColor(d.status)}`}>{d.status}</span>
+                    </td>
+                  </tr>
+                ))}
+                {pendingDeliveries.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">No pending deliveries</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 justify-end pt-2 border-t border-border">
+            <button
+              onClick={() => { setShowBatchModal(false); setSelectedBatchIds(new Set()); }}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBatchDispatch}
+              disabled={selectedBatchIds.size === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm disabled:opacity-40"
+            >
+              Dispatch Selected ({selectedBatchIds.size})
+            </button>
+            <button
+              onClick={handleBatchComplete}
+              disabled={selectedBatchIds.size === 0}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm disabled:opacity-40"
+            >
+              Mark Delivered ({selectedBatchIds.size})
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

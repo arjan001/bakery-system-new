@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Download, X, Smartphone, Share, MoreVertical } from 'lucide-react';
+import { Download, X, Smartphone, Share, MoreVertical, Monitor } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -49,6 +49,7 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   const [showInstructionsModal, setShowInstructionsModal] = useState(false);
   const [swRegistered, setSwRegistered] = useState(false);
 
@@ -114,6 +115,7 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
+      setShowInstallModal(false);
     };
     window.addEventListener('appinstalled', handleAppInstalled);
 
@@ -123,8 +125,7 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
     };
   }, []);
 
-  // Register service worker — do this on page load, not only when logged in,
-  // so the browser can detect PWA installability from the start.
+  // Register service worker on page load for PWA installability detection
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
@@ -142,19 +143,22 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
         setIsInstalled(true);
+        setShowInstallModal(false);
       }
       setDeferredPrompt(null);
     } else {
       // No native prompt available — show manual instructions
+      setShowInstallModal(false);
       setShowInstructionsModal(true);
     }
   }, [deferredPrompt]);
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);
-    // Re-show after 24 hours
+    setShowInstallModal(false);
+    // Re-show after 7 days
     try {
-      localStorage.setItem('pwa_dismissed_until', String(Date.now() + 24 * 60 * 60 * 1000));
+      localStorage.setItem('pwa_dismissed_until', String(Date.now() + 7 * 24 * 60 * 60 * 1000));
     } catch { /* ignore */ }
   }, []);
 
@@ -162,10 +166,19 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
 
   const browserInfo = getBrowserInfo();
 
-  // ── Install Instructions Modal ──
+  // Auto-show floating modal after 3 seconds for logged-in users
+  useEffect(() => {
+    if (!isLoggedIn || !canInstall || dismissed || isInstalled) return;
+    const timer = setTimeout(() => {
+      setShowInstallModal(true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [isLoggedIn, canInstall, dismissed, isInstalled]);
+
+  // ── Install Instructions Modal (manual steps) ──
   const instructionsModal = showInstructionsModal && (
     <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setShowInstructionsModal(false)}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Smartphone size={20} className="text-orange-600" />
@@ -266,32 +279,101 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
     </div>
   );
 
-  // ── Floating Install Banner ──
-  const showFloatingBanner = isLoggedIn && canInstall && !dismissed;
+  // ── Floating Install Modal ──
+  const showFloating = isLoggedIn && canInstall && !dismissed;
+  const installModal = showInstallModal && showFloating && (
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-4 sm:p-6" onClick={() => setShowInstallModal(false)}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      {/* Modal */}
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in slide-in-from-bottom-6 duration-300"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header with gradient */}
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 px-6 pt-6 pb-8 text-white text-center relative">
+          <button
+            onClick={() => setShowInstallModal(false)}
+            className="absolute top-3 right-3 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+            aria-label="Close"
+          >
+            <X size={14} strokeWidth={2.5} />
+          </button>
+          <div className="w-16 h-16 bg-white rounded-2xl shadow-lg mx-auto mb-3 flex items-center justify-center">
+            <Monitor size={28} className="text-orange-600" />
+          </div>
+          <h3 className="text-lg font-bold">Install Snackoh App</h3>
+          <p className="text-orange-100 text-sm mt-1">Get the full app experience</p>
+        </div>
+
+        {/* Benefits */}
+        <div className="px-6 py-5 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center shrink-0">
+              <Download size={14} className="text-orange-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Quick Access</p>
+              <p className="text-xs text-gray-500">Launch directly from your home screen</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+              <Smartphone size={14} className="text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Works Offline</p>
+              <p className="text-xs text-gray-500">Access your dashboard anytime, anywhere</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center shrink-0">
+              <Monitor size={14} className="text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Native Experience</p>
+              <p className="text-xs text-gray-500">Feels like a real app on your device</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 pb-6 space-y-2">
+          <button
+            onClick={handleInstallClick}
+            className="w-full py-3 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-orange-200"
+          >
+            <Download size={16} strokeWidth={2.5} />
+            Install Now
+          </button>
+          <button
+            onClick={handleDismiss}
+            className="w-full py-2.5 text-gray-500 text-sm hover:text-gray-700 transition-colors"
+          >
+            Maybe Later
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Small floating trigger button (when modal is closed but install is available) ──
+  const floatingButton = showFloating && !showInstallModal && (
+    <button
+      onClick={() => setShowInstallModal(true)}
+      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-orange-600 text-white pl-4 pr-4 py-3 rounded-full shadow-lg hover:bg-orange-700 transition-all hover:shadow-xl hover:scale-105 animate-in fade-in slide-in-from-bottom-4 duration-300"
+      aria-label="Install App"
+    >
+      <Download size={16} strokeWidth={2.5} />
+      <span className="font-semibold text-sm">Install App</span>
+    </button>
+  );
 
   return (
     <PwaInstallContext.Provider value={{ canInstall, isInstalled, triggerInstall: handleInstallClick, showInstructions: () => setShowInstructionsModal(true) }}>
       {children}
-      {showFloatingBanner && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className="flex items-center gap-2 bg-orange-600 text-white pl-4 pr-2 py-2.5 rounded-full shadow-lg hover:bg-orange-700 transition-colors">
-            <button
-              onClick={handleInstallClick}
-              className="flex items-center gap-2 font-medium text-sm cursor-pointer"
-            >
-              <Download size={16} strokeWidth={2.5} />
-              <span>Install App</span>
-            </button>
-            <button
-              onClick={handleDismiss}
-              className="ml-1 p-1 rounded-full hover:bg-orange-500 transition-colors cursor-pointer"
-              aria-label="Dismiss install prompt"
-            >
-              <X size={14} strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
-      )}
+      {floatingButton}
+      {installModal}
       {instructionsModal}
     </PwaInstallContext.Provider>
   );
