@@ -192,10 +192,10 @@ export default function EmployeesPage() {
       console.error('Failed to fetch employees:', err);
     }
 
-    // Fetch user activity data (last_login, last_activity) from users table
+    // Fetch user activity data (last_login) from users table
     let userActivityMap: Record<string, { lastLogin: string | null; lastActivity: string | null }> = {};
     try {
-      const { data: usersData, error: usersError } = await supabase.from('users').select('email, last_login, last_activity, full_name, id, role_id, is_active');
+      const { data: usersData, error: usersError } = await supabase.from('users').select('email, last_login, full_name, id, role_id, is_active');
       if (usersError) {
         console.error('Error fetching users:', usersError.message);
       }
@@ -205,7 +205,7 @@ export default function EmployeesPage() {
           if (email) {
             userActivityMap[email] = {
               lastLogin: (u.last_login as string) || null,
-              lastActivity: (u.last_activity as string) || null,
+              lastActivity: (u.last_login as string) || null,
             };
           }
         }
@@ -242,7 +242,7 @@ export default function EmployeesPage() {
               loginRole: 'Admin',
               permissions: [...ALL_PERMISSIONS],
               lastLogin: (authUser.last_login as string) || null,
-              lastActivity: (authUser.last_activity as string) || null,
+              lastActivity: (authUser.last_login as string) || null,
             });
             existingEmails.add(email);
           }
@@ -445,6 +445,14 @@ export default function EmployeesPage() {
     // Remove fields that come from users table join (not employee columns)
     delete (dbRow as Record<string, unknown>)['last_login'];
     delete (dbRow as Record<string, unknown>)['last_activity'];
+
+    // Convert empty strings to null for date and UUID columns (PostgreSQL rejects '' for these types)
+    const nullableColumns = ['hire_date', 'driver_license_expiry', 'hygiene_cert_expiry', 'primary_outlet_id'];
+    for (const col of nullableColumns) {
+      if ((dbRow as Record<string, unknown>)[col] === '') {
+        (dbRow as Record<string, unknown>)[col] = null;
+      }
+    }
 
     let employeeSaved = false;
     try {
