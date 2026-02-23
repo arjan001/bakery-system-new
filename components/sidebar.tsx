@@ -41,6 +41,12 @@ import {
   PackageSearch,
   ClipboardCopy,
   AlertTriangle,
+  RotateCcw,
+  ShoppingBasket,
+  UserCog,
+  PieChart,
+  Recycle,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 
@@ -141,6 +147,12 @@ export function Sidebar() {
         { label: 'Branch Management', href: '/admin/outlets', tip: 'Manage main bakery and branch outlets', icon: Store },
         { label: 'Outlet Inventory', href: '/admin/outlet-inventory', tip: 'Manage inventory for individual outlets', icon: PackageSearch },
         { label: 'Outlet Requisitions', href: '/admin/outlet-requisitions', tip: 'Branch product requests from main bakery', icon: ClipboardCopy },
+        { label: 'Outlet Returns', href: '/admin/outlet-returns', tip: 'Return unsold items to main bakery for freshness', icon: RotateCcw },
+        { label: 'Outlet Products', href: '/admin/outlet-products', tip: 'Branch-specific product catalog & pricing', icon: ShoppingBasket },
+        { label: 'Branch Employees', href: '/admin/outlet-employees', tip: 'Manage staff assigned to each branch', icon: UserCog },
+        { label: 'Branch Reports', href: '/admin/outlet-reports', tip: 'Sales, inventory & performance reports per branch', icon: PieChart },
+        { label: 'Branch Waste', href: '/admin/outlet-waste', tip: 'Record & track waste at each branch', icon: Recycle },
+        { label: 'Branch Settings', href: '/admin/outlet-settings', tip: 'Receipt, POS & display settings per branch', icon: SlidersHorizontal },
       ],
     },
     {
