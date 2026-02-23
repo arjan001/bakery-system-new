@@ -214,10 +214,20 @@ export default function CheckoutPage() {
     const orderNumber = `WA-${Date.now().toString(36).toUpperCase()}`;
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
     const customerPhone = form.phone || email;
+    const shippingAddress = [
+      form.address,
+      form.apartment,
+      form.city,
+      form.county,
+      form.postalCode,
+    ].filter(Boolean).join(', ');
+    const location = [form.city, form.county].filter(Boolean).join(', ');
+    const orderItems = items.map(item => ({ name: item.name, quantity: item.quantity, unit: 'pcs' }));
+    const trackingNumber = `DEL-${Date.now().toString(36).toUpperCase()}`;
 
     // Save order to Supabase with "On Hold" status
     try {
-      const { error: orderError } = await supabase.from('orders').insert({
+      const { data: savedOrder, error: orderError } = await supabase.from('orders').insert({
         order_number: orderNumber,
         customer_name: customerName,
         customer_phone: customerPhone,
@@ -230,15 +240,8 @@ export default function CheckoutPage() {
         delivery_notes: fulfillment === 'ship'
           ? `Ship to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county} ${form.postalCode}`
           : 'Pickup from bakery',
-      });
+      }).select('id').single();
       if (orderError) console.error('Order save error:', orderError);
-
-      // Save order items
-      const { data: savedOrder } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('order_number', orderNumber)
-        .single();
 
       if (savedOrder) {
         await supabase.from('order_items').insert(
@@ -250,6 +253,22 @@ export default function CheckoutPage() {
             total: item.price * item.quantity,
           }))
         );
+        if (fulfillment === 'ship') {
+          await supabase.from('deliveries').insert({
+            tracking_number: trackingNumber,
+            order_id: savedOrder.id,
+            destination: location || shippingAddress,
+            customer_name: customerName,
+            customer_phone: customerPhone,
+            customer_location: location,
+            customer_address: shippingAddress,
+            status: 'Pending',
+            scheduled_date: new Date().toISOString().slice(0, 10),
+            items: JSON.stringify(orderItems),
+            items_count: orderItems.length,
+            notes: `Online order ${orderNumber} — delivery auto-scheduled`,
+          });
+        }
       }
     } catch (err) {
       console.error('Order save error:', err);
@@ -319,8 +338,18 @@ export default function CheckoutPage() {
     const orderNumber = `ON-${Date.now().toString(36).toUpperCase()}`;
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
     const customerPhone = form.phone || mpesaPhone || email;
+    const shippingAddress = [
+      form.address,
+      form.apartment,
+      form.city,
+      form.county,
+      form.postalCode,
+    ].filter(Boolean).join(', ');
+    const location = [form.city, form.county].filter(Boolean).join(', ');
+    const orderItems = items.map(item => ({ name: item.name, quantity: item.quantity, unit: 'pcs' }));
+    const trackingNumber = `DEL-${Date.now().toString(36).toUpperCase()}`;
     try {
-      const { error: orderError } = await supabase.from('orders').insert({
+      const { data: savedOrder, error: orderError } = await supabase.from('orders').insert({
         order_number: orderNumber,
         customer_name: customerName,
         customer_phone: customerPhone,
@@ -333,15 +362,8 @@ export default function CheckoutPage() {
         delivery_notes: fulfillment === 'ship'
           ? `Ship to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county} ${form.postalCode}`
           : 'Pickup from bakery',
-      });
+      }).select('id').single();
       if (orderError) console.error('Order save error:', orderError);
-
-      // Save order items
-      const { data: savedOrder } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('order_number', orderNumber)
-        .single();
 
       if (savedOrder) {
         await supabase.from('order_items').insert(
@@ -353,6 +375,22 @@ export default function CheckoutPage() {
             total: item.price * item.quantity,
           }))
         );
+        if (fulfillment === 'ship') {
+          await supabase.from('deliveries').insert({
+            tracking_number: trackingNumber,
+            order_id: savedOrder.id,
+            destination: location || shippingAddress,
+            customer_name: customerName,
+            customer_phone: customerPhone,
+            customer_location: location,
+            customer_address: shippingAddress,
+            status: 'Pending',
+            scheduled_date: new Date().toISOString().slice(0, 10),
+            items: JSON.stringify(orderItems),
+            items_count: orderItems.length,
+            notes: `Online order ${orderNumber} — delivery auto-scheduled`,
+          });
+        }
       }
     } catch (err) {
       console.error('Order save error:', err);
