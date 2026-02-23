@@ -3,11 +3,12 @@
   "short_name": "Snackoh Admin",
   "description": "Snackoh Bakers Management System",
   "start_url": "/admin",
-  "scope": "/admin",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ea580c",
   "orientation": "any",
+  "categories": ["business", "productivity"],
   "icons": [
     {
       "src": "/company-logo.jpeg",
@@ -33,5 +34,7 @@
       "type": "image/jpeg",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
 }

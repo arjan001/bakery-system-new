@@ -7,6 +7,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { logAudit } from '@/lib/audit-logger';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -364,20 +365,20 @@ export default function ReportsPage() {
     const profit = pnlFormData.revenue - pnlFormData.costs;
     const margin = pnlFormData.revenue > 0 ? (profit / pnlFormData.revenue) * 100 : 0;
     const row = { period: pnlFormData.period, revenue: pnlFormData.revenue, costs: pnlFormData.costs, profit, margin };
-    try { if (pnlEditingId) await supabase.from('pl_reports').update(row).eq('id', pnlEditingId); else await supabase.from('pl_reports').insert(row); await fetchPlReports(); } catch { /* ignore */ }
+    try { if (pnlEditingId) { await supabase.from('pl_reports').update(row).eq('id', pnlEditingId); logAudit({ action: 'UPDATE', module: 'Reports', record_id: pnlEditingId, details: { table: 'pl_reports', period: pnlFormData.period, revenue: pnlFormData.revenue, costs: pnlFormData.costs } }); } else { await supabase.from('pl_reports').insert(row); logAudit({ action: 'CREATE', module: 'Reports', record_id: pnlFormData.period, details: { table: 'pl_reports', period: pnlFormData.period, revenue: pnlFormData.revenue, costs: pnlFormData.costs } }); } await fetchPlReports(); } catch { /* ignore */ }
     setPnlEditingId(null); setPnlFormData({ period: '', revenue: 0, costs: 0 }); setShowPnlForm(false);
   };
   const handlePnlEdit = (r: PlReport) => { setPnlFormData({ period: r.period, revenue: r.revenue, costs: r.costs }); setPnlEditingId(r.id); setShowPnlForm(true); };
-  const handlePnlDelete = async (id: string) => { if (confirm('Delete this P&L report?')) { await supabase.from('pl_reports').delete().eq('id', id); setPlReports(plReports.filter(r => r.id !== id)); } };
+  const handlePnlDelete = async (id: string) => { if (confirm('Delete this P&L report?')) { await supabase.from('pl_reports').delete().eq('id', id); logAudit({ action: 'DELETE', module: 'Reports', record_id: id, details: { table: 'pl_reports' } }); setPlReports(plReports.filter(r => r.id !== id)); } };
 
   const handleLedgerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const row = { entry_date: ledgerFormData.entryDate, description: ledgerFormData.description, account: ledgerFormData.account, debit: ledgerFormData.debit, credit: ledgerFormData.credit, reference: ledgerFormData.reference, category: ledgerFormData.category };
-    try { if (ledgerEditingId) await supabase.from('ledger_entries').update(row).eq('id', ledgerEditingId); else await supabase.from('ledger_entries').insert(row); await fetchLedger(); } catch { /* ignore */ }
+    try { if (ledgerEditingId) { await supabase.from('ledger_entries').update(row).eq('id', ledgerEditingId); logAudit({ action: 'UPDATE', module: 'Reports', record_id: ledgerEditingId, details: { table: 'ledger_entries', description: ledgerFormData.description, account: ledgerFormData.account } }); } else { await supabase.from('ledger_entries').insert(row); logAudit({ action: 'CREATE', module: 'Reports', record_id: ledgerFormData.description, details: { table: 'ledger_entries', description: ledgerFormData.description, account: ledgerFormData.account } }); } await fetchLedger(); } catch { /* ignore */ }
     setLedgerEditingId(null); setLedgerFormData({ entryDate: new Date().toISOString().split('T')[0], description: '', account: '', debit: 0, credit: 0, reference: '', category: 'General' }); setShowLedgerForm(false);
   };
   const handleLedgerEdit = (e: LedgerEntry) => { setLedgerFormData({ entryDate: e.entryDate, description: e.description, account: e.account, debit: e.debit, credit: e.credit, reference: e.reference, category: e.category }); setLedgerEditingId(e.id); setShowLedgerForm(true); };
-  const handleLedgerDelete = async (id: string) => { if (confirm('Delete this ledger entry?')) { await supabase.from('ledger_entries').delete().eq('id', id); setLedgerEntries(ledgerEntries.filter(e => e.id !== id)); } };
+  const handleLedgerDelete = async (id: string) => { if (confirm('Delete this ledger entry?')) { await supabase.from('ledger_entries').delete().eq('id', id); logAudit({ action: 'DELETE', module: 'Reports', record_id: id, details: { table: 'ledger_entries' } }); setLedgerEntries(ledgerEntries.filter(e => e.id !== id)); } };
 
   const showDetailModal = (title: string, content: { label: string; value: string }[]) => { setDetailTitle(title); setDetailContent(content); setShowDetail(true); };
 
@@ -587,7 +588,7 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{plReports.length} P&L report{plReports.length !== 1 ? 's' : ''}</p>
           <div className="flex gap-3">
-            <ExportButtons onCSV={() => exportCSV('pnl_reports', csvHeaders, csvRows)} onPDF={() => exportPDF('Profit & Loss Report', csvHeaders, csvRows)} />
+            <ExportButtons onCSV={() => { exportCSV('pnl_reports', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'pnl_reports', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Profit & Loss Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'pnl_reports', details: { format: 'PDF', rows: csvRows.length } }); }} />
             <button onClick={() => { setPnlEditingId(null); setPnlFormData({ period: '', revenue: 0, costs: 0 }); setShowPnlForm(true); }} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">+ Add Period</button>
           </div>
         </div>
@@ -673,7 +674,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Sales Transactions</h3>
-            <ExportButtons onCSV={() => exportCSV('sales_report', csvHeaders, csvRows)} onPDF={() => exportPDF('Sales Report', csvHeaders, csvRows)} />
+            <ExportButtons onCSV={() => { exportCSV('sales_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'sales_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Sales Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'sales_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -739,7 +740,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Inventory Valuation Report</h3>
-            <ExportButtons onCSV={() => exportCSV('inventory_report', csvHeaders, csvRows)} onPDF={() => exportPDF('Inventory Valuation Report', csvHeaders, csvRows)} />
+            <ExportButtons onCSV={() => { exportCSV('inventory_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'inventory_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Inventory Valuation Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'inventory_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -794,7 +795,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Debtor Accounts</h3>
-            <ExportButtons onCSV={() => exportCSV('debtors_report', csvHeaders, csvRows)} onPDF={() => exportPDF('Debtors Report', csvHeaders, csvRows)} />
+            <ExportButtons onCSV={() => { exportCSV('debtors_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'debtors_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Debtors Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'debtors_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -831,7 +832,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Creditor Accounts</h3>
-            <ExportButtons onCSV={() => exportCSV('creditors_report', csvHeaders, csvRows)} onPDF={() => exportPDF('Creditors Report', csvHeaders, csvRows)} />
+            <ExportButtons onCSV={() => { exportCSV('creditors_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'creditors_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Creditors Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'creditors_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -868,7 +869,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Item-Level Performance</h3>
-            <ExportButtons onCSV={() => exportCSV('items_report', csvHeaders, csvRows)} onPDF={() => exportPDF('Item Performance Report', csvHeaders, csvRows)} />
+            <ExportButtons onCSV={() => { exportCSV('items_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'items_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Item Performance Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'items_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -928,7 +929,7 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{ledgerEntries.length} ledger entr{ledgerEntries.length !== 1 ? 'ies' : 'y'}</p>
           <div className="flex gap-3">
-            <ExportButtons onCSV={() => exportCSV('ledger_entries', csvHeaders, csvRows)} onPDF={() => exportPDF('General Ledger', csvHeaders, csvRows)} />
+            <ExportButtons onCSV={() => { exportCSV('ledger_entries', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'ledger_entries', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('General Ledger', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'ledger_entries', details: { format: 'PDF', rows: csvRows.length } }); }} />
             <button onClick={() => { setLedgerEditingId(null); setLedgerFormData({ entryDate: new Date().toISOString().split('T')[0], description: '', account: '', debit: 0, credit: 0, reference: '', category: 'General' }); setShowLedgerForm(true); }} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">+ New Entry</button>
           </div>
         </div>
@@ -1022,7 +1023,7 @@ export default function ReportsPage() {
             <h3 className="text-lg font-semibold">Statement of Financial Position</h3>
             <p className="text-sm text-muted-foreground">As at {formatDate(bsDate)}</p>
           </div>
-          <ExportButtons onCSV={() => exportCSV('balance_sheet', csvHeaders, csvRows)} onPDF={() => exportPDF('Balance Sheet', csvHeaders, csvRows)} />
+          <ExportButtons onCSV={() => { exportCSV('balance_sheet', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'balance_sheet', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Balance Sheet', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'balance_sheet', details: { format: 'PDF', rows: csvRows.length } }); }} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

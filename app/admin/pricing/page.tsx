@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface PricingTier {
   id: string;
@@ -169,8 +170,20 @@ export default function PricingPage() {
         row.recipe_id = formData.recipeId || null;
         row.recipe_name = selectedRecipe?.name || null;
         await supabase.from('pricing_tiers').update(row).eq('id', editId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Pricing',
+          record_id: editId,
+          details: { productName: formData.productName, productCode: formData.productCode, cost, basePrice, wholesale, margin },
+        });
       } else {
         await supabase.from('pricing_tiers').insert(row);
+        logAudit({
+          action: 'CREATE',
+          module: 'Pricing',
+          record_id: formData.productCode,
+          details: { productName: formData.productName, productCode: formData.productCode, cost, basePrice, wholesale, margin },
+        });
       }
       await fetchTiers();
     } catch (err) {
@@ -198,6 +211,12 @@ export default function PricingPage() {
   const handleDelete = async (id: string) => {
     if (confirm('Delete this pricing tier?')) {
       await supabase.from('pricing_tiers').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Pricing',
+        record_id: id,
+        details: {},
+      });
       setTiers(tiers.filter(t => t.id !== id));
     }
   };
@@ -206,6 +225,12 @@ export default function PricingPage() {
     const tier = tiers.find(t => t.id === id);
     if (tier) {
       await supabase.from('pricing_tiers').update({ active: !tier.active }).eq('id', id);
+      logAudit({
+        action: 'UPDATE',
+        module: 'Pricing',
+        record_id: id,
+        details: { productName: tier.productName, active: !tier.active },
+      });
       setTiers(tiers.map(t => t.id === id ? {...t, active: !t.active} : t));
     }
   };

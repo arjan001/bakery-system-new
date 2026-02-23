@@ -7,6 +7,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { logAudit } from '@/lib/audit-logger';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -56,6 +57,10 @@ interface EmployeeKPI {
   systemLogins: number;
   overallScore: number;
   status: 'Excellent' | 'Good' | 'Needs Improvement';
+  // System activity metrics from audit logs
+  systemActions: number;
+  membersAdded: number;
+  moduleUsage: Record<string, number>;
 }
 
 interface DailyTrend {
@@ -312,6 +317,7 @@ export default function EmployeeProductivityPage() {
   // ── Core data ──
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [productivityRecords, setProductivityRecords] = useState<ProductivityRecord[]>([]);
+  const [auditData, setAuditData] = useState<Record<string, { actions: number; membersAdded: number; moduleUsage: Record<string, number> }>>({});
   const [loading, setLoading] = useState(true);
 
   // ── Date range ──
@@ -566,6 +572,63 @@ export default function EmployeeProductivityPage() {
     setLoading(false);
   }, [dateFrom, dateTo, employees]);
 
+  // ─── Fetch Audit Log Activity Per Employee ─────────────────────────────────
+
+  const fetchAuditActivity = useCallback(async () => {
+    if (employees.length === 0) return;
+
+    const { data: auditLogs } = await supabase
+      .from('audit_log')
+      .select('user_name, action, module, created_at')
+      .gte('created_at', dateFrom + 'T00:00:00')
+      .lte('created_at', dateTo + 'T23:59:59')
+      .order('created_at', { ascending: false })
+      .limit(5000);
+
+    if (!auditLogs || auditLogs.length === 0) {
+      setAuditData({});
+      return;
+    }
+
+    const empAuditMap: Record<string, { actions: number; membersAdded: number; moduleUsage: Record<string, number> }> = {};
+
+    for (const log of auditLogs) {
+      const r = log as Record<string, unknown>;
+      const userName = ((r.user_name || '') as string).trim();
+      const action = (r.action || '') as string;
+      const module = (r.module || '') as string;
+
+      if (!userName) continue;
+
+      // Match audit log user_name to employee name
+      const matchedEmp = employees.find(emp => {
+        const fullName = `${emp.firstName} ${emp.lastName}`.trim();
+        return fullName.toLowerCase() === userName.toLowerCase() || emp.email.toLowerCase() === userName.toLowerCase();
+      });
+
+      if (!matchedEmp) continue;
+
+      const empId = matchedEmp.id;
+      if (!empAuditMap[empId]) {
+        empAuditMap[empId] = { actions: 0, membersAdded: 0, moduleUsage: {} };
+      }
+
+      empAuditMap[empId].actions += 1;
+
+      // Track members added (employee CREATE actions)
+      if (action === 'CREATE' && (module === 'Employees' || module === 'Customers')) {
+        empAuditMap[empId].membersAdded += 1;
+      }
+
+      // Track module usage
+      if (module) {
+        empAuditMap[empId].moduleUsage[module] = (empAuditMap[empId].moduleUsage[module] || 0) + 1;
+      }
+    }
+
+    setAuditData(empAuditMap);
+  }, [employees, dateFrom, dateTo]);
+
   // ─── Initial Load ───────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -575,10 +638,11 @@ export default function EmployeeProductivityPage() {
   useEffect(() => {
     if (employees.length > 0) {
       fetchProductivityRecords();
+      fetchAuditActivity();
     } else {
       setLoading(false);
     }
-  }, [employees, fetchProductivityRecords]);
+  }, [employees, fetchProductivityRecords, fetchAuditActivity]);
 
   // ─── Date Preset Handling ───────────────────────────────────────────────────
 
@@ -604,6 +668,9 @@ export default function EmployeeProductivityPage() {
       const overallScore = calculateKPIScore(emp, productivityRecords);
       const badge = getStatusBadge(overallScore);
 
+      // Audit log metrics
+      const empAudit = auditData[emp.id] || { actions: 0, membersAdded: 0, moduleUsage: {} };
+
       return {
         employeeId: emp.id,
         employeeName: `${emp.firstName} ${emp.lastName}`.trim(),
@@ -620,9 +687,12 @@ export default function EmployeeProductivityPage() {
         systemLogins,
         overallScore,
         status: badge.label as EmployeeKPI['status'],
+        systemActions: empAudit.actions,
+        membersAdded: empAudit.membersAdded,
+        moduleUsage: empAudit.moduleUsage,
       };
     });
-  }, [employees, productivityRecords]);
+  }, [employees, productivityRecords, auditData]);
 
   // ─── Filtered & Searched KPIs ───────────────────────────────────────────────
 
@@ -670,6 +740,8 @@ export default function EmployeeProductivityPage() {
     ? [...employeeKPIs].sort((a, b) => b.overallScore - a.overallScore)[0]
     : null;
   const lowPerformers = employeeKPIs.filter(e => e.overallScore < 60).length;
+  const totalSystemActions = employeeKPIs.reduce((s, e) => s + e.systemActions, 0);
+  const totalMembersAdded = employeeKPIs.reduce((s, e) => s + e.membersAdded, 0);
 
   // ─── Unique Roles & Departments ─────────────────────────────────────────────
 
@@ -778,8 +850,20 @@ export default function EmployeeProductivityPage() {
     try {
       if (logEditId) {
         await supabase.from('employee_productivity').update(row).eq('id', logEditId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Employee Productivity',
+          record_id: logEditId,
+          details: { ...row },
+        });
       } else {
-        await supabase.from('employee_productivity').insert(row);
+        const { data: inserted } = await supabase.from('employee_productivity').insert(row).select().single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Employee Productivity',
+          record_id: inserted?.id || '',
+          details: { ...row },
+        });
       }
       await fetchProductivityRecords();
     } catch (err) {
@@ -794,6 +878,12 @@ export default function EmployeeProductivityPage() {
     if (!deleteTargetId) return;
     try {
       await supabase.from('employee_productivity').delete().eq('id', deleteTargetId);
+      logAudit({
+        action: 'DELETE',
+        module: 'Employee Productivity',
+        record_id: deleteTargetId,
+        details: { deleted_record_id: deleteTargetId },
+      });
       await fetchProductivityRecords();
     } catch (err) {
       console.error('Error deleting record:', err);
@@ -805,7 +895,7 @@ export default function EmployeeProductivityPage() {
   // ─── Export Handlers ────────────────────────────────────────────────────────
 
   const handleExportCSV = () => {
-    const headers = ['Employee', 'Role', 'Department', 'Batches', 'Deliveries (Done/Assigned)', 'POS Sales', 'Waste Reports', 'Logins', 'KPI Score', 'Status'];
+    const headers = ['Employee', 'Role', 'Department', 'Batches', 'Deliveries (Done/Assigned)', 'POS Sales', 'Waste Reports', 'Logins', 'System Actions', 'Members Added', 'KPI Score', 'Status'];
     const rows = filteredKPIs.map(e => [
       e.employeeName,
       e.category,
@@ -815,6 +905,8 @@ export default function EmployeeProductivityPage() {
       e.posSales.toString(),
       e.wasteReports.toString(),
       e.systemLogins.toString(),
+      e.systemActions.toString(),
+      e.membersAdded.toString(),
       e.overallScore.toString(),
       e.status,
     ]);
@@ -822,7 +914,7 @@ export default function EmployeeProductivityPage() {
   };
 
   const handleExportPDF = () => {
-    const headers = ['Employee', 'Role', 'Department', 'Batches', 'Deliveries', 'POS Sales', 'Waste', 'Logins', 'Score', 'Status'];
+    const headers = ['Employee', 'Role', 'Department', 'Batches', 'Deliveries', 'POS Sales', 'Waste', 'Logins', 'Sys Actions', 'Members', 'Score', 'Status'];
     const rows = filteredKPIs.map(e => [
       e.employeeName,
       e.category,
@@ -832,6 +924,8 @@ export default function EmployeeProductivityPage() {
       e.posSales.toString(),
       e.wasteReports.toString(),
       e.systemLogins.toString(),
+      e.systemActions.toString(),
+      e.membersAdded.toString(),
       `${e.overallScore}/100`,
       e.status,
     ]);
@@ -902,7 +996,7 @@ export default function EmployeeProductivityPage() {
       </div>
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <SummaryCard
           title="Total Employees Tracked"
           value={totalTracked.toString()}
@@ -930,6 +1024,20 @@ export default function EmployeeProductivityPage() {
           subtitle="Employees scoring below 60"
           color={lowPerformers > 0 ? 'red' : 'green'}
           icon="⚠️"
+        />
+        <SummaryCard
+          title="Total System Actions"
+          value={totalSystemActions.toString()}
+          subtitle="All module interactions tracked"
+          color="purple"
+          icon="🔄"
+        />
+        <SummaryCard
+          title="Members Added"
+          value={totalMembersAdded.toString()}
+          subtitle="Employees & customers created"
+          color="blue"
+          icon="➕"
         />
       </div>
 
@@ -1019,6 +1127,8 @@ export default function EmployeeProductivityPage() {
                     <th className="text-center px-4 py-3 font-semibold text-muted-foreground">POS Sales</th>
                     <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Waste Rpts</th>
                     <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Logins</th>
+                    <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Sys Actions</th>
+                    <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Members Added</th>
                     <th className="text-center px-4 py-3 font-semibold text-muted-foreground">KPI Score</th>
                     <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Status</th>
                     <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Actions</th>
@@ -1055,6 +1165,20 @@ export default function EmployeeProductivityPage() {
                         <td className="px-4 py-3 text-center font-medium">{kpi.posSales || '-'}</td>
                         <td className="px-4 py-3 text-center font-medium">{kpi.wasteReports || '-'}</td>
                         <td className="px-4 py-3 text-center font-medium">{kpi.systemLogins || '-'}</td>
+                        <td className="px-4 py-3 text-center font-medium">
+                          {kpi.systemActions > 0 ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-800 border border-violet-200">
+                              {kpi.systemActions}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-center font-medium">
+                          {kpi.membersAdded > 0 ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-100 text-cyan-800 border border-cyan-200">
+                              {kpi.membersAdded}
+                            </span>
+                          ) : '-'}
+                        </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-16 bg-muted rounded-full h-2 overflow-hidden">
@@ -1137,7 +1261,7 @@ export default function EmployeeProductivityPage() {
             </div>
 
             {/* KPI Breakdown Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
               <div className="bg-card border border-border rounded-lg p-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Batches</p>
                 <p className="text-xl font-bold text-foreground">{selectedEmployee.batchesProduced}</p>
@@ -1162,7 +1286,37 @@ export default function EmployeeProductivityPage() {
                 <p className="text-xs text-muted-foreground mb-1">Logins</p>
                 <p className="text-xl font-bold text-foreground">{selectedEmployee.systemLogins}</p>
               </div>
+              <div className="bg-card border border-violet-200 rounded-lg p-3 text-center bg-violet-50/50">
+                <p className="text-xs text-violet-600 mb-1">System Actions</p>
+                <p className="text-xl font-bold text-violet-700">{selectedEmployee.systemActions}</p>
+              </div>
+              <div className="bg-card border border-cyan-200 rounded-lg p-3 text-center bg-cyan-50/50">
+                <p className="text-xs text-cyan-600 mb-1">Members Added</p>
+                <p className="text-xl font-bold text-cyan-700">{selectedEmployee.membersAdded}</p>
+              </div>
             </div>
+
+            {/* Module Usage Breakdown */}
+            {selectedEmployee.systemActions > 0 && Object.keys(selectedEmployee.moduleUsage).length > 0 && (
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-border">
+                  <h4 className="text-sm font-semibold text-foreground">System Activity by Module</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">Overall interactions across the system</p>
+                </div>
+                <div className="p-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {Object.entries(selectedEmployee.moduleUsage)
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([mod, count]) => (
+                        <div key={mod} className="flex items-center justify-between px-3 py-2 bg-muted/30 rounded-lg border border-border">
+                          <span className="text-xs font-medium text-foreground truncate">{mod}</span>
+                          <span className="text-xs font-bold text-primary ml-2 shrink-0">{count}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

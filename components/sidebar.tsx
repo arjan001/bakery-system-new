@@ -35,8 +35,10 @@ import {
   Receipt,
   Activity,
   RefreshCw,
+  Download,
   LucideIcon,
 } from 'lucide-react';
+import { usePwaInstall } from '@/components/pwa-install-prompt';
 
 interface NavItem {
   label: string;
@@ -57,6 +59,7 @@ export function Sidebar() {
   const [logoUrl, setLogoUrl] = useState('');
   const [businessName, setBusinessName] = useState('SNACKOH');
   const { isAdmin, permissions, role, loading: permsLoading } = useUserPermissions();
+  const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
 
   // Load logo from database/localStorage
   useEffect(() => {
@@ -239,7 +242,17 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-3 space-y-2">
+        {canInstall && !isInstalled && (
+          <button
+            onClick={triggerInstall}
+            title="Install Snackoh App"
+            className={`flex items-center gap-2.5 w-full px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 ${collapsed ? 'justify-center px-0' : ''}`}
+          >
+            <Download size={collapsed ? 20 : 16} strokeWidth={2.5} className="shrink-0" />
+            {!collapsed && <span>Install App</span>}
+          </button>
+        )}
         {!collapsed && (
           <p className="text-[10px] text-muted-foreground text-center">v2.0 | Snackoh Bakers</p>
         )}

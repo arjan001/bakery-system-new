@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface CartItem { id: string; name: string; sku: string; price: number; quantity: number; stock: number; }
 interface Product { id: string; name: string; sku: string; retailPrice: number; wholesalePrice: number; stock: number; category: string; }
@@ -403,6 +404,14 @@ export default function POSPage() {
         subtotal, tax, total, amount_paid: paid, change_amount: change, cashier_name: loggedCashier, status: 'Completed',
       }).select('id').single();
       if (saleData) posSaleId = saleData.id;
+      if (posSaleId) {
+        logAudit({
+          action: 'CREATE',
+          module: 'POS',
+          record_id: posSaleId,
+          details: { receipt_number: rNo, total, cashier: loggedCashier, item_count: cartItems.length, payment_method: method },
+        });
+      }
     } catch { /* continue */ }
 
     // Also save POS sale items

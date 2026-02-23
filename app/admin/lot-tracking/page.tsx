@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface LotTracking {
   id: string;
@@ -248,8 +249,23 @@ export default function LotTrackingPage() {
       temperature_log: formData.temperatureLog,
     };
     try {
-      if (editId) await supabase.from('lot_tracking').update(row).eq('id', editId);
-      else await supabase.from('lot_tracking').insert(row);
+      if (editId) {
+        await supabase.from('lot_tracking').update(row).eq('id', editId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Lot Tracking',
+          record_id: editId,
+          details: { lot_number: row.lot_number, product_name: row.product_name, status: row.status },
+        });
+      } else {
+        await supabase.from('lot_tracking').insert(row);
+        logAudit({
+          action: 'CREATE',
+          module: 'Lot Tracking',
+          record_id: row.lot_number,
+          details: { lot_number: row.lot_number, product_name: row.product_name, status: row.status },
+        });
+      }
       await fetchLots();
     } catch {
       /* fallback */
@@ -261,7 +277,14 @@ export default function LotTrackingPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this lot? This action cannot be undone.')) {
+      const lotToDelete = lots.find((lot) => lot.id === id);
       await supabase.from('lot_tracking').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Lot Tracking',
+        record_id: id,
+        details: { lot_number: lotToDelete?.lotNumber, product_name: lotToDelete?.productName },
+      });
       setLots(lots.filter((lot) => lot.id !== id));
     }
   };

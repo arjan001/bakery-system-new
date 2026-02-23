@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -239,8 +240,23 @@ export default function DistributionPage() {
       notes: agentFormData.notes,
     };
     try {
-      if (editingAgentId) await supabase.from('distribution_agents').update(row).eq('id', editingAgentId);
-      else await supabase.from('distribution_agents').insert(row);
+      if (editingAgentId) {
+        await supabase.from('distribution_agents').update(row).eq('id', editingAgentId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Distribution',
+          record_id: editingAgentId,
+          details: { name: row.name, territory: row.territory, status: row.status },
+        });
+      } else {
+        await supabase.from('distribution_agents').insert(row);
+        logAudit({
+          action: 'CREATE',
+          module: 'Distribution',
+          record_id: row.name,
+          details: { name: row.name, territory: row.territory, status: row.status },
+        });
+      }
       await fetchAgents();
     } catch { /* fallback */ }
     setEditingAgentId(null);
@@ -278,7 +294,14 @@ export default function DistributionPage() {
 
   const handleDeleteAgent = async (id: string) => {
     if (confirm('Delete this distribution agent?')) {
+      const agentToDelete = agents.find(a => a.id === id);
       await supabase.from('distribution_agents').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Distribution',
+        record_id: id,
+        details: { name: agentToDelete?.name, territory: agentToDelete?.territory },
+      });
       setAgents(agents.filter(a => a.id !== id));
     }
   };
@@ -311,8 +334,20 @@ export default function DistributionPage() {
     try {
       if (editingRecordId) {
         await supabase.from('distribution_records').update(row).eq('id', editingRecordId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Distribution',
+          record_id: editingRecordId,
+          details: { product_name: row.product_name, quantity: row.quantity, total_amount: totalAmount },
+        });
       } else {
         await supabase.from('distribution_records').insert(row);
+        logAudit({
+          action: 'CREATE',
+          module: 'Distribution',
+          record_id: row.product_name,
+          details: { agent_id: row.agent_id, product_name: row.product_name, quantity: row.quantity, total_amount: totalAmount },
+        });
         // Update agent totals
         if (agent) {
           await supabase.from('distribution_agents').update({
@@ -331,7 +366,14 @@ export default function DistributionPage() {
 
   const handleDeleteRecord = async (id: string) => {
     if (confirm('Delete this distribution record?')) {
+      const recordToDelete = records.find(r => r.id === id);
       await supabase.from('distribution_records').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Distribution',
+        record_id: id,
+        details: { product_name: recordToDelete?.productName, quantity: recordToDelete?.quantity },
+      });
       setRecords(records.filter(r => r.id !== id));
     }
   };

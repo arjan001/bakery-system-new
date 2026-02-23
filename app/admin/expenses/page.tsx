@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 import {
   Search,
   Plus,
@@ -327,8 +328,20 @@ export default function ExpensesPage() {
     try {
       if (editingExpenseId) {
         await supabase.from('expenses').update(row).eq('id', editingExpenseId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Expenses',
+          record_id: editingExpenseId,
+          details: { title: row.title, amount: row.amount, category: row.category_name, payment_method: row.payment_method },
+        });
       } else {
-        await supabase.from('expenses').insert(row);
+        const { data: inserted } = await supabase.from('expenses').insert(row).select('id').single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Expenses',
+          record_id: inserted?.id || undefined,
+          details: { title: row.title, amount: row.amount, category: row.category_name, payment_method: row.payment_method, status: row.status },
+        });
       }
       await fetchExpenses();
     } catch {
@@ -361,8 +374,15 @@ export default function ExpensesPage() {
 
   const handleDeleteExpense = async (id: string) => {
     if (confirm('Delete this expense? This action cannot be undone.')) {
+      const expense = expenses.find((e) => e.id === id);
       try {
         await supabase.from('expenses').delete().eq('id', id);
+        logAudit({
+          action: 'DELETE',
+          module: 'Expenses',
+          record_id: id,
+          details: { title: expense?.title, amount: expense?.amount, category: expense?.category_name },
+        });
         setExpenses(expenses.filter((e) => e.id !== id));
       } catch {
         /* handled by supabase logging */
@@ -376,6 +396,12 @@ export default function ExpensesPage() {
         .from('expenses')
         .update({ status: newStatus, approved_by: newStatus === 'Approved' ? 'Admin' : '' })
         .eq('id', expense.id);
+      logAudit({
+        action: newStatus === 'Approved' ? 'APPROVE' : 'REJECT',
+        module: 'Expenses',
+        record_id: expense.id,
+        details: { title: expense.title, amount: expense.amount, previous_status: expense.status, new_status: newStatus },
+      });
       await fetchExpenses();
     } catch {
       /* handled by supabase logging */
@@ -396,8 +422,20 @@ export default function ExpensesPage() {
     try {
       if (editingCategoryId) {
         await supabase.from('expense_categories').update(row).eq('id', editingCategoryId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Expense Categories',
+          record_id: editingCategoryId,
+          details: { name: row.name, is_active: row.is_active },
+        });
       } else {
-        await supabase.from('expense_categories').insert(row);
+        const { data: inserted } = await supabase.from('expense_categories').insert(row).select('id').single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Expense Categories',
+          record_id: inserted?.id || undefined,
+          details: { name: row.name, color: row.color },
+        });
       }
       await fetchCategories();
       await fetchExpenses();
@@ -423,8 +461,15 @@ export default function ExpensesPage() {
 
   const handleDeleteCategory = async (id: string) => {
     if (confirm('Delete this category? Expenses linked to it will have their category unlinked.')) {
+      const cat = categories.find((c) => c.id === id);
       try {
         await supabase.from('expense_categories').delete().eq('id', id);
+        logAudit({
+          action: 'DELETE',
+          module: 'Expense Categories',
+          record_id: id,
+          details: { name: cat?.name },
+        });
         setCategories(categories.filter((c) => c.id !== id));
         await fetchExpenses();
       } catch {
@@ -463,6 +508,11 @@ export default function ExpensesPage() {
       e.created_by,
     ]);
     exportCSV('expense_report', headers, rows);
+    logAudit({
+      action: 'EXPORT',
+      module: 'Expenses',
+      details: { format: 'CSV', record_count: filteredExpenses.length },
+    });
   };
 
   // ─── Clear Filters ───────────────────────────────────────────────────────

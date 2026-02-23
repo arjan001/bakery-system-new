@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Creditor { id: string; supplierName: string; totalCredit: number; creditDays: number; nextPaymentDate: string; status: 'Current' | 'Overdue' | 'Paid'; }
 
@@ -26,15 +27,30 @@ export default function CreditorsPage() {
     e.preventDefault();
     const row = { supplier_name: formData.supplierName, total_credit: formData.totalCredit, credit_days: formData.creditDays, next_payment_date: formData.nextPaymentDate || null, status: formData.status };
     try {
-      if (editingId) await supabase.from('creditors').update(row).eq('id', editingId);
-      else await supabase.from('creditors').insert(row);
+      if (editingId) {
+        await supabase.from('creditors').update(row).eq('id', editingId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Creditors',
+          record_id: editingId,
+          details: { supplier_name: row.supplier_name, total_credit: row.total_credit, status: row.status },
+        });
+      } else {
+        const { data: inserted } = await supabase.from('creditors').insert(row).select('id').single();
+        logAudit({
+          action: 'CREATE',
+          module: 'Creditors',
+          record_id: inserted?.id ?? '',
+          details: { supplier_name: row.supplier_name, total_credit: row.total_credit, status: row.status },
+        });
+      }
       await fetchData();
     } catch { /* */ }
     setEditingId(null); setFormData({ supplierName: '', totalCredit: 0, creditDays: 0, nextPaymentDate: '', status: 'Current' }); setShowForm(false);
   };
 
   const handleEdit = (c: Creditor) => { setFormData({ supplierName: c.supplierName, totalCredit: c.totalCredit, creditDays: c.creditDays, nextPaymentDate: c.nextPaymentDate, status: c.status }); setEditingId(c.id); setShowForm(true); };
-  const handleDelete = async (id: string) => { if (confirm('Delete?')) { await supabase.from('creditors').delete().eq('id', id); setCreditors(creditors.filter(c => c.id !== id)); } };
+  const handleDelete = async (id: string) => { if (confirm('Delete?')) { await supabase.from('creditors').delete().eq('id', id); logAudit({ action: 'DELETE', module: 'Creditors', record_id: id, details: {} }); setCreditors(creditors.filter(c => c.id !== id)); } };
 
   const totalCredit = creditors.reduce((s, c) => s + c.totalCredit, 0);
 

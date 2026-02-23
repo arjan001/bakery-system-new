@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 // ── Interfaces ──
 
@@ -211,6 +212,12 @@ export default function RecipesPage() {
             }))
           );
         }
+        logAudit({
+          action: 'UPDATE',
+          module: 'Recipes',
+          record_id: editId,
+          details: { name: formData.name, code: formData.code, category: formData.category, status: formData.status },
+        });
       } else {
         const { data: created } = await supabase.from('recipes').insert(row).select().single();
         if (created && formData.ingredients.length > 0) {
@@ -224,6 +231,14 @@ export default function RecipesPage() {
               sourcing_note: i.sourcingNote || '',
             }))
           );
+        }
+        if (created) {
+          logAudit({
+            action: 'CREATE',
+            module: 'Recipes',
+            record_id: created.id,
+            details: { name: formData.name, code: formData.code, category: formData.category, status: formData.status },
+          });
         }
       }
       await fetchRecipes();
@@ -253,6 +268,12 @@ export default function RecipesPage() {
     if (confirm('Delete this recipe? Production runs using this recipe will not be affected.')) {
       await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
       await supabase.from('recipes').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Recipes',
+        record_id: id,
+        details: {},
+      });
       setRecipes(recipes.filter(r => r.id !== id));
     }
   };
@@ -285,6 +306,14 @@ export default function RecipesPage() {
           }))
         );
       }
+      if (created) {
+        logAudit({
+          action: 'CREATE',
+          module: 'Recipes',
+          record_id: created.id,
+          details: { name: recipe.name + ' (Copy)', code: recipe.code + '-COPY', duplicatedFrom: recipe.id },
+        });
+      }
       await fetchRecipes();
     } catch (err) {
       console.error('Duplicate error:', err);
@@ -294,6 +323,12 @@ export default function RecipesPage() {
   const toggleStatus = async (recipe: Recipe) => {
     const newStatus = recipe.status === 'active' ? 'inactive' : 'active';
     await supabase.from('recipes').update({ status: newStatus }).eq('id', recipe.id);
+    logAudit({
+      action: 'UPDATE',
+      module: 'Recipes',
+      record_id: recipe.id,
+      details: { name: recipe.name, status: newStatus },
+    });
     setRecipes(recipes.map(r => r.id === recipe.id ? { ...r, status: newStatus } : r));
   };
 

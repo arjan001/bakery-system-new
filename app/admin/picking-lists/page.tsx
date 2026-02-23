@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 // ── Interfaces ──
 
@@ -284,6 +285,12 @@ export default function PickingListsPage() {
             }))
           );
         }
+        logAudit({
+          action: 'UPDATE',
+          module: 'Picking Lists',
+          record_id: editId,
+          details: { ...row, items_count: formData.items.length },
+        });
       } else {
         const { data: created } = await supabase.from('picking_lists').insert(row).select().single();
         if (created && formData.items.length > 0) {
@@ -297,6 +304,12 @@ export default function PickingListsPage() {
             }))
           );
         }
+        logAudit({
+          action: 'CREATE',
+          module: 'Picking Lists',
+          record_id: created?.id || '',
+          details: { ...row, items_count: formData.items.length },
+        });
       }
       await fetchLists();
     } catch {
@@ -335,6 +348,12 @@ export default function PickingListsPage() {
     if (confirm('Delete this picking list?')) {
       await supabase.from('picking_list_items').delete().eq('picking_list_id', id);
       await supabase.from('picking_lists').delete().eq('id', id);
+      logAudit({
+        action: 'DELETE',
+        module: 'Picking Lists',
+        record_id: id,
+        details: { deleted_picking_list_id: id },
+      });
       setPickingLists(pickingLists.filter((pl) => pl.id !== id));
     }
   };

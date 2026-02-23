@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 
 interface Debtor { id: string; name: string; totalDebt: number; debtDays: number; lastPayment: string; status: 'Current' | 'Overdue' | 'Defaulted'; }
 
@@ -26,15 +27,30 @@ export default function DebtorsPage() {
     e.preventDefault();
     const row = { name: formData.name, total_debt: formData.totalDebt, debt_days: formData.debtDays, last_payment_date: formData.lastPayment || null, status: formData.status };
     try {
-      if (editingId) await supabase.from('debtors').update(row).eq('id', editingId);
-      else await supabase.from('debtors').insert(row);
+      if (editingId) {
+        await supabase.from('debtors').update(row).eq('id', editingId);
+        logAudit({
+          action: 'UPDATE',
+          module: 'Debtors',
+          record_id: editingId,
+          details: { name: formData.name, total_debt: formData.totalDebt, debt_days: formData.debtDays, status: formData.status },
+        });
+      } else {
+        await supabase.from('debtors').insert(row);
+        logAudit({
+          action: 'CREATE',
+          module: 'Debtors',
+          record_id: '',
+          details: { name: formData.name, total_debt: formData.totalDebt, debt_days: formData.debtDays, status: formData.status },
+        });
+      }
       await fetchData();
     } catch { /* */ }
     setEditingId(null); setFormData({ name: '', totalDebt: 0, debtDays: 0, lastPayment: '', status: 'Current' }); setShowForm(false);
   };
 
   const handleEdit = (d: Debtor) => { setFormData({ name: d.name, totalDebt: d.totalDebt, debtDays: d.debtDays, lastPayment: d.lastPayment, status: d.status }); setEditingId(d.id); setShowForm(true); };
-  const handleDelete = async (id: string) => { if (confirm('Delete?')) { await supabase.from('debtors').delete().eq('id', id); setDebtors(debtors.filter(d => d.id !== id)); } };
+  const handleDelete = async (id: string) => { if (confirm('Delete?')) { await supabase.from('debtors').delete().eq('id', id); logAudit({ action: 'DELETE', module: 'Debtors', record_id: id, details: { entity: 'debtor' } }); setDebtors(debtors.filter(d => d.id !== id)); } };
 
   const totalDebt = debtors.reduce((s, d) => s + d.totalDebt, 0);
   const overdueCount = debtors.filter(d => d.status === 'Overdue' || d.status === 'Defaulted').length;
