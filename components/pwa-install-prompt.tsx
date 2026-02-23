@@ -47,23 +47,27 @@ function getBrowserInfo(): { name: string; isMobile: boolean } {
 export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as unknown as { standalone?: boolean }).standalone === true
+    );
+  });
   const [dismissed, setDismissed] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [showInstructionsModal, setShowInstructionsModal] = useState(false);
   const [swRegistered, setSwRegistered] = useState(false);
 
-  // Check if the app is already installed (standalone mode)
+  // Listen for standalone mode changes and check dismissal
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    // Double-check on mount in case SSR missed it
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       (navigator as unknown as { standalone?: boolean }).standalone === true;
-
-    if (isStandalone) {
-      setIsInstalled(true);
-    }
+    if (isStandalone) setIsInstalled(true);
 
     // Check if user previously dismissed
     try {
@@ -126,8 +130,10 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
   }, []);
 
   // Register service worker on page load for PWA installability detection
+  // Skip registration if app is already installed (standalone mode)
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    if (isInstalled) return;
 
     navigator.serviceWorker
       .register('/sw.js', { scope: '/' })
@@ -135,7 +141,7 @@ export function PwaInstallPrompt({ children }: { children?: React.ReactNode }) {
       .catch((err) => {
         console.error('Service worker registration failed:', err);
       });
-  }, []);
+  }, [isInstalled]);
 
   const handleInstallClick = useCallback(async () => {
     if (deferredPrompt) {
