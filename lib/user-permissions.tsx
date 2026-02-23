@@ -7,7 +7,7 @@ interface UserPermissions {
   userId: string;
   email: string;
   fullName: string;
-  role: string;         // loginRole from employee (Admin, Administrator, Baker, Driver, Sales, Cashier, Viewer)
+  role: string;         // loginRole from employee (Admin, Administrator, Super Admin, Baker, Driver, Rider, Sales, Cashier, Viewer)
   permissions: string[];
   isAdmin: boolean;
   loading: boolean;
@@ -59,24 +59,44 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     'Manage Outlet Inventory': ['/admin/outlet-inventory'],
     'Manage Requisitions': ['/admin/outlet-requisitions'],
     'Approve Requisitions': ['/admin/outlet-requisitions'],
+    'Manage Expenses': ['/admin/expenses'],
+    'Manage Debtors': ['/admin/debtors'],
+    'Manage Creditors': ['/admin/creditors'],
+    'View Audit Logs': ['/admin/audit-logs'],
   };
 
-  // Role-based defaults
+  // Role-based defaults: each role gets ONLY the modules relevant to their job + account settings
+  // Any additional permissions assigned to the employee record or via the roles table will extend access beyond these defaults.
+
   if (role === 'Rider' || role === 'Driver') {
-    routes.push('/admin'); // dashboard
+    // Riders/Drivers: delivery management, order tracking, and rider reports only
     routes.push('/admin/delivery');
     routes.push('/admin/order-tracking');
     routes.push('/admin/rider-reports');
-  }
-  if (role === 'Sales') {
-    routes.push('/admin'); // dashboard
+  } else if (role === 'Cashier') {
+    // Cashiers: POS, orders, and account settings only
+    routes.push('/admin/pos');
+    routes.push('/admin/orders');
+  } else if (role === 'Sales') {
+    // Sales: orders, delivery, customers, and pricing
     routes.push('/admin/orders');
     routes.push('/admin/delivery');
-  }
-  if (role === 'Cashier') {
-    routes.push('/admin/pos');
+    routes.push('/admin/customers');
+    routes.push('/admin/pricing');
+  } else if (role === 'Baker') {
+    // Bakers: production-related modules only
+    routes.push('/admin/recipes');
+    routes.push('/admin/food-info');
+    routes.push('/admin/production');
+    routes.push('/admin/picking-lists');
+    routes.push('/admin/lot-tracking');
+    routes.push('/admin/waste-control');
+  } else if (role === 'Viewer') {
+    // Viewers: account settings only (no other module access)
+    // No additional routes — they only get /admin/account appended below
   }
 
+  // Extend access based on any explicitly assigned permissions
   for (const perm of permissions) {
     const r = permRouteMap[perm];
     if (r) routes.push(...r);
