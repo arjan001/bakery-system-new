@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/lib/cart-context';
-import { products, getBestSellers, CIRCLE_CATEGORIES } from '@/lib/products';
+import { products, getBestSellers, CIRCLE_CATEGORIES, fetchMainBakeryProducts } from '@/lib/products';
+import type { Product, Offer } from '@/lib/products';
 import { ShoppingBag, Star, ChevronRight, ChevronLeft, Truck, Clock, Shield, Users, Store, Megaphone, Tag, ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { Offer } from '@/lib/products';
 
 // ─── Product Card (mini, for home page) ───────────────────────────────────
 function HomeProductCard({ product }: { product: (typeof products)[0] }) {
@@ -299,44 +299,30 @@ function OffersSection() {
 
 
 export default function HomePage() {
-  const bestSellers = getBestSellers();
-  const [freshProducts, setFreshProducts] = useState<(typeof products)[0][]>([]);
+  const [dynamicProducts, setDynamicProducts] = useState<Product[]>([]);
+  const [freshProducts, setFreshProducts] = useState<Product[]>([]);
 
-  // Fetch products from database with fallback to hardcoded list
+  // Fetch products from main bakery inventory (food_info table) with fallback
   useEffect(() => {
-    async function loadFreshProducts() {
+    async function loadProducts() {
       try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('in_stock', true)
-          .order('created_at', { ascending: false })
-          .limit(8);
-        if (!error && data && data.length > 0) {
-          setFreshProducts(data.map((p: Record<string, unknown>) => ({
-            id: String(p.id),
-            name: String(p.name || p.product_name || ''),
-            price: Number(p.price) || 0,
-            originalPrice: p.original_price ? Number(p.original_price) : undefined,
-            image: String(p.image || p.image_url || 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop'),
-            category: String(p.category || ''),
-            description: String(p.description || ''),
-            details: String(p.details || ''),
-            inStock: p.in_stock !== false,
-            stock: Number(p.stock) || 0,
-            tags: Array.isArray(p.tags) ? p.tags as string[] : [],
-            isNew: Boolean(p.is_new),
-            isSale: Boolean(p.is_sale),
-            isBestSeller: Boolean(p.is_best_seller),
-          })));
+        const bakeryProducts = await fetchMainBakeryProducts();
+        if (bakeryProducts && bakeryProducts.length > 0) {
+          setDynamicProducts(bakeryProducts);
+          setFreshProducts(bakeryProducts.filter(p => p.inStock).slice(0, 8));
           return;
         }
-      } catch { /* table may not exist yet */ }
+      } catch { /* fallback below */ }
       // Fallback to hardcoded products
+      setDynamicProducts(products);
       setFreshProducts(products.filter(p => p.inStock).slice(0, 8));
     }
-    loadFreshProducts();
+    loadProducts();
   }, []);
+
+  const bestSellers = dynamicProducts.length > 0
+    ? dynamicProducts.filter(p => p.isBestSeller || p.stock > 10).slice(0, 8)
+    : getBestSellers();
 
   return (
     <div className="bg-white">

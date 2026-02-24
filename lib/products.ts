@@ -342,3 +342,100 @@ export const getBestSellers = () => products.filter(p => p.isBestSeller);
 export const getOnOffer = () => products.filter(p => p.isSale || p.onOffer);
 export const getRelated = (product: Product, count = 4) =>
   products.filter(p => p.id !== product.id && p.category === product.category).slice(0, count);
+
+// ─── Dynamic product loading from main bakery inventory (food_info table) ───
+
+/** Map a food_info database row to a Product for the website */
+function mapFoodInfoToProduct(row: Record<string, unknown>): Product {
+  const name = (row.product_name || '') as string;
+  const stock = (row.current_stock || 0) as number;
+  const category = mapProductCategory(name, (row.category || '') as string);
+  const imageUrl = (row.image_url || '') as string;
+  const price = (row.retail_price || row.selling_price || 0) as number;
+  const costPrice = (row.cost_price || 0) as number;
+
+  return {
+    id: (row.id || '') as string,
+    name,
+    price: price > 0 ? price : 10,
+    image: imageUrl || getCategoryFallbackImage(category),
+    category,
+    description: (row.description || `Fresh ${name} from our bakery`) as string,
+    details: buildDetails(row),
+    inStock: stock > 0,
+    stock,
+    tags: buildTags(row),
+    isNew: false,
+    isSale: costPrice > 0 && price > 0 && price < costPrice * 1.5,
+    isBestSeller: stock > 10,
+  };
+}
+
+function mapProductCategory(name: string, dbCategory: string): string {
+  const lower = (name + ' ' + dbCategory).toLowerCase();
+  if (lower.includes('bread') || lower.includes('chapati') || lower.includes('focaccia') || lower.includes('bagel') || lower.includes('brioche')) return 'Bread';
+  if (lower.includes('cake') || lower.includes('cheesecake') || lower.includes('tiramisu')) return 'Cake';
+  if (lower.includes('donut') || lower.includes('doughnut')) return 'Donuts';
+  if (lower.includes('cookie') || lower.includes('macaron') || lower.includes('biscuit')) return 'Cookies';
+  if (lower.includes('pastry') || lower.includes('croissant') || lower.includes('muffin') || lower.includes('tart') || lower.includes('pie') || lower.includes('scone') || lower.includes('eclair') || lower.includes('samosa') || lower.includes('mandazi') || lower.includes('kaimati') || lower.includes('danish') || lower.includes('turnover') || lower.includes('roll') || lower.includes('cupcake')) return 'Pastry';
+  if (dbCategory) return dbCategory;
+  return 'Pastry';
+}
+
+function getCategoryFallbackImage(category: string): string {
+  const images: Record<string, string> = {
+    Bread: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80&fit=crop',
+    Pastry: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&q=80&fit=crop',
+    Cake: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&q=80&fit=crop',
+    Cookies: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&q=80&fit=crop',
+    Donuts: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=600&q=80&fit=crop',
+  };
+  return images[category] || images.Pastry;
+}
+
+function buildDetails(row: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (row.shelf_life_days) parts.push(`Shelf life: ${row.shelf_life_days} days`);
+  if (row.stock_unit) parts.push(`Unit: ${row.stock_unit}`);
+  if (row.allergens && Array.isArray(row.allergens) && (row.allergens as string[]).length > 0) {
+    parts.push(`Allergens: ${(row.allergens as string[]).join(', ')}`);
+  }
+  if (row.certification) parts.push(`Certification: ${row.certification}`);
+  return parts.length > 0 ? parts.join('. ') + '.' : 'Freshly prepared in our bakery.';
+}
+
+function buildTags(row: Record<string, unknown>): string[] {
+  const tags: string[] = ['Fresh'];
+  if (row.certification) tags.push(row.certification as string);
+  if (row.allergens && Array.isArray(row.allergens)) {
+    if (!(row.allergens as string[]).includes('Gluten')) tags.push('Gluten-Free');
+  }
+  const stock = (row.current_stock || 0) as number;
+  if (stock > 20) tags.push('Popular');
+  return tags;
+}
+
+/**
+ * Fetch products dynamically from the main bakery's food_info table.
+ * Returns mapped Product[] or null if the table doesn't exist / is empty.
+ */
+export async function fetchMainBakeryProducts(): Promise<Product[] | null> {
+  try {
+    const { createBrowserClient } = await import('@supabase/ssr');
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+
+    const { data, error } = await supabase
+      .from('food_info')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error || !data || data.length === 0) return null;
+
+    return data.map((row: Record<string, unknown>) => mapFoodInfoToProduct(row));
+  } catch {
+    return null;
+  }
+}

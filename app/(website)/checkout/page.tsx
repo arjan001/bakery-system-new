@@ -35,8 +35,64 @@ export default function CheckoutPage() {
   // Track the order number for the success screen
   const [completedOrderNumber, setCompletedOrderNumber] = useState('');
 
-  const delivery = total >= 2000 ? 0 : 200;
-  const orderTotal = total + delivery;
+  // Dynamic delivery settings from admin
+  const [deliverySettings, setDeliverySettings] = useState({
+    deliveryEnabled: true,
+    minimumOrderForDelivery: 500,
+    deliveryFee: 200,
+    freeDeliveryThreshold: 2000,
+  });
+
+  // Load delivery settings from database
+  useEffect(() => {
+    async function loadDeliverySettings() {
+      try {
+        const { data, error } = await supabase
+          .from('business_settings')
+          .select('value')
+          .eq('key', 'delivery')
+          .single();
+        if (!error && data?.value) {
+          const val = data.value as Record<string, unknown>;
+          setDeliverySettings(prev => ({
+            ...prev,
+            deliveryEnabled: val.deliveryEnabled !== undefined ? Boolean(val.deliveryEnabled) : prev.deliveryEnabled,
+            minimumOrderForDelivery: val.minimumOrderForDelivery !== undefined ? Number(val.minimumOrderForDelivery) : prev.minimumOrderForDelivery,
+            deliveryFee: val.deliveryFee !== undefined ? Number(val.deliveryFee) : prev.deliveryFee,
+            freeDeliveryThreshold: val.freeDeliveryThreshold !== undefined ? Number(val.freeDeliveryThreshold) : prev.freeDeliveryThreshold,
+          }));
+          return;
+        }
+      } catch { /* table may not exist */ }
+      // Fallback to localStorage
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.delivery) {
+            const val = parsed.delivery;
+            setDeliverySettings(prev => ({
+              ...prev,
+              ...val,
+            }));
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    loadDeliverySettings();
+  }, []);
+
+  // Calculate delivery based on dynamic settings
+  const canDeliver = deliverySettings.deliveryEnabled && total >= deliverySettings.minimumOrderForDelivery;
+  const delivery = (fulfillment === 'ship' && total >= deliverySettings.freeDeliveryThreshold) ? 0 : deliverySettings.deliveryFee;
+  const orderTotal = total + (fulfillment === 'ship' ? delivery : 0);
+
+  // Force pickup if delivery is disabled or order is below minimum
+  useEffect(() => {
+    if (!canDeliver && fulfillment === 'ship') {
+      setFulfillment('pickup');
+    }
+  }, [canDeliver, fulfillment]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -271,15 +327,26 @@ export default function CheckoutPage() {
             {/* Delivery method */}
             <div>
               <h2 className="text-base font-black text-gray-900 mb-3">Delivery</h2>
+              {!canDeliver && deliverySettings.deliveryEnabled && (
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                  Delivery is available for orders of <strong>KES {deliverySettings.minimumOrderForDelivery.toLocaleString()}</strong> and above. Add more items to qualify for delivery, or choose pickup.
+                </div>
+              )}
+              {!deliverySettings.deliveryEnabled && (
+                <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-600">
+                  Delivery is currently unavailable. Please choose pickup.
+                </div>
+              )}
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 {[
-                  { value: 'ship', label: 'Ship', sub: 'Deliver to my address', icon: Truck },
-                  { value: 'pickup', label: 'Pick up', sub: 'Collect from our bakery', icon: Store },
+                  { value: 'ship', label: 'Ship', sub: canDeliver ? 'Deliver to my address' : `Min. order KES ${deliverySettings.minimumOrderForDelivery.toLocaleString()} for delivery`, icon: Truck, disabled: !canDeliver },
+                  { value: 'pickup', label: 'Pick up', sub: 'Collect from our bakery', icon: Store, disabled: false },
                 ].map((opt, i) => (
                   <label key={opt.value}
-                    className={`flex items-center gap-4 px-4 py-3.5 cursor-pointer transition-colors ${fulfillment === opt.value ? 'bg-orange-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                    className={`flex items-center gap-4 px-4 py-3.5 transition-colors ${opt.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${fulfillment === opt.value ? 'bg-orange-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
                     <input type="radio" name="fulfillment" value={opt.value}
-                      checked={fulfillment === opt.value} onChange={() => setFulfillment(opt.value as FulfillmentType)}
+                      checked={fulfillment === opt.value} onChange={() => !opt.disabled && setFulfillment(opt.value as FulfillmentType)}
+                      disabled={opt.disabled}
                       className="accent-orange-600" />
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-gray-800">{opt.label}</p>
@@ -481,7 +548,7 @@ export default function CheckoutPage() {
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Shipping</span>
                 <span className="flex items-center gap-1">
-                  {delivery === 0 ? <span className="text-green-600 font-semibold">FREE</span> : `KES ${delivery}`}
+                  {fulfillment === 'pickup' ? <span className="text-gray-500">Pickup</span> : delivery === 0 ? <span className="text-green-600 font-semibold">FREE</span> : `KES ${delivery}`}
                 </span>
               </div>
               <div className="flex justify-between font-black text-gray-900 pt-2 border-t border-gray-100 text-base">

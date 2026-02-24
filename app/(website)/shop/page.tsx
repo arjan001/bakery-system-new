@@ -4,10 +4,11 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
-import { products, CATEGORY_LIST, CIRCLE_CATEGORIES } from '@/lib/products';
+import { products as staticProducts, CATEGORY_LIST, CIRCLE_CATEGORIES, fetchMainBakeryProducts } from '@/lib/products';
+import type { Product } from '@/lib/products';
 import { ShoppingBag, SlidersHorizontal, X, ChevronDown, ChevronRight } from 'lucide-react';
 
-function ProductCard({ product }: { product: (typeof products)[0] }) {
+function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
   const router = useRouter();
 
@@ -79,6 +80,22 @@ function ShopContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [products, setProducts] = useState<Product[]>(staticProducts);
+
+  // Load products from main bakery inventory with fallback to static
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const bakeryProducts = await fetchMainBakeryProducts();
+        if (bakeryProducts && bakeryProducts.length > 0) {
+          setProducts(bakeryProducts);
+          return;
+        }
+      } catch { /* fallback to static */ }
+      setProducts(staticProducts);
+    }
+    loadProducts();
+  }, []);
 
   const categoryParam = searchParams.get('category') || 'All';
   const queryParam    = searchParams.get('q') || '';
