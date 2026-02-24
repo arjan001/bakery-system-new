@@ -1,9 +1,10 @@
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Server-side route protection middleware
-// Checks for Supabase auth session cookie before allowing access to /admin routes
-export function middleware(request: NextRequest) {
+// Uses @supabase/ssr to read auth session from cookies before allowing access to /admin routes
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Only protect admin routes
@@ -11,27 +12,44 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for Supabase auth session cookies
-  // Supabase stores the session in cookies with the pattern: sb-<project-ref>-auth-token
-  const cookies = request.cookies;
-  const hasAuthCookie = Array.from(cookies.getAll()).some(
-    (cookie) =>
-      cookie.name.includes('auth-token') ||
-      cookie.name.includes('sb-') ||
-      cookie.name === 'supabase-auth-token'
+  let supabaseResponse = NextResponse.next({ request });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          supabaseResponse = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
   );
 
-  if (!hasAuthCookie) {
-    // No auth cookie found — redirect to login
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    // No authenticated user — redirect to login
     const loginUrl = new URL('/auth/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Auth cookie exists — allow the request to proceed
+  // Authenticated — allow the request to proceed
   // Fine-grained role/permission checks are handled client-side
   // by the UserPermissionsProvider and AdminContent route guard
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {
