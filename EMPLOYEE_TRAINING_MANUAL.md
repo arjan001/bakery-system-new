@@ -70,6 +70,12 @@ Each employee is assigned a role that determines what they can see and do in the
 - **Full access** to all modules and settings.
 - Can manage employees, roles, permissions, and system configuration.
 - Can impersonate other users for troubleshooting.
+- Both "Admin", "Administrator", and "Super Admin" login roles grant full access.
+
+### Outlet Admin / Branch Manager
+- Employees assigned as **Admin** or **Manager** at a specific outlet automatically gain access to all outlet/branch modules.
+- This access is granted in addition to their base role permissions.
+- **Automatic modules:** Branch Management, Outlet Inventory, Outlet Requisitions, Outlet Returns, Outlet Products, Branch Employees, Branch Reports, Branch Waste, Branch Settings.
 
 ### Baker
 - **Production-focused** access.
@@ -92,8 +98,9 @@ Each employee is assigned a role that determines what they can see and do in the
 - **Cannot access any other module** regardless of additional permissions.
 
 ### Viewer
-- **Read-only** access. Very limited.
-- Only modules explicitly granted via permissions.
+- **Minimal** access — only the Account Settings page by default.
+- Additional access must be explicitly granted via permissions in the Roles & Permissions module.
+- Suitable for employees who need read-only access to specific modules.
 
 ### Custom Roles
 Administrators can create custom roles (e.g., Branch Manager, Inventory Clerk) with specific permissions.
@@ -420,8 +427,9 @@ The public-facing website allows customers to browse and order products online.
 2. Go to checkout.
 3. Enter contact email and shipping/pickup details.
 4. Pay via **M-Pesa** (STK push to phone).
-5. Enter M-Pesa PIN to confirm payment.
-6. Order is confirmed and tracked.
+5. Enter a valid Kenyan phone number (e.g. 0712 345 678 or +254712345678).
+6. Enter M-Pesa PIN to confirm payment.
+7. Order is confirmed and tracked.
 
 ### Delivery Policy:
 - **Free delivery** on orders over KES 2,000.
@@ -482,11 +490,15 @@ Permissions are granular controls that determine what a user can see and do. The
   - Rider Reports
   - Account Settings
 - No additional permissions can override this restriction.
+- This restriction is enforced at both the server level (middleware) and client level (sidebar/route guard), so it cannot be bypassed.
 
 ### Role Hierarchy:
 ```
 Super Admin / Administrator
   └── Full access to everything
+
+Outlet Admin / Branch Manager
+  └── Base role permissions + all Outlet modules for their assigned branch
 
 Sales
   └── Orders, Customers, Delivery, Pricing
@@ -498,10 +510,10 @@ Baker
   └── All Production modules (Recipes, Production, Picking Lists, etc.)
 
 Rider / Driver
-  └── Delivery, Order Tracking, Rider Reports only
+  └── Delivery, Order Tracking, Rider Reports only (strictly enforced)
 
 Viewer
-  └── Only explicitly granted permissions
+  └── Account Settings only; additional modules granted via permissions
 
 Custom Roles
   └── Any combination of permissions as configured
@@ -541,8 +553,13 @@ Custom Roles
 
 ### I'm seeing an "Access Denied" or redirect
 - You are trying to access a module outside your role's permissions.
-- The system automatically redirects you to your allowed modules.
+- The system enforces restrictions at both the server and browser level.
+- Riders and Drivers are strictly limited and will be redirected automatically.
 - Contact your administrator if you need additional access.
+
+### I'm seeing "System access is disabled"
+- Your administrator has disabled your system access.
+- Contact your manager or administrator to re-enable it.
 
 ---
 

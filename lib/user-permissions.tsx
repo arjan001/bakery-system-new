@@ -143,6 +143,10 @@ const roleDefaultRoutes: Record<string, string[]> = {
     '/admin/pricing',
     '/admin/account',
   ],
+  // Viewer: minimal access — only account and dashboard if explicitly permitted
+  Viewer: [
+    '/admin/account',
+  ],
 };
 
 // Roles that are STRICTLY restricted — they can ONLY access their default routes,
@@ -150,7 +154,7 @@ const roleDefaultRoutes: Record<string, string[]> = {
 const strictlyRestrictedRoles = new Set(['Rider', 'Driver']);
 
 // Map permissions to allowed sidebar routes
-export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean): string[] {
+export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean, isOutletAdmin?: boolean): string[] {
   if (isAdmin) return []; // empty means all allowed
 
   // Strictly restricted roles: ONLY their default routes, no additional permissions
@@ -172,6 +176,22 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     if (r) routes.push(...r);
   }
 
+  // Outlet admins automatically get access to all outlet modules
+  if (isOutletAdmin) {
+    routes.push(
+      '/admin',
+      '/admin/outlets',
+      '/admin/outlet-inventory',
+      '/admin/outlet-requisitions',
+      '/admin/outlet-returns',
+      '/admin/outlet-products',
+      '/admin/outlet-employees',
+      '/admin/outlet-reports',
+      '/admin/outlet-waste',
+      '/admin/outlet-settings',
+    );
+  }
+
   // Deduplicate and ensure account page is always accessible
   const unique = [...new Set(routes)];
   if (!unique.includes('/admin/account')) unique.push('/admin/account');
@@ -179,10 +199,9 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
 }
 
 // Check if a specific route is allowed for the user
-export function isRouteAllowed(pathname: string, permissions: string[], role: string, isAdmin: boolean): boolean {
+export function isRouteAllowed(pathname: string, permissions: string[], role: string, isAdmin: boolean, isOutletAdmin?: boolean): boolean {
   if (isAdmin) return true;
-  const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin);
-  if (allowedRoutes.length === 0 && isAdmin) return true;
+  const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin, isOutletAdmin);
   return allowedRoutes.some(route => pathname === route || pathname.startsWith(route + '/'));
 }
 
