@@ -189,7 +189,7 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
   const [businessName, setBusinessName] = useState('SNACKOH');
-  const { isAdmin, permissions, role, loading: permsLoading } = useUserPermissions();
+  const { isAdmin, permissions, role, loading: permsLoading, isOutletAdmin } = useUserPermissions();
   const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
 
   // Load logo from database/localStorage
@@ -221,7 +221,7 @@ export function Sidebar() {
     if (permsLoading) return [];
     if (isAdmin) return allNavGroups;
 
-    const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin);
+    const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin, isOutletAdmin);
 
     return allNavGroups
       .map(group => ({
@@ -231,7 +231,7 @@ export function Sidebar() {
         ),
       }))
       .filter(group => group.items.length > 0);
-  }, [isAdmin, permissions, role, permsLoading]);
+  }, [isAdmin, permissions, role, permsLoading, isOutletAdmin]);
 
   return (
     <aside className={`flex flex-col border-r border-border bg-sidebar transition-all duration-300 ${collapsed ? 'w-[60px]' : 'w-64'}`}>

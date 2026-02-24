@@ -34,6 +34,7 @@ export default function CheckoutPage() {
 
   // Track the order number for the success screen
   const [completedOrderNumber, setCompletedOrderNumber] = useState('');
+  const [orderError, setOrderError] = useState('');
 
   // Dynamic delivery settings from admin
   const [deliverySettings, setDeliverySettings] = useState({
@@ -134,6 +135,12 @@ export default function CheckoutPage() {
 
   const handleMpesaPush = async () => {
     if (!mpesaPhone) { setMpesaMsg('Enter your M-Pesa phone number'); return; }
+    // Validate Kenyan phone number format
+    const cleaned = mpesaPhone.replace(/[\s-]/g, '');
+    if (!/^(?:0[17]\d{8}|254[17]\d{8}|\+254[17]\d{8})$/.test(cleaned)) {
+      setMpesaMsg('Enter a valid Kenyan phone number (e.g. 0712 345 678)');
+      return;
+    }
     setMpesaState('sending');
     setMpesaMsg('Sending STK push...');
     try {
@@ -206,6 +213,7 @@ export default function CheckoutPage() {
     const orderNumber = `ON-${Date.now().toString(36).toUpperCase()}`;
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
     const customerPhone = form.phone || mpesaPhone || email;
+    setOrderError('');
     try {
       const { error: orderError } = await supabase.from('orders').insert({
         order_number: orderNumber,
@@ -221,7 +229,11 @@ export default function CheckoutPage() {
           ? `Ship to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county} ${form.postalCode}`
           : 'Pickup from bakery',
       });
-      if (orderError) console.error('Order save error:', orderError);
+      if (orderError) {
+        console.error('Order save error:', orderError);
+        setOrderError('There was a problem saving your order. Please contact us with your M-Pesa confirmation.');
+        return;
+      }
 
       // Save order items
       const { data: savedOrder } = await supabase
@@ -243,6 +255,8 @@ export default function CheckoutPage() {
       }
     } catch (err) {
       console.error('Order save error:', err);
+      setOrderError('There was a problem saving your order. Please contact us with your M-Pesa confirmation.');
+      return;
     }
 
     setCompletedOrderNumber(orderNumber);
@@ -431,7 +445,7 @@ export default function CheckoutPage() {
               <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-sm text-orange-800">
                 <p className="font-bold mb-1">Pickup Location</p>
                 <p>Snackoh Bites, Nairobi CBD</p>
-                <p className="text-xs text-orange-600 mt-1">Mon-Sat: 6:00 AM - 7:00 PM | Sun: 7:00 AM - 4:00 PM</p>
+                <p className="text-xs text-orange-600 mt-1">Mon-Sat: 6:00 AM - 8:00 PM | Sun: 7:00 AM - 6:00 PM</p>
               </div>
             )}
 
@@ -488,6 +502,13 @@ export default function CheckoutPage() {
                 </div>
               </div>
             </div>
+
+            {/* Order save error */}
+            {orderError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800 font-medium">
+                {orderError}
+              </div>
+            )}
 
             {/* Place order button */}
             <button type="submit"

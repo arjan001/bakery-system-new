@@ -96,7 +96,7 @@ function useActivityHeartbeat() {
 function AdminContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAdmin, permissions, role, loading: permsLoading } = useUserPermissions();
+  const { isAdmin, permissions, role, loading: permsLoading, isOutletAdmin } = useUserPermissions();
 
   // Activity heartbeat for online status tracking
   useActivityHeartbeat();
@@ -106,7 +106,7 @@ function AdminContent({ children }: { children: React.ReactNode }) {
     if (permsLoading) return;
     if (isAdmin) return; // admins can access everything
 
-    const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin);
+    const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin, isOutletAdmin);
     if (allowedRoutes.length > 0) {
       const isAllowed = allowedRoutes.some(route => pathname === route || pathname.startsWith(route + '/'));
       if (!isAllowed) {
@@ -119,7 +119,7 @@ function AdminContent({ children }: { children: React.ReactNode }) {
         router.push('/admin/account');
       }
     }
-  }, [pathname, isAdmin, permissions, role, permsLoading, router]);
+  }, [pathname, isAdmin, permissions, role, permsLoading, isOutletAdmin, router]);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
