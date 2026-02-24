@@ -158,7 +158,7 @@ export default function CartPage() {
               <div className="mt-4 text-center">
                 <p className="text-xs text-gray-400 mb-2">We accept</p>
                 <div className="flex items-center justify-center gap-2 flex-wrap">
-                  {['VISA', 'MC', 'AMEX', 'JCB', 'M-PESA'].map(p => (
+                  {['M-PESA'].map(p => (
                     <span key={p} className="px-2 py-1 border border-gray-200 rounded text-[10px] font-bold text-gray-500">{p}</span>
                   ))}
                 </div>
