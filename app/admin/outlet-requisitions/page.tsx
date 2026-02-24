@@ -1106,7 +1106,7 @@ export default function OutletRequisitionsPage() {
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    ${product.wholesale_price.toFixed(2)}
+                    KES {product.wholesale_price.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               </button>
@@ -1246,7 +1246,7 @@ export default function OutletRequisitionsPage() {
               <div className="col-span-2">
                 <label className="block text-xs text-muted-foreground mb-1">Total</label>
                 <div className="px-3 py-2 border border-border rounded-lg bg-secondary text-sm font-semibold">
-                  ${item.total_cost.toFixed(2)}
+                  KES {item.total_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
             </div>
@@ -1335,7 +1335,7 @@ export default function OutletRequisitionsPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Value</p>
-              <p className="text-2xl font-bold text-green-600">${totalValue.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-green-600">KES {totalValue.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
           </div>
         </div>
@@ -1505,7 +1505,7 @@ export default function OutletRequisitionsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right font-medium">{req.total_items}</td>
-                  <td className="px-4 py-3 text-right font-semibold">${req.total_cost.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right font-semibold">KES {req.total_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{req.requested_by || '---'}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(req.created_at)}</td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -1774,7 +1774,7 @@ export default function OutletRequisitionsPage() {
                     <div className="font-medium text-xs truncate">{product.product_name}</div>
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-[10px] text-muted-foreground">{product.product_code || '---'}</span>
-                      <span className="text-xs font-semibold">${product.wholesale_price.toFixed(2)}</span>
+                      <span className="text-xs font-semibold">KES {product.wholesale_price.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     {alreadyAdded && <span className="text-[10px] text-green-600 font-medium">Added</span>}
                   </button>
@@ -1875,8 +1875,8 @@ export default function OutletRequisitionsPage() {
                               {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
                             </select>
                           </td>
-                          <td className="px-3 py-2 text-right text-sm">${item.unit_cost.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-sm">${item.total_cost.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-sm">KES {item.unit_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-sm">KES {item.total_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="px-3 py-2 text-center">
                             <button
                               type="button"
@@ -1903,7 +1903,7 @@ export default function OutletRequisitionsPage() {
                     <div>
                       <span className="text-muted-foreground">Total Cost:</span>{' '}
                       <span className="font-bold text-lg">
-                        ${calculateFormTotals(formItems).totalCost.toFixed(2)}
+                        KES {calculateFormTotals(formItems).totalCost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -2091,7 +2091,7 @@ export default function OutletRequisitionsPage() {
                     <div>
                       <span className="text-muted-foreground">Total Cost:</span>{' '}
                       <span className="font-bold text-lg">
-                        ${calculateFormTotals(editFormItems).totalCost.toFixed(2)}
+                        KES {calculateFormTotals(editFormItems).totalCost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -2239,7 +2239,7 @@ export default function OutletRequisitionsPage() {
               </div>
               <div className="p-3 bg-secondary/50 rounded-lg text-center">
                 <p className="text-xs text-muted-foreground">Total Cost</p>
-                <p className="text-xl font-bold">${detailRequisition.total_cost.toFixed(2)}</p>
+                <p className="text-xl font-bold">KES {detailRequisition.total_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             </div>
 
@@ -2302,9 +2302,9 @@ export default function OutletRequisitionsPage() {
                           )}
                         </td>
                         <td className="px-3 py-2 text-xs">{item.unit}</td>
-                        <td className="px-3 py-2 text-right">${item.unit_cost.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">KES {item.unit_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td className="px-3 py-2 text-right font-semibold">
-                          ${item.total_cost.toFixed(2)}
+                          KES {item.total_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
                     ))}
@@ -2315,9 +2315,9 @@ export default function OutletRequisitionsPage() {
                         Grand Total:
                       </td>
                       <td className="px-3 py-2 text-right font-bold text-sm">
-                        ${detailRequisition.items
+                        KES {detailRequisition.items
                           .reduce((sum, i) => sum + i.total_cost, 0)
-                          .toFixed(2)}
+                          .toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                     </tr>
                   </tfoot>
@@ -2505,9 +2505,9 @@ export default function OutletRequisitionsPage() {
                             />
                           </td>
                           <td className="px-3 py-2 text-xs">{item.unit}</td>
-                          <td className="px-3 py-2 text-right">${item.unit_cost.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right">KES {item.unit_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="px-3 py-2 text-right font-semibold">
-                            ${(approvedQty * item.unit_cost).toFixed(2)}
+                            KES {(approvedQty * item.unit_cost).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
                       );
@@ -2519,14 +2519,14 @@ export default function OutletRequisitionsPage() {
                         Approved Total:
                       </td>
                       <td className="px-3 py-2 text-right font-bold text-sm">
-                        $
+                        KES{' '}
                         {approveRequisition.items
                           .reduce((sum, item) => {
                             const approveItem = approveItems.find((a) => a.id === item.id);
                             const qty = approveItem?.quantity_approved ?? item.quantity_requested;
                             return sum + qty * item.unit_cost;
                           }, 0)
-                          .toFixed(2)}
+                          .toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                     </tr>
                   </tfoot>
@@ -2604,8 +2604,8 @@ export default function OutletRequisitionsPage() {
                 <p className="text-xs text-red-700 mt-1">
                   This will reject the requisition from{' '}
                   <strong>{rejectRequisition.outlet_name}</strong> with{' '}
-                  {rejectRequisition.total_items} items totaling $
-                  {rejectRequisition.total_cost.toFixed(2)}. This action cannot be easily undone.
+                  {rejectRequisition.total_items} items totaling KES{' '}
+                  {rejectRequisition.total_cost.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. This action cannot be easily undone.
                 </p>
               </div>
             </div>

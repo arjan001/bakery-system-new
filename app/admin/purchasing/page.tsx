@@ -196,7 +196,7 @@ export default function PurchasingPage() {
         </div>
         <div className="border border-border rounded-lg p-4 bg-card">
           <p className="text-sm text-muted-foreground">Total Value</p>
-          <p className="text-2xl font-bold">${totalOrderValue.toFixed(2)}</p>
+          <p className="text-2xl font-bold">KES {totalOrderValue.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
         <div className="border border-border rounded-lg p-4 bg-card">
           <p className="text-sm text-muted-foreground">Received</p>
@@ -302,12 +302,12 @@ export default function PurchasingPage() {
                 {formData.items.map((item) => (
                   <div key={item.id} className="flex items-center justify-between bg-secondary p-3 rounded-lg text-sm">
                     <span className="font-medium">{item.ingredient}</span>
-                    <span>{item.quantity} {item.unit} @ ${item.unitPrice.toFixed(2)} = ${item.total.toFixed(2)}</span>
+                    <span>{item.quantity} {item.unit} @ KES {item.unitPrice.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} = KES {item.total.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <button type="button" onClick={() => handleRemoveItem(item.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">Remove</button>
                   </div>
                 ))}
                 <div className="text-right font-semibold text-sm pt-2 border-t border-border">
-                  Total: ${formData.items.reduce((sum, i) => sum + i.total, 0).toFixed(2)}
+                  Total: KES {formData.items.reduce((sum, i) => sum + i.total, 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
             )}
@@ -357,7 +357,7 @@ export default function PurchasingPage() {
                   <td className="px-4 py-3 text-xs text-muted-foreground">{order.orderDate}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{order.deliveryDate}</td>
                   <td className="px-4 py-3">{order.items.length}</td>
-                  <td className="px-4 py-3 text-right font-semibold">${order.items.reduce((sum, i) => sum + i.total, 0).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right font-semibold">KES {order.items.reduce((sum, i) => sum + i.total, 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(order.status)}`}>
                       {order.status.charAt(0).toUpperCase() + order.status.slice(1)}

@@ -543,7 +543,7 @@ export default function RiderReportsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">{r.quantity} {r.unit}</td>
                       <td className="px-4 py-3 text-sm">{r.reason}</td>
-                      <td className="px-4 py-3 text-right font-medium">${(r.cost || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right font-medium">KES {(r.cost || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{r.reported_by || '---'}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(r.status)}`}>
@@ -607,7 +607,7 @@ export default function RiderReportsPage() {
                       <td className="px-4 py-3 text-sm">{r.damage_type}</td>
                       <td className="px-4 py-3 text-sm font-mono">{r.tracking_number || '---'}</td>
                       <td className="px-4 py-3 text-sm max-w-[200px] truncate">{r.description}</td>
-                      <td className="px-4 py-3 text-right font-medium">${(r.estimated_cost || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right font-medium">KES {(r.estimated_cost || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{r.reported_by}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(r.status)}`}>
@@ -767,7 +767,7 @@ export default function RiderReportsPage() {
               <div><span className="text-muted-foreground">Product:</span> <strong className="ml-1">{showWasteDetail.product_name}</strong></div>
               <div><span className="text-muted-foreground">Code:</span> <strong className="ml-1">{showWasteDetail.product_code || '---'}</strong></div>
               <div><span className="text-muted-foreground">Quantity:</span> <strong className="ml-1">{showWasteDetail.quantity} {showWasteDetail.unit}</strong></div>
-              <div><span className="text-muted-foreground">Cost:</span> <strong className="ml-1">${(showWasteDetail.cost || 0).toFixed(2)}</strong></div>
+              <div><span className="text-muted-foreground">Cost:</span> <strong className="ml-1">KES {(showWasteDetail.cost || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
               <div><span className="text-muted-foreground">Reason:</span> <strong className="ml-1">{showWasteDetail.reason}</strong></div>
               <div><span className="text-muted-foreground">Reported By:</span> <strong className="ml-1">{showWasteDetail.reported_by || '---'}</strong></div>
               <div><span className="text-muted-foreground">Date:</span> <strong className="ml-1">{showWasteDetail.date || showWasteDetail.created_at?.split('T')[0]}</strong></div>
@@ -802,7 +802,7 @@ export default function RiderReportsPage() {
             <div className="grid grid-cols-2 gap-4 text-sm border border-border rounded-lg p-4">
               <div><span className="text-muted-foreground">Type:</span> <strong className="ml-1">{showDamageDetail.damage_type}</strong></div>
               <div><span className="text-muted-foreground">Delivery:</span> <strong className="ml-1 font-mono">{showDamageDetail.tracking_number || '---'}</strong></div>
-              <div><span className="text-muted-foreground">Est. Cost:</span> <strong className="ml-1">${(showDamageDetail.estimated_cost || 0).toFixed(2)}</strong></div>
+              <div><span className="text-muted-foreground">Est. Cost:</span> <strong className="ml-1">KES {(showDamageDetail.estimated_cost || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
               <div><span className="text-muted-foreground">Reported By:</span> <strong className="ml-1">{showDamageDetail.reported_by}</strong></div>
               <div className="col-span-2"><span className="text-muted-foreground">Items Affected:</span> <strong className="ml-1">{showDamageDetail.items_affected || '---'}</strong></div>
             </div>
