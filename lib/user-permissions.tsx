@@ -47,15 +47,33 @@ export function isRiderRole(role: string): boolean {
   return key === 'rider' || key === 'driver';
 }
 
+export function isCashierRole(role: string): boolean {
+  const key = normalizeRole(role);
+  return key === 'cashier' || key === 'pos attendant' || key === 'pos';
+}
+
+export function isBakerRole(role: string): boolean {
+  const key = normalizeRole(role);
+  return key === 'baker' || key === 'production';
+}
+
+export function isSalesRole(role: string): boolean {
+  const key = normalizeRole(role);
+  return key === 'sales';
+}
+
 // Map permissions to allowed sidebar routes
 export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean): string[] {
   if (isAdmin) return []; // empty means all allowed
 
-  // Strict role-based restrictions for Rider and Driver — these roles can ONLY access
-  // the routes listed below, regardless of any additional permissions in the database.
+  // ── Strict role-based restrictions ──
+  // These roles can ONLY access the routes listed below, regardless of any
+  // additional permissions stored in the database. This prevents privilege
+  // escalation through misconfigured permission assignments.
+
   if (isRiderRole(role)) {
     return [
-      '/admin',             // dashboard
+      '/admin',             // dashboard (role-filtered content)
       '/admin/delivery',    // delivery/schedule orders
       '/admin/order-tracking',
       '/admin/rider-reports',
@@ -63,22 +81,53 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     ];
   }
 
+  if (isCashierRole(role)) {
+    return [
+      '/admin',             // dashboard (role-filtered content)
+      '/admin/pos',         // point of sale
+      '/admin/orders',      // order management
+      '/admin/account',     // own account settings
+    ];
+  }
+
+  if (isBakerRole(role)) {
+    return [
+      '/admin',             // dashboard (role-filtered content)
+      '/admin/recipes',     // recipe definitions
+      '/admin/food-info',   // product catalogue
+      '/admin/production',  // production runs
+      '/admin/picking-lists', // ingredient picking lists
+      '/admin/lot-tracking',  // batch & lot tracking
+      '/admin/waste-control', // production waste
+      '/admin/account',     // own account settings
+    ];
+  }
+
+  // ── Flexible roles: defaults + explicit permissions ──
+
   const routes: string[] = [];
 
   const permRouteMap: Record<string, string[]> = {
     'View Dashboard': ['/admin'],
     'Access POS': ['/admin/pos'],
     'Manage Orders': ['/admin/orders', '/admin/delivery'],
+    'View Orders': ['/admin/orders'],
     'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets', '/admin/stock-reorder'],
     'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
     'Manage Customers': ['/admin/customers'],
     'Manage Deliveries': ['/admin/delivery', '/admin/orders', '/admin/order-tracking', '/admin/rider-reports'],
+    'View Deliveries': ['/admin/delivery', '/admin/order-tracking'],
     'View Reports': ['/admin/reports', '/admin/employee-productivity'],
     'Manage Recipes': ['/admin/recipes', '/admin/food-info', '/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
+    'Manage Production': ['/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
+    'View Production': ['/admin/production', '/admin/picking-lists'],
     'Manage Pricing': ['/admin/pricing'],
     'Manage Purchases': ['/admin/purchasing'],
+    'Manage Users': ['/admin/employees'],
+    'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
+    'View Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
     'System Settings': ['/admin/settings', '/admin/roles-permissions'],
-    'Manage Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
+    'Manage Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions', '/admin/outlet-returns', '/admin/outlet-products', '/admin/outlet-employees', '/admin/outlet-reports', '/admin/outlet-waste', '/admin/outlet-settings'],
     'View Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
     'Manage Outlet Inventory': ['/admin/outlet-inventory'],
     'Manage Requisitions': ['/admin/outlet-requisitions'],
@@ -89,32 +138,15 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     'View Audit Logs': ['/admin/audit-logs'],
   };
 
-  // Role-based defaults: each role gets ONLY the modules relevant to their job + account settings
-  // Any additional permissions assigned to the employee record or via the roles table will extend access beyond these defaults.
   const roleKey = normalizeRole(role);
-  if (isRiderRole(roleKey)) {
-    // Riders/Drivers: delivery management, order tracking, and rider reports only
+  if (isSalesRole(roleKey)) {
+    // Sales: orders, delivery, customers, and pricing + dashboard
+    routes.push('/admin');
+    routes.push('/admin/orders');
     routes.push('/admin/delivery');
     routes.push('/admin/order-tracking');
-    routes.push('/admin/rider-reports');
-  } else if (roleKey === 'cashier') {
-    // Cashiers: POS, orders, and account settings only
-    routes.push('/admin/pos');
-    routes.push('/admin/orders');
-  } else if (roleKey === 'sales') {
-    // Sales: orders, delivery, customers, and pricing
-    routes.push('/admin/orders');
-    routes.push('/admin/delivery');
     routes.push('/admin/customers');
     routes.push('/admin/pricing');
-  } else if (roleKey === 'baker') {
-    // Bakers: production-related modules only
-    routes.push('/admin/recipes');
-    routes.push('/admin/food-info');
-    routes.push('/admin/production');
-    routes.push('/admin/picking-lists');
-    routes.push('/admin/lot-tracking');
-    routes.push('/admin/waste-control');
   } else if (roleKey === 'viewer') {
     // Viewers: account settings only (no other module access)
     // No additional routes — they only get /admin/account appended below
