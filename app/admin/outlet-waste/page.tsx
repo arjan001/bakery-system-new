@@ -194,18 +194,13 @@ export default function OutletWastePage() {
       }));
 
       setOutlets(outletList);
-
-      // Auto-select first outlet if none selected
-      if (outletList.length > 0 && !selectedOutletId) {
-        setSelectedOutletId(outletList[0].id);
-      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to load outlets:', msg);
     } finally {
       setLoading(false);
     }
-  }, [selectedOutletId]);
+  }, []);
 
   const fetchRecords = useCallback(async () => {
     if (!selectedOutletId) {
@@ -263,6 +258,13 @@ export default function OutletWastePage() {
   useEffect(() => {
     fetchOutlets();
   }, [fetchOutlets]);
+
+  // Auto-select first outlet once outlets are loaded
+  useEffect(() => {
+    if (outlets.length > 0 && !selectedOutletId) {
+      setSelectedOutletId(outlets[0].id);
+    }
+  }, [outlets, selectedOutletId]);
 
   useEffect(() => {
     if (selectedOutletId) {

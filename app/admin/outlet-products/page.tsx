@@ -179,17 +179,13 @@ export default function OutletProductsPage() {
       }));
 
       setOutlets(outletList);
-
-      if (outletList.length > 0 && !selectedOutletId) {
-        setSelectedOutletId(outletList[0].id);
-      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       showToast('Failed to load outlets: ' + msg, 'error');
     } finally {
       setLoading(false);
     }
-  }, [selectedOutletId]);
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     if (!selectedOutletId) {
@@ -273,6 +269,13 @@ export default function OutletProductsPage() {
     fetchOutlets();
     fetchBakeryProducts();
   }, [fetchOutlets, fetchBakeryProducts]);
+
+  // Auto-select first outlet once outlets are loaded
+  useEffect(() => {
+    if (outlets.length > 0 && !selectedOutletId) {
+      setSelectedOutletId(outlets[0].id);
+    }
+  }, [outlets, selectedOutletId]);
 
   useEffect(() => {
     if (selectedOutletId) {

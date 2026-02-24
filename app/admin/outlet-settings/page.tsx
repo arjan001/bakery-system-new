@@ -214,15 +214,12 @@ export default function OutletSettingsPage() {
       } else {
         const mapped = (data || []) as Outlet[];
         setOutlets(mapped);
-        if (mapped.length > 0 && !selectedOutletId) {
-          setSelectedOutletId(mapped[0].id);
-        }
       }
     } catch (err) {
       console.error('Fetch outlets error:', err);
       setOutlets([]);
     }
-  }, [selectedOutletId]);
+  }, []);
 
   // ─── Load settings for selected outlet ──────────────────────────────────
   const loadSettings = useCallback(async (outletId: string) => {
@@ -360,6 +357,13 @@ export default function OutletSettingsPage() {
   useEffect(() => {
     fetchOutlets();
   }, [fetchOutlets]);
+
+  // Auto-select first outlet once outlets are loaded
+  useEffect(() => {
+    if (outlets.length > 0 && !selectedOutletId) {
+      setSelectedOutletId(outlets[0].id);
+    }
+  }, [outlets, selectedOutletId]);
 
   useEffect(() => {
     if (selectedOutletId) {
