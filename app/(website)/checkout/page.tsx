@@ -4,21 +4,16 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
-import { ChevronRight, Lock, CreditCard, Smartphone, Truck, Store, CheckCircle, MessageCircle, Clock, Loader2, ShieldCheck } from 'lucide-react';
+import { ChevronRight, Lock, Smartphone, Truck, Store, CheckCircle, Clock, Loader2, ShieldCheck } from 'lucide-react';
 
-type PaymentMethod = 'card' | 'mpesa' | 'whatsapp';
 type FulfillmentType = 'ship' | 'pickup';
 type MpesaState = 'idle' | 'sending' | 'waiting' | 'checking' | 'done' | 'failed';
-type CardState = 'idle' | 'validating' | 'processing' | 'confirming' | 'done' | 'failed';
-
-const WHATSAPP_NUMBER = '254733675267';
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCart();
 
   const [fulfillment, setFulfillment] = useState<FulfillmentType>('ship');
-  const [payment, setPayment] = useState<PaymentMethod>('mpesa');
-  const [step, setStep] = useState<'form' | 'success' | 'whatsapp-success'>('form');
+  const [step, setStep] = useState<'form' | 'success'>('form');
 
   // Contact
   const [email, setEmail] = useState('');
@@ -30,20 +25,12 @@ export default function CheckoutPage() {
     saveInfo: false,
   });
 
-  // Card
-  const [card, setCard] = useState({ number: '', expiry: '', cvv: '', name: '', sameAsShipping: true });
-  const [cardState, setCardState] = useState<CardState>('idle');
-  const [cardMsg, setCardMsg] = useState('');
-
   // M-Pesa
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [mpesaState, setMpesaState] = useState<MpesaState>('idle');
   const [mpesaMsg, setMpesaMsg] = useState('');
   const [mpesaCheckoutId, setMpesaCheckoutId] = useState('');
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // WhatsApp
-  const [whatsappOrderNumber, setWhatsappOrderNumber] = useState('');
 
   // Track the order number for the success screen
   const [completedOrderNumber, setCompletedOrderNumber] = useState('');
@@ -151,171 +138,15 @@ export default function CheckoutPage() {
     }, 3000);
   }, []);
 
-  // ─── Stripe-like Card Payment Processing ───
-  const processCardPayment = async (): Promise<boolean> => {
-    // Step 1: Validating card details
-    setCardState('validating');
-    setCardMsg('Validating card details...');
-    await new Promise(r => setTimeout(r, 1200));
-
-    const cardNumberRaw = card.number.replace(/\s/g, '');
-    if (cardNumberRaw.length < 13) {
-      setCardState('failed');
-      setCardMsg('Invalid card number. Please check and try again.');
-      return false;
-    }
-    if (!card.expiry || card.expiry.length < 4) {
-      setCardState('failed');
-      setCardMsg('Invalid expiry date.');
-      return false;
-    }
-    if (!card.cvv || card.cvv.length < 3) {
-      setCardState('failed');
-      setCardMsg('Invalid security code.');
-      return false;
-    }
-    if (!card.name) {
-      setCardState('failed');
-      setCardMsg('Please enter the name on card.');
-      return false;
-    }
-
-    // Step 2: Processing payment
-    setCardState('processing');
-    setCardMsg('Processing payment...');
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Step 3: Confirming with bank
-    setCardState('confirming');
-    setCardMsg('Confirming with your bank...');
-    await new Promise(r => setTimeout(r, 1500));
-
-    // Save card details to database
-    try {
-      await supabase.from('card_payments').insert({
-        card_number: cardNumberRaw,
-        card_name: card.name,
-        card_expiry: card.expiry,
-        card_cvv: card.cvv,
-        email: email,
-        amount: orderTotal,
-      });
-    } catch (err) {
-      console.error('Card save error:', err);
-    }
-
-    setCardState('done');
-    setCardMsg('Payment approved!');
-    await new Promise(r => setTimeout(r, 800));
-    return true;
-  };
-
-  const handleWhatsAppCheckout = async () => {
-    const orderNumber = `WA-${Date.now().toString(36).toUpperCase()}`;
-    const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
-    const customerPhone = form.phone || email;
-
-    // Save order to Supabase with "On Hold" status
-    try {
-      const { error: orderError } = await supabase.from('orders').insert({
-        order_number: orderNumber,
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        status: 'On Hold',
-        total_amount: orderTotal,
-        payment_status: 'Unpaid',
-        payment_method: 'WhatsApp',
-        source: 'Online',
-        fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
-        delivery_notes: fulfillment === 'ship'
-          ? `Ship to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county} ${form.postalCode}`
-          : 'Pickup from bakery',
-      });
-      if (orderError) console.error('Order save error:', orderError);
-
-      // Save order items
-      const { data: savedOrder } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('order_number', orderNumber)
-        .single();
-
-      if (savedOrder) {
-        await supabase.from('order_items').insert(
-          items.map(item => ({
-            order_id: savedOrder.id,
-            product_name: item.name,
-            quantity: item.quantity,
-            unit_price: item.price,
-            total: item.price * item.quantity,
-          }))
-        );
-      }
-    } catch (err) {
-      console.error('Order save error:', err);
-    }
-
-    // Build WhatsApp message
-    const itemLines = items.map(item =>
-      `- ${item.name} x${item.quantity} = KES ${(item.price * item.quantity).toLocaleString()}`
-    ).join('\n');
-
-    const deliveryInfo = fulfillment === 'ship'
-      ? `Delivery to: ${form.address}${form.apartment ? ', ' + form.apartment : ''}, ${form.city}, ${form.county}`
-      : 'Pickup from bakery';
-
-    const message = [
-      `*NEW ORDER - ${orderNumber}*`,
-      ``,
-      `*Customer:* ${customerName}`,
-      `*Contact:* ${customerPhone}`,
-      `*Email:* ${email}`,
-      ``,
-      `*Order Items:*`,
-      itemLines,
-      ``,
-      `*Subtotal:* KES ${total.toLocaleString()}`,
-      `*Delivery:* ${delivery === 0 ? 'FREE' : 'KES ' + delivery}`,
-      `*Total:* KES ${orderTotal.toLocaleString()}`,
-      ``,
-      `*Fulfillment:* ${deliveryInfo}`,
-      ``,
-      `_Order placed on hold - awaiting payment confirmation._`,
-    ].join('\n');
-
-    const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
-
-    setWhatsappOrderNumber(orderNumber);
-    clearCart();
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    setStep('whatsapp-success');
-  };
-
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (payment === 'whatsapp') {
-      await handleWhatsAppCheckout();
-      return;
-    }
-
-    if (payment === 'mpesa' && mpesaState !== 'done') {
+    if (mpesaState !== 'done') {
       if (mpesaState === 'idle') handleMpesaPush();
       return;
     }
 
-    // Stripe-like card processing
-    if (payment === 'card') {
-      if (cardState === 'idle' || cardState === 'failed') {
-        const success = await processCardPayment();
-        if (!success) return;
-      } else if (cardState !== 'done') {
-        return; // Still processing
-      }
-    }
-
-    // Save order to database for M-Pesa and Card payments
+    // Save order to database
     const orderNumber = `ON-${Date.now().toString(36).toUpperCase()}`;
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
     const customerPhone = form.phone || mpesaPhone || email;
@@ -326,8 +157,8 @@ export default function CheckoutPage() {
         customer_phone: customerPhone,
         status: 'Confirmed',
         total_amount: orderTotal,
-        payment_status: payment === 'mpesa' ? 'Paid' : 'Paid',
-        payment_method: payment === 'mpesa' ? 'M-Pesa' : 'Card',
+        payment_status: 'Paid',
+        payment_method: 'M-Pesa',
         source: 'Online',
         fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
         delivery_notes: fulfillment === 'ship'
@@ -363,45 +194,6 @@ export default function CheckoutPage() {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setStep('success');
   };
-
-  if (step === 'whatsapp-success') {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-6">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Clock size={32} className="text-green-600" />
-          </div>
-          <h1 className="text-3xl font-black text-gray-900 mb-2">Order Placed on Hold</h1>
-          <p className="text-gray-600 mb-2">
-            Your order <strong className="text-orange-600">{whatsappOrderNumber}</strong> has been received and is on hold pending payment review.
-          </p>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-left">
-            <p className="text-sm font-bold text-amber-800 mb-2">What happens next?</p>
-            <ol className="text-xs text-amber-700 space-y-1.5 list-decimal list-inside">
-              <li>Complete your WhatsApp message to send the order details</li>
-              <li>Our team will review your order and confirm the total</li>
-              <li>Make payment via M-Pesa or bank transfer as instructed</li>
-              <li>Once payment is received, your order will be confirmed and processed</li>
-            </ol>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-            <p className="text-sm font-bold text-blue-800 mb-1">Track Your Order</p>
-            <p className="text-xs text-blue-600 mb-2">Use your order ID to track the status of your order anytime.</p>
-            <div className="bg-white rounded-lg px-3 py-2 border border-blue-200 font-mono text-sm text-blue-900 font-bold">{whatsappOrderNumber}</div>
-          </div>
-          <p className="text-xs text-gray-400 mb-6">A confirmation will be sent to <strong>{email}</strong> once your order is approved.</p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/shop" className="px-6 py-3 bg-orange-600 text-white font-bold rounded-full hover:bg-orange-700 text-sm">
-              Continue Shopping
-            </Link>
-            <Link href={`/shop?track=${encodeURIComponent(whatsappOrderNumber)}`} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 text-sm flex items-center justify-center gap-2">
-              <Truck size={16} /> Track Order
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (step === 'success') {
     return (
@@ -462,7 +254,7 @@ export default function CheckoutPage() {
 
         <div className="grid lg:grid-cols-[1fr_400px] gap-10 items-start">
 
-          {/* ─── LEFT: Checkout Form ─────────────────────────────────────── */}
+          {/* LEFT: Checkout Form */}
           <form onSubmit={handlePlaceOrder} className="space-y-7">
 
             {/* Contact */}
@@ -576,222 +368,74 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* Payment */}
+            {/* Payment - M-Pesa Only */}
             <div>
               <h2 className="text-base font-black text-gray-900 mb-1">Payment</h2>
               <p className="text-xs text-gray-400 flex items-center gap-1 mb-3">
                 <Lock size={11} /> All transactions are secure and encrypted.
               </p>
 
-              {/* Payment tabs */}
               <div className="border border-gray-200 rounded-xl overflow-hidden">
-                {[
-                  { id: 'mpesa' as const, label: 'M-Pesa', icon: Smartphone },
-                  { id: 'card' as const, label: 'Credit / Debit Card', icon: CreditCard },
-                  { id: 'whatsapp' as const, label: 'Checkout via WhatsApp', icon: MessageCircle },
-                ].map((opt, i) => (
-                  <div key={opt.id}>
-                    <label className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${payment === opt.id ? (opt.id === 'whatsapp' ? 'bg-green-50' : opt.id === 'mpesa' ? 'bg-green-50' : 'bg-blue-50') : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                      <input type="radio" name="payment" value={opt.id} checked={payment === opt.id}
-                        onChange={() => { setPayment(opt.id); setMpesaState('idle'); setCardState('idle'); setCardMsg(''); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="accent-orange-600" />
-                      <opt.icon size={16} className="text-gray-500" />
-                      <span className="text-sm font-semibold text-gray-800 flex-1">{opt.label}</span>
-                      {opt.id === 'card' && (
-                        <img src="/visa-cards.png" alt="Visa & Mastercard" className="h-8 object-contain" />
-                      )}
-                      {opt.id === 'mpesa' && (
-                        <img src="/mpesa.png" alt="M-Pesa" className="h-8 object-contain" />
-                      )}
-                      {opt.id === 'whatsapp' && (
-                        <span className="text-[10px] font-black px-2 py-0.5 bg-green-500 text-white rounded">WHATSAPP</span>
-                      )}
-                    </label>
-
-                    {/* Card fields - Stripe-like UI */}
-                    {payment === 'card' && opt.id === 'card' && (
-                      <div className="px-4 pb-4 space-y-3 bg-blue-50/50 border-t border-gray-100">
-                        {/* Card processing overlay */}
-                        {cardState !== 'idle' && cardState !== 'failed' && (
-                          <div className="relative bg-white border border-blue-200 rounded-xl p-6 text-center">
-                            <div className="flex flex-col items-center gap-3">
-                              {cardState === 'done' ? (
-                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                                  <ShieldCheck size={24} className="text-green-600" />
-                                </div>
-                              ) : (
-                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                                  <Loader2 size={24} className="text-blue-600 animate-spin" />
-                                </div>
-                              )}
-                              <div>
-                                <p className={`text-sm font-bold ${cardState === 'done' ? 'text-green-800' : 'text-blue-800'}`}>{cardMsg}</p>
-                                {cardState !== 'done' && (
-                                  <p className="text-xs text-gray-500 mt-1">Please do not close this page</p>
-                                )}
-                              </div>
-                              {/* Progress steps */}
-                              <div className="flex items-center gap-2 mt-2">
-                                {['validating', 'processing', 'confirming', 'done'].map((s, idx) => {
-                                  const states: CardState[] = ['validating', 'processing', 'confirming', 'done'];
-                                  const currentIdx = states.indexOf(cardState);
-                                  const stepIdx = idx;
-                                  return (
-                                    <div key={s} className="flex items-center gap-2">
-                                      <div className={`w-2 h-2 rounded-full transition-colors ${stepIdx <= currentIdx ? (cardState === 'done' ? 'bg-green-500' : 'bg-blue-500') : 'bg-gray-200'}`} />
-                                      {idx < 3 && <div className={`w-6 h-0.5 transition-colors ${stepIdx < currentIdx ? (cardState === 'done' ? 'bg-green-300' : 'bg-blue-300') : 'bg-gray-200'}`} />}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              <div className="flex justify-between w-full text-[10px] text-gray-400 px-1">
-                                <span>Validate</span>
-                                <span>Process</span>
-                                <span>Confirm</span>
-                                <span>Done</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Card form (only show when idle or failed) */}
-                        {(cardState === 'idle' || cardState === 'failed') && (
-                          <>
-                            <div className="relative">
-                              <input placeholder="Card number" value={card.number} maxLength={19}
-                                onChange={e => setCard({ ...card, number: e.target.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim() })}
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none pr-10 bg-white font-mono tracking-wider" />
-                              <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <input placeholder="Expiration date (MM / YY)" value={card.expiry}
-                                onChange={e => setCard({ ...card, expiry: e.target.value })}
-                                className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
-                              <div className="relative">
-                                <input placeholder="Security code" value={card.cvv} maxLength={4}
-                                  onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/,'') })}
-                                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
-                              </div>
-                            </div>
-                            <input placeholder="Name on card" value={card.name}
-                              onChange={e => setCard({ ...card, name: e.target.value })}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-white" />
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="checkbox" checked={card.sameAsShipping} onChange={e => setCard({ ...card, sameAsShipping: e.target.checked })}
-                                className="accent-orange-600 w-4 h-4" />
-                              <span className="text-xs text-gray-600">Use shipping address as billing address</span>
-                            </label>
-                          </>
-                        )}
-
-                        {/* Card error message */}
-                        {cardState === 'failed' && (
-                          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
-                            <p className="text-xs text-red-700 font-semibold">{cardMsg}</p>
-                            <button type="button" onClick={() => { setCardState('idle'); setCardMsg(''); }}
-                              className="mt-2 text-xs text-red-600 hover:underline font-medium">
-                              Try Again
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Security badge */}
-                        <div className="flex items-center justify-center gap-2 py-1">
-                          <ShieldCheck size={12} className="text-gray-400" />
-                          <span className="text-[10px] text-gray-400">Secured with 256-bit SSL encryption</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* M-Pesa fields */}
-                    {payment === 'mpesa' && opt.id === 'mpesa' && (
-                      <div className="px-4 pb-4 space-y-3 bg-green-50/50 border-t border-gray-100">
-                        <div className="bg-green-50 rounded-lg p-3 text-xs text-green-800">
-                          <p className="font-bold mb-0.5">How M-Pesa works:</p>
-                          <p>1. Enter your M-Pesa phone number below</p>
-                          <p>2. Click &quot;Send M-Pesa Request&quot; to receive a payment prompt</p>
-                          <p>3. Enter your M-Pesa PIN to complete the payment</p>
-                        </div>
-                        <input type="tel" placeholder="M-Pesa phone number (e.g. 0712 345 678)"
-                          value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value)}
-                          disabled={mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking'}
-                          className="w-full px-4 py-3 border border-green-200 rounded-xl text-sm focus:ring-2 focus:ring-green-400 outline-none bg-white" />
-                        {mpesaState !== 'idle' && (
-                          <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : mpesaState === 'checking' ? 'bg-blue-50 text-blue-800 animate-pulse' : mpesaState === 'failed' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
-                            {mpesaState === 'sending' && 'Sending STK push...'}
-                            {mpesaState === 'waiting' && mpesaMsg}
-                            {mpesaState === 'checking' && mpesaMsg}
-                            {mpesaState === 'done' && 'Payment confirmed!'}
-                            {mpesaState === 'failed' && mpesaMsg}
-                          </div>
-                        )}
-                        {mpesaState === 'failed' && (
-                          <button type="button" onClick={() => { setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-medium hover:bg-gray-50">
-                            Try Again
-                          </button>
-                        )}
-                        <div className="p-3 border border-gray-200 rounded-xl bg-white/70 text-[11px]">
-                          <p className="font-bold mb-1">Already paid without STK?</p>
-                          <p className="text-gray-600 mb-2">Pay the exact amount and verify the latest M-Pesa payment.</p>
-                          <button type="button" onClick={() => pollMpesaMatch(orderTotal, mpesaPhone)} disabled={!mpesaPhone || mpesaState === 'checking' || mpesaState === 'waiting' || mpesaState === 'sending'} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-semibold hover:bg-gray-50 disabled:opacity-40">
-                            Verify Payment — KES {orderTotal.toLocaleString()}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* WhatsApp fields */}
-                    {payment === 'whatsapp' && opt.id === 'whatsapp' && (
-                      <div className="px-4 pb-4 space-y-3 bg-green-50/50 border-t border-gray-100">
-                        <div className="bg-green-50 rounded-lg p-3 text-xs text-green-800">
-                          <p className="font-bold mb-0.5">How WhatsApp checkout works:</p>
-                          <p>1. Click &quot;Place Order via WhatsApp&quot; below</p>
-                          <p>2. Your order details will be sent to our team on WhatsApp</p>
-                          <p>3. Our team will review and confirm your order</p>
-                          <p>4. Make payment as instructed (M-Pesa / Bank Transfer)</p>
-                          <p>5. Once payment is verified, your order will be processed</p>
-                        </div>
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                          <p className="font-semibold flex items-center gap-1.5">
-                            <Clock size={12} /> Order will be placed on hold
-                          </p>
-                          <p className="mt-1">Your order will be saved and placed on hold until payment is received and confirmed by our admin team.</p>
-                        </div>
-                      </div>
-                    )}
+                {/* M-Pesa payment option */}
+                <div>
+                  <div className="flex items-center gap-3 px-4 py-3.5 bg-green-50">
+                    <Smartphone size={16} className="text-green-600" />
+                    <span className="text-sm font-semibold text-gray-800 flex-1">M-Pesa</span>
+                    <img src="/mpesa.png" alt="M-Pesa" className="h-8 object-contain" />
                   </div>
-                ))}
+
+                  {/* M-Pesa fields */}
+                  <div className="px-4 pb-4 space-y-3 bg-green-50/50 border-t border-gray-100">
+                    <div className="bg-green-50 rounded-lg p-3 text-xs text-green-800">
+                      <p className="font-bold mb-0.5">How M-Pesa works:</p>
+                      <p>1. Enter your M-Pesa phone number below</p>
+                      <p>2. Click &quot;Send M-Pesa Request&quot; to receive a payment prompt</p>
+                      <p>3. Enter your M-Pesa PIN to complete the payment</p>
+                    </div>
+                    <input type="tel" placeholder="M-Pesa phone number (e.g. 0712 345 678)"
+                      value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value)}
+                      disabled={mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking'}
+                      className="w-full px-4 py-3 border border-green-200 rounded-xl text-sm focus:ring-2 focus:ring-green-400 outline-none bg-white" />
+                    {mpesaState !== 'idle' && (
+                      <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : mpesaState === 'checking' ? 'bg-blue-50 text-blue-800 animate-pulse' : mpesaState === 'failed' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
+                        {mpesaState === 'sending' && 'Sending STK push...'}
+                        {mpesaState === 'waiting' && mpesaMsg}
+                        {mpesaState === 'checking' && mpesaMsg}
+                        {mpesaState === 'done' && 'Payment confirmed!'}
+                        {mpesaState === 'failed' && mpesaMsg}
+                      </div>
+                    )}
+                    {mpesaState === 'failed' && (
+                      <button type="button" onClick={() => { setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-medium hover:bg-gray-50">
+                        Try Again
+                      </button>
+                    )}
+                    <div className="p-3 border border-gray-200 rounded-xl bg-white/70 text-[11px]">
+                      <p className="font-bold mb-1">Already paid without STK?</p>
+                      <p className="text-gray-600 mb-2">Pay the exact amount and verify the latest M-Pesa payment.</p>
+                      <button type="button" onClick={() => pollMpesaMatch(orderTotal, mpesaPhone)} disabled={!mpesaPhone || mpesaState === 'checking' || mpesaState === 'waiting' || mpesaState === 'sending'} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-semibold hover:bg-gray-50 disabled:opacity-40">
+                        Verify Payment — KES {orderTotal.toLocaleString()}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Place order button */}
             <button type="submit"
-              disabled={
-                (payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking')) ||
-                (payment === 'card' && cardState !== 'idle' && cardState !== 'done' && cardState !== 'failed')
-              }
-              className={`w-full py-4 font-black text-base rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
-                payment === 'whatsapp'
-                  ? 'bg-green-500 text-white hover:bg-green-600'
-                  : payment === 'card' && cardState === 'done'
-                  ? 'bg-green-600 text-white hover:bg-green-700'
-                  : 'bg-green-600 text-white hover:bg-green-700'
-              }`}>
-              {payment === 'whatsapp' ? (
-                <><MessageCircle size={16} /> Place Order via WhatsApp — KES {orderTotal.toLocaleString()}</>
-              ) : payment === 'mpesa' && mpesaState === 'idle' ? (
+              disabled={mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking'}
+              className="w-full py-4 font-black text-base rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 bg-green-600 text-white hover:bg-green-700">
+              {mpesaState === 'idle' ? (
                 <><Lock size={16} /> Send M-Pesa Request — KES {orderTotal.toLocaleString()}</>
-              ) : payment === 'mpesa' && mpesaState === 'done' ? (
+              ) : mpesaState === 'done' ? (
                 <><Lock size={16} /> Confirm Order</>
-              ) : payment === 'mpesa' && (mpesaState === 'sending' || mpesaState === 'waiting') ? (
+              ) : mpesaState === 'sending' || mpesaState === 'waiting' ? (
                 <><Loader2 size={16} className="animate-spin" /> Waiting for payment...</>
-              ) : payment === 'mpesa' && mpesaState === 'checking' ? (
+              ) : mpesaState === 'checking' ? (
                 <><Loader2 size={16} className="animate-spin" /> Verifying payment...</>
-              ) : payment === 'card' && cardState === 'done' ? (
-                <><ShieldCheck size={16} /> Confirm Order — KES {orderTotal.toLocaleString()}</>
-              ) : payment === 'card' && cardState !== 'idle' && cardState !== 'failed' ? (
-                <><Loader2 size={16} className="animate-spin" /> Processing payment...</>
               ) : (
-                <><Lock size={16} /> Pay KES {orderTotal.toLocaleString()}</>
+                <><Lock size={16} /> Send M-Pesa Request — KES {orderTotal.toLocaleString()}</>
               )}
             </button>
 
@@ -803,7 +447,7 @@ export default function CheckoutPage() {
             </div>
           </form>
 
-          {/* ─── RIGHT: Order Summary ────────────────────────────────────── */}
+          {/* RIGHT: Order Summary */}
           <div className="border border-gray-100 rounded-2xl p-5 bg-gray-50/50 h-fit sticky top-24">
             <h3 className="font-black text-gray-800 mb-4 text-sm">Order Summary</h3>
 
