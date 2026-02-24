@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
+import { useUserPermissions, invalidatePermissionCache } from '@/lib/user-permissions';
 
 interface Permission {
   id: string;
@@ -11,6 +12,7 @@ interface Permission {
   description: string;
   category: string;
   enabled: boolean;
+  routes: string[] | null;
 }
 
 interface Role {
@@ -22,16 +24,32 @@ interface Role {
   createdAt: string;
 }
 
-const DEFAULT_CATEGORIES = ['Dashboard', 'Recipes', 'Production', 'Orders', 'Employees', 'POS', 'Inventory', 'Admin', 'Delivery', 'Finance'];
+const DEFAULT_CATEGORIES = ['Dashboard', 'Recipes', 'Production', 'Orders', 'Employees', 'POS', 'Inventory', 'Admin', 'Delivery', 'Finance', 'Outlets', 'Reports'];
+
+// All available admin routes that can be mapped to permissions
+const AVAILABLE_ROUTES = [
+  '/admin', '/admin/pos', '/admin/recipes', '/admin/food-info', '/admin/production',
+  '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control',
+  '/admin/customers', '/admin/orders', '/admin/order-tracking', '/admin/delivery',
+  '/admin/rider-reports', '/admin/pricing', '/admin/inventory', '/admin/stock-reorder',
+  '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets',
+  '/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions',
+  '/admin/outlet-returns', '/admin/outlet-products', '/admin/outlet-employees',
+  '/admin/outlet-reports', '/admin/outlet-waste', '/admin/outlet-settings',
+  '/admin/expenses', '/admin/debtors', '/admin/creditors',
+  '/admin/employees', '/admin/employee-productivity', '/admin/roles-permissions',
+  '/admin/reports', '/admin/audit-logs', '/admin/settings', '/admin/account',
+];
 
 export default function RolesPermissionsPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const { refreshPermissions } = useUserPermissions();
 
   const fetchRoles = useCallback(async () => {
     const { data } = await supabase.from('roles').select('*').order('created_at', { ascending: true });
     if (data) {
-      // Also fetch role_permissions mapping
+      // Fetch role_permissions mapping
       const { data: rp } = await supabase.from('role_permissions').select('*');
       const rpMap: Record<string, string[]> = {};
       (rp || []).forEach((r: Record<string, unknown>) => {
@@ -39,13 +57,40 @@ export default function RolesPermissionsPage() {
         if (!rpMap[rid]) rpMap[rid] = [];
         rpMap[rid].push(r.permission_id as string);
       });
-      setRoles(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, description: (r.description || '') as string, permissions: rpMap[r.id as string] || [], userCount: 0, createdAt: ((r.created_at || '') as string).split('T')[0] })));
+
+      // Fetch actual user counts per role from employees table
+      const { data: empRoleCounts } = await supabase
+        .from('employees')
+        .select('login_role')
+        .eq('system_access', true);
+
+      const roleCountMap: Record<string, number> = {};
+      (empRoleCounts || []).forEach((emp: Record<string, unknown>) => {
+        const role = (emp.login_role || '') as string;
+        if (role) roleCountMap[role] = (roleCountMap[role] || 0) + 1;
+      });
+
+      setRoles(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        name: (r.name || '') as string,
+        description: (r.description || '') as string,
+        permissions: rpMap[r.id as string] || [],
+        userCount: roleCountMap[(r.name || '') as string] || 0,
+        createdAt: ((r.created_at || '') as string).split('T')[0],
+      })));
     }
   }, []);
 
   const fetchPermissions = useCallback(async () => {
     const { data } = await supabase.from('permissions').select('*').order('category', { ascending: true });
-    if (data) setPermissions(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, description: (r.description || '') as string, category: (r.category || '') as string, enabled: r.enabled !== false })));
+    if (data) setPermissions(data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      name: (r.name || '') as string,
+      description: (r.description || '') as string,
+      category: (r.category || '') as string,
+      enabled: r.enabled !== false,
+      routes: Array.isArray(r.routes) ? r.routes as string[] : null,
+    })));
   }, []);
 
   useEffect(() => { fetchRoles(); fetchPermissions(); }, [fetchRoles, fetchPermissions]);
@@ -61,7 +106,7 @@ export default function RolesPermissionsPage() {
   // Permission form state
   const [showPermForm, setShowPermForm] = useState(false);
   const [editingPermId, setEditingPermId] = useState<string | null>(null);
-  const [permFormData, setPermFormData] = useState({ name: '', description: '', category: 'Dashboard', customCategory: '' });
+  const [permFormData, setPermFormData] = useState({ name: '', description: '', category: 'Dashboard', customCategory: '', routes: [] as string[] });
 
   // Category filter
   const [filterCategory, setFilterCategory] = useState('All');
@@ -106,7 +151,10 @@ export default function RolesPermissionsPage() {
           });
         }
       }
+      // Invalidate caches so all users see the updated permissions
+      invalidatePermissionCache();
       await fetchRoles();
+      refreshPermissions();
     } catch { /* fallback */ }
     setShowRoleForm(false);
   };
@@ -121,7 +169,9 @@ export default function RolesPermissionsPage() {
         record_id: id,
         details: { entity: 'role' },
       });
+      invalidatePermissionCache();
       setRoles(roles.filter(r => r.id !== id));
+      refreshPermissions();
     }
   };
 
@@ -143,7 +193,7 @@ export default function RolesPermissionsPage() {
   const handleAddPerm = () => {
     setShowPermForm(true);
     setEditingPermId(null);
-    setPermFormData({ name: '', description: '', category: 'Dashboard', customCategory: '' });
+    setPermFormData({ name: '', description: '', category: 'Dashboard', customCategory: '', routes: [] });
   };
 
   const handleEditPerm = (perm: Permission) => {
@@ -152,6 +202,7 @@ export default function RolesPermissionsPage() {
       description: perm.description,
       category: DEFAULT_CATEGORIES.includes(perm.category) ? perm.category : 'custom',
       customCategory: DEFAULT_CATEGORIES.includes(perm.category) ? '' : perm.category,
+      routes: perm.routes || [],
     });
     setEditingPermId(perm.id);
     setShowPermForm(true);
@@ -160,25 +211,28 @@ export default function RolesPermissionsPage() {
   const handleSubmitPerm = async (e: React.FormEvent) => {
     e.preventDefault();
     const category = permFormData.category === 'custom' ? permFormData.customCategory : permFormData.category;
+    const routes = permFormData.routes.length > 0 ? permFormData.routes : null;
     try {
       if (editingPermId) {
-        await supabase.from('permissions').update({ name: permFormData.name, description: permFormData.description, category }).eq('id', editingPermId);
+        await supabase.from('permissions').update({ name: permFormData.name, description: permFormData.description, category, routes }).eq('id', editingPermId);
         logAudit({
           action: 'UPDATE',
           module: 'Roles & Permissions',
           record_id: editingPermId,
-          details: { name: permFormData.name, description: permFormData.description, category },
+          details: { name: permFormData.name, description: permFormData.description, category, routes },
         });
       } else {
-        await supabase.from('permissions').insert({ name: permFormData.name, description: permFormData.description, category, enabled: true });
+        await supabase.from('permissions').insert({ name: permFormData.name, description: permFormData.description, category, enabled: true, routes });
         logAudit({
           action: 'CREATE',
           module: 'Roles & Permissions',
           record_id: '',
-          details: { name: permFormData.name, description: permFormData.description, category },
+          details: { name: permFormData.name, description: permFormData.description, category, routes },
         });
       }
+      invalidatePermissionCache();
       await fetchPermissions();
+      refreshPermissions();
     } catch { /* fallback */ }
     setShowPermForm(false);
   };
@@ -193,8 +247,10 @@ export default function RolesPermissionsPage() {
         record_id: id,
         details: { entity: 'permission' },
       });
+      invalidatePermissionCache();
       setPermissions(permissions.filter(p => p.id !== id));
       setRoles(roles.map(r => ({ ...r, permissions: r.permissions.filter(p => p !== id) })));
+      refreshPermissions();
     }
   };
 
@@ -202,8 +258,17 @@ export default function RolesPermissionsPage() {
     const perm = permissions.find(p => p.id === id);
     if (perm) {
       await supabase.from('permissions').update({ enabled: !perm.enabled }).eq('id', id);
+      invalidatePermissionCache();
       setPermissions(permissions.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p));
+      refreshPermissions();
     }
+  };
+
+  const toggleRoute = (route: string) => {
+    setPermFormData(prev => ({
+      ...prev,
+      routes: prev.routes.includes(route) ? prev.routes.filter(r => r !== route) : [...prev.routes, route],
+    }));
   };
 
   // Get unique categories from permissions
@@ -221,7 +286,7 @@ export default function RolesPermissionsPage() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="mb-2">Roles & Permissions</h1>
-        <p className="text-muted-foreground">Dynamically create and manage roles and permissions</p>
+        <p className="text-muted-foreground">Dynamically create and manage roles, permissions, and route access mappings</p>
       </div>
 
       {/* Stats */}
@@ -302,6 +367,7 @@ export default function RolesPermissionsPage() {
                             <p className="text-sm font-medium">{perm.name}</p>
                             <p className="text-xs text-muted-foreground">{perm.description}</p>
                           </div>
+                          {!perm.enabled && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Disabled</span>}
                         </label>
                       ))}
                     </div>
@@ -326,7 +392,7 @@ export default function RolesPermissionsPage() {
                   <th className="px-4 py-3 text-left font-semibold">Role Name</th>
                   <th className="px-4 py-3 text-left font-semibold">Description</th>
                   <th className="px-4 py-3 text-left font-semibold">Permissions</th>
-                  <th className="px-4 py-3 text-left font-semibold">Users</th>
+                  <th className="px-4 py-3 text-left font-semibold">Active Users</th>
                   <th className="px-4 py-3 text-left font-semibold">Created</th>
                   <th className="px-4 py-3 text-left font-semibold">Actions</th>
                 </tr>
@@ -346,7 +412,11 @@ export default function RolesPermissionsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm">{role.userCount} users</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${role.userCount > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                          {role.userCount} {role.userCount === 1 ? 'user' : 'users'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{role.createdAt}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
@@ -381,7 +451,7 @@ export default function RolesPermissionsPage() {
           </div>
 
           {/* Permission Form Modal */}
-          <Modal isOpen={showPermForm} onClose={() => setShowPermForm(false)} title={editingPermId ? 'Edit Permission' : 'Create New Permission'} size="md">
+          <Modal isOpen={showPermForm} onClose={() => setShowPermForm(false)} title={editingPermId ? 'Edit Permission' : 'Create New Permission'} size="lg">
             <form onSubmit={handleSubmitPerm} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Permission Name</label>
@@ -404,6 +474,29 @@ export default function RolesPermissionsPage() {
                   <input type="text" placeholder="e.g. Reports" value={permFormData.customCategory} onChange={(e) => setPermFormData({...permFormData, customCategory: e.target.value})} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required />
                 </div>
               )}
+
+              {/* Route mapping */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Route Access (optional)</label>
+                <p className="text-xs text-muted-foreground mb-2">Select which admin pages this permission grants access to. Leave empty to use the default mapping.</p>
+                <div className="bg-secondary rounded-lg p-3 max-h-48 overflow-y-auto grid grid-cols-2 gap-1">
+                  {AVAILABLE_ROUTES.map(route => (
+                    <label key={route} className="flex items-center gap-2 p-1.5 hover:bg-background rounded cursor-pointer text-xs">
+                      <input
+                        type="checkbox"
+                        checked={permFormData.routes.includes(route)}
+                        onChange={() => toggleRoute(route)}
+                        className="w-3.5 h-3.5 rounded border-border accent-primary"
+                      />
+                      <span className="font-mono text-muted-foreground">{route.replace('/admin', '')|| '/'}</span>
+                    </label>
+                  ))}
+                </div>
+                {permFormData.routes.length > 0 && (
+                  <p className="text-xs text-primary mt-1">{permFormData.routes.length} routes mapped</p>
+                )}
+              </div>
+
               <div className="flex gap-2 justify-end pt-4 border-t border-border">
                 <button type="button" onClick={() => setShowPermForm(false)} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">{editingPermId ? 'Update' : 'Create'} Permission</button>
@@ -419,6 +512,7 @@ export default function RolesPermissionsPage() {
                   <th className="px-4 py-3 text-left font-semibold">Permission</th>
                   <th className="px-4 py-3 text-left font-semibold">Description</th>
                   <th className="px-4 py-3 text-left font-semibold">Category</th>
+                  <th className="px-4 py-3 text-center font-semibold">Routes</th>
                   <th className="px-4 py-3 text-center font-semibold">Used By</th>
                   <th className="px-4 py-3 text-center font-semibold">Status</th>
                   <th className="px-4 py-3 text-left font-semibold">Actions</th>
@@ -426,7 +520,7 @@ export default function RolesPermissionsPage() {
               </thead>
               <tbody>
                 {filteredPermissions.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No permissions found</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No permissions found</td></tr>
                 ) : (
                   filteredPermissions.map(perm => (
                     <tr key={perm.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
@@ -434,6 +528,13 @@ export default function RolesPermissionsPage() {
                       <td className="px-4 py-3 text-sm text-muted-foreground">{perm.description}</td>
                       <td className="px-4 py-3">
                         <span className="px-2 py-0.5 rounded text-xs font-medium bg-secondary text-muted-foreground">{perm.category}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-sm">
+                        {perm.routes && perm.routes.length > 0 ? (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">{perm.routes.length} custom</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">default</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-center text-sm">
                         {roles.filter(r => r.permissions.includes(perm.id)).length} roles

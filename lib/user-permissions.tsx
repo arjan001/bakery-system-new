@@ -1,10 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const PERMS_CACHE_KEY = 'snackoh_user_permissions_v1';
+const PERMS_CACHE_KEY = 'snackoh_user_permissions_v2';
 const PERMS_CACHE_TTL_MS = 5 * 60 * 1000;
+const ROUTE_MAP_CACHE_KEY = 'snackoh_perm_route_map_v1';
 
 interface UserPermissions {
   userId: string;
@@ -17,6 +18,7 @@ interface UserPermissions {
   outletId: string | null;       // The outlet this user is assigned to as admin
   outletName: string | null;     // Name of the outlet
   isOutletAdmin: boolean;        // Whether user is an outlet admin
+  refreshPermissions: () => Promise<void>; // Force-refresh permissions from DB
 }
 
 const defaultPerms: UserPermissions = {
@@ -30,6 +32,7 @@ const defaultPerms: UserPermissions = {
   outletId: null,
   outletName: null,
   isOutletAdmin: false,
+  refreshPermissions: async () => {},
 };
 
 const UserPermissionsContext = createContext<UserPermissions>(defaultPerms);
@@ -62,8 +65,106 @@ export function isSalesRole(role: string): boolean {
   return key === 'sales';
 }
 
+// ── Default permission-to-route map (fallback if DB has no route mappings) ──
+const DEFAULT_PERM_ROUTE_MAP: Record<string, string[]> = {
+  'View Dashboard': ['/admin'],
+  'Access POS': ['/admin/pos'],
+  'Manage Orders': ['/admin/orders', '/admin/delivery'],
+  'View Orders': ['/admin/orders'],
+  'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets', '/admin/stock-reorder'],
+  'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
+  'Manage Customers': ['/admin/customers'],
+  'Manage Deliveries': ['/admin/delivery', '/admin/orders', '/admin/order-tracking', '/admin/rider-reports'],
+  'View Deliveries': ['/admin/delivery', '/admin/order-tracking'],
+  'View Reports': ['/admin/reports', '/admin/employee-productivity'],
+  'Manage Recipes': ['/admin/recipes', '/admin/food-info', '/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
+  'Manage Production': ['/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
+  'View Production': ['/admin/production', '/admin/picking-lists'],
+  'Manage Pricing': ['/admin/pricing'],
+  'Manage Purchases': ['/admin/purchasing'],
+  'Manage Users': ['/admin/employees'],
+  'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
+  'View Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
+  'System Settings': ['/admin/settings', '/admin/roles-permissions'],
+  'Manage Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions', '/admin/outlet-returns', '/admin/outlet-products', '/admin/outlet-employees', '/admin/outlet-reports', '/admin/outlet-waste', '/admin/outlet-settings'],
+  'View Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
+  'Manage Outlet Inventory': ['/admin/outlet-inventory'],
+  'Manage Requisitions': ['/admin/outlet-requisitions'],
+  'Approve Requisitions': ['/admin/outlet-requisitions'],
+  'Manage Expenses': ['/admin/expenses'],
+  'Manage Debtors': ['/admin/debtors'],
+  'Manage Creditors': ['/admin/creditors'],
+  'View Audit Logs': ['/admin/audit-logs'],
+};
+
+// Module-level cache for the dynamic route map loaded from DB
+let dynamicRouteMapCache: { map: Record<string, string[]>; fetchedAt: number } | null = null;
+
+/**
+ * Load dynamic permission-to-route mappings from the permissions table.
+ * Permissions with a non-null `routes` JSONB column override the default map.
+ */
+async function loadDynamicRouteMap(): Promise<Record<string, string[]>> {
+  // Check module cache (5-min TTL)
+  if (dynamicRouteMapCache && Date.now() - dynamicRouteMapCache.fetchedAt < PERMS_CACHE_TTL_MS) {
+    return dynamicRouteMapCache.map;
+  }
+
+  // Check localStorage cache
+  try {
+    const cached = localStorage.getItem(ROUTE_MAP_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed?.ts && Date.now() - parsed.ts < PERMS_CACHE_TTL_MS && parsed.map) {
+        dynamicRouteMapCache = { map: parsed.map, fetchedAt: parsed.ts };
+        return parsed.map;
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Fetch from DB — only permissions that have routes defined
+  const merged = { ...DEFAULT_PERM_ROUTE_MAP };
+  try {
+    const { data } = await supabase
+      .from('permissions')
+      .select('name, routes')
+      .eq('enabled', true)
+      .not('routes', 'is', null);
+
+    if (data && data.length > 0) {
+      for (const perm of data) {
+        const routes = typeof perm.routes === 'string' ? JSON.parse(perm.routes) : perm.routes;
+        if (Array.isArray(routes) && routes.length > 0) {
+          merged[perm.name] = routes;
+        }
+      }
+    }
+  } catch {
+    // Column may not exist yet — fall back to defaults
+  }
+
+  dynamicRouteMapCache = { map: merged, fetchedAt: Date.now() };
+  try {
+    localStorage.setItem(ROUTE_MAP_CACHE_KEY, JSON.stringify({ map: merged, ts: Date.now() }));
+  } catch { /* ignore */ }
+
+  return merged;
+}
+
+/**
+ * Invalidate cached route maps so the next load fetches fresh data.
+ * Call this after editing permissions or their route mappings.
+ */
+export function invalidatePermissionCache() {
+  dynamicRouteMapCache = null;
+  try {
+    localStorage.removeItem(PERMS_CACHE_KEY);
+    localStorage.removeItem(ROUTE_MAP_CACHE_KEY);
+  } catch { /* ignore */ }
+}
+
 // Map permissions to allowed sidebar routes
-export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean): string[] {
+export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean, routeMap?: Record<string, string[]>): string[] {
   if (isAdmin) return []; // empty means all allowed
 
   // ── Strict role-based restrictions ──
@@ -106,37 +207,7 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
   // ── Flexible roles: defaults + explicit permissions ──
 
   const routes: string[] = [];
-
-  const permRouteMap: Record<string, string[]> = {
-    'View Dashboard': ['/admin'],
-    'Access POS': ['/admin/pos'],
-    'Manage Orders': ['/admin/orders', '/admin/delivery'],
-    'View Orders': ['/admin/orders'],
-    'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets', '/admin/stock-reorder'],
-    'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
-    'Manage Customers': ['/admin/customers'],
-    'Manage Deliveries': ['/admin/delivery', '/admin/orders', '/admin/order-tracking', '/admin/rider-reports'],
-    'View Deliveries': ['/admin/delivery', '/admin/order-tracking'],
-    'View Reports': ['/admin/reports', '/admin/employee-productivity'],
-    'Manage Recipes': ['/admin/recipes', '/admin/food-info', '/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
-    'Manage Production': ['/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
-    'View Production': ['/admin/production', '/admin/picking-lists'],
-    'Manage Pricing': ['/admin/pricing'],
-    'Manage Purchases': ['/admin/purchasing'],
-    'Manage Users': ['/admin/employees'],
-    'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
-    'View Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
-    'System Settings': ['/admin/settings', '/admin/roles-permissions'],
-    'Manage Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions', '/admin/outlet-returns', '/admin/outlet-products', '/admin/outlet-employees', '/admin/outlet-reports', '/admin/outlet-waste', '/admin/outlet-settings'],
-    'View Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
-    'Manage Outlet Inventory': ['/admin/outlet-inventory'],
-    'Manage Requisitions': ['/admin/outlet-requisitions'],
-    'Approve Requisitions': ['/admin/outlet-requisitions'],
-    'Manage Expenses': ['/admin/expenses'],
-    'Manage Debtors': ['/admin/debtors'],
-    'Manage Creditors': ['/admin/creditors'],
-    'View Audit Logs': ['/admin/audit-logs'],
-  };
+  const permRouteMap = routeMap || DEFAULT_PERM_ROUTE_MAP;
 
   const roleKey = normalizeRole(role);
   if (isSalesRole(roleKey)) {
@@ -172,11 +243,16 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
       const cached = JSON.parse(cachedRaw) as { ts: number; data: UserPermissions };
       if (!cached?.data || !cached?.ts) return defaultPerms;
       if (Date.now() - cached.ts > PERMS_CACHE_TTL_MS) return defaultPerms;
-      return { ...cached.data, loading: false };
+      return { ...cached.data, loading: false, refreshPermissions: async () => {} };
     } catch {
       return defaultPerms;
     }
   });
+
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
 
   const fetchRolePermissions = useCallback(async (roleName: string): Promise<string[]> => {
     if (!roleName) return [];
@@ -193,11 +269,11 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
     }
   }, []);
 
-  const loadPermissions = useCallback(async () => {
+  const loadPermissions = useCallback(async (skipCache = false) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setPerms({ ...defaultPerms, loading: false });
+        if (isMounted.current) setPerms(prev => ({ ...prev, ...defaultPerms, loading: false }));
         return;
       }
 
@@ -256,7 +332,7 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           }
         } catch { /* outlet tables may not exist yet */ }
 
-        const nextPerms = {
+        const nextPerms: Omit<UserPermissions, 'refreshPermissions'> = {
           userId: user.id,
           email,
           fullName,
@@ -268,13 +344,13 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           outletName,
           isOutletAdmin,
         };
-        setPerms(nextPerms);
+        if (isMounted.current) setPerms(prev => ({ ...prev, ...nextPerms }));
         try {
           localStorage.setItem(PERMS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: nextPerms }));
         } catch { /* ignore cache write */ }
       } else if (emp && !emp.system_access) {
         // Employee exists but system_access is disabled — restrict to Viewer with no permissions
-        const nextPerms = {
+        const nextPerms: Omit<UserPermissions, 'refreshPermissions'> = {
           userId: user.id,
           email,
           fullName,
@@ -286,13 +362,13 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           outletName: null,
           isOutletAdmin: false,
         };
-        setPerms(nextPerms);
+        if (isMounted.current) setPerms(prev => ({ ...prev, ...nextPerms }));
         try {
           localStorage.setItem(PERMS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: nextPerms }));
         } catch { /* ignore cache write */ }
       } else {
         // No employee record found — this is likely the owner/super admin account
-        const nextPerms = {
+        const nextPerms: Omit<UserPermissions, 'refreshPermissions'> = {
           userId: user.id,
           email,
           fullName,
@@ -304,20 +380,38 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
           outletName: null,
           isOutletAdmin: false,
         };
-        setPerms(nextPerms);
+        if (isMounted.current) setPerms(prev => ({ ...prev, ...nextPerms }));
         try {
           localStorage.setItem(PERMS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: nextPerms }));
         } catch { /* ignore cache write */ }
       }
+
+      // Pre-load the dynamic route map in the background
+      if (skipCache) {
+        invalidatePermissionCache();
+      }
+      loadDynamicRouteMap();
     } catch {
-      setPerms({ ...defaultPerms, loading: false });
+      if (isMounted.current) setPerms(prev => ({ ...prev, ...defaultPerms, loading: false }));
     }
   }, [fetchRolePermissions]);
 
+  // Exposed refresh function — clears caches and re-fetches
+  const refreshPermissions = useCallback(async () => {
+    invalidatePermissionCache();
+    await loadPermissions(true);
+  }, [loadPermissions]);
+
   useEffect(() => { loadPermissions(); }, [loadPermissions]);
 
+  // Merge the refreshPermissions function into the context value
+  const contextValue = React.useMemo(() => ({
+    ...perms,
+    refreshPermissions,
+  }), [perms, refreshPermissions]);
+
   return (
-    <UserPermissionsContext.Provider value={perms}>
+    <UserPermissionsContext.Provider value={contextValue}>
       {children}
     </UserPermissionsContext.Provider>
   );

@@ -1,13 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { verifyAdmin } from '@/lib/supabase-server';
 
 /**
  * Server-side API route that generates a magic link for admin impersonation.
  * Uses the Supabase Admin API so no password is needed.
  * The magic link logs the target user in when visited.
+ * Protected: only authenticated admins can call this endpoint.
  */
 export async function POST(req: NextRequest) {
   try {
+    // Verify caller is an authenticated admin
+    const admin = await verifyAdmin(req);
+    if (!admin) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized. Only admins can impersonate users.' },
+        { status: 403 }
+      );
+    }
+
     const { email, adminEmail, adminName, targetName } = await req.json();
 
     if (!email) {
