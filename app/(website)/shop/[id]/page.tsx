@@ -1,20 +1,41 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/lib/cart-context';
-import { getProduct, products, getRelated } from '@/lib/products';
+import { getProduct, products, getRelated, fetchMainBakeryProducts } from '@/lib/products';
+import type { Product } from '@/lib/products';
 import { ShoppingBag, Minus, Plus, ChevronRight, Star, Truck, RotateCcw, Shield } from 'lucide-react';
 
 export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const product = getProduct(id);
+  const staticProduct = getProduct(id);
   const { addItem } = useCart();
   const router = useRouter();
   const [qty, setQty] = useState(1);
   const [activeTab, setActiveTab] = useState<'description' | 'details'>('description');
   const [added, setAdded] = useState(false);
+  const [product, setProduct] = useState<Product | undefined>(staticProduct);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>(staticProduct ? getRelated(staticProduct) : []);
+
+  // Try to load from main bakery inventory
+  useEffect(() => {
+    async function loadProduct() {
+      try {
+        const bakeryProducts = await fetchMainBakeryProducts();
+        if (bakeryProducts && bakeryProducts.length > 0) {
+          const found = bakeryProducts.find(p => p.id === id);
+          if (found) {
+            setProduct(found);
+            setRelatedProducts(bakeryProducts.filter(p => p.id !== id && p.category === found.category).slice(0, 4));
+            return;
+          }
+        }
+      } catch { /* use static fallback */ }
+    }
+    loadProduct();
+  }, [id]);
 
   if (!product) {
     return (
@@ -32,7 +53,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
   }
 
   const savings = product.originalPrice ? product.originalPrice - product.price : 0;
-  const related = getRelated(product);
+  const related = relatedProducts;
 
   const handleAddToCart = () => {
     for (let i = 0; i < qty; i++) {

@@ -6,7 +6,7 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions';
+type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery';
 
 interface NewsletterSubscriber {
   id: string;
@@ -146,6 +146,17 @@ export default function SettingsPage() {
     retentionDays: 30,
     lastBackup: 'Never',
     backupLocation: 'supabase',
+  });
+
+  // ── Delivery Settings ──
+  const [delivery, setDelivery] = useState({
+    deliveryEnabled: true,
+    minimumOrderForDelivery: 500,
+    deliveryFee: 200,
+    freeDeliveryThreshold: 2000,
+    estimatedDeliveryTime: '30-60 mins',
+    deliveryRadius: '10 km',
+    deliveryNotes: '',
   });
 
   // ── Offers ──
@@ -584,6 +595,7 @@ export default function SettingsPage() {
           if (settings.posCard) setPosCard(prev => ({ ...prev, ...(settings.posCard as Record<string, unknown>) }));
           if (settings.security) setSecurity(prev => ({ ...prev, ...(settings.security as Record<string, unknown>) }));
           if (settings.backup) setBackup(prev => ({ ...prev, ...(settings.backup as Record<string, unknown>) }));
+          if (settings.delivery) setDelivery(prev => ({ ...prev, ...(settings.delivery as Record<string, unknown>) }));
           return;
         }
       } catch {
@@ -601,6 +613,7 @@ export default function SettingsPage() {
           if (parsed.posCard) setPosCard(prev => ({ ...prev, ...parsed.posCard }));
           if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
           if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
+          if (parsed.delivery) setDelivery(prev => ({ ...prev, ...parsed.delivery }));
         }
       } catch { /* ignore */ }
     }
@@ -634,7 +647,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, navbarAds, newsletterModal };
+    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -684,6 +697,7 @@ export default function SettingsPage() {
     { key: 'posCard', label: 'POS Card', icon: '💳', tip: 'Card reader setup & POS card payment settings' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
+    { key: 'delivery', label: 'Delivery', icon: '🚚', tip: 'Minimum order for delivery, delivery fees & thresholds' },
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
   ];
 
@@ -1882,6 +1896,85 @@ export default function SettingsPage() {
               <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Storage</p><p className="font-bold capitalize">{backup.backupLocation}</p></div>
             </div>
             <button className="mt-4 px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm font-medium">Run Manual Backup Now</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELIVERY ── */}
+      {activeTab === 'delivery' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-1">Delivery Settings</h3>
+            <p className="text-xs text-muted-foreground mb-4">Configure delivery rules for online orders. Orders below the minimum amount will only be available for pickup.</p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Enable Delivery</p>
+                  <p className="text-xs text-muted-foreground">Allow customers to choose delivery for online orders</p>
+                </div>
+                <button type="button" onClick={() => setDelivery({ ...delivery, deliveryEnabled: !delivery.deliveryEnabled })} className={`w-10 h-5 rounded-full transition-colors ${delivery.deliveryEnabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${delivery.deliveryEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Minimum Order for Delivery (KES)</label>
+                  <input type="number" min={0} value={delivery.minimumOrderForDelivery} onChange={e => setDelivery({ ...delivery, minimumOrderForDelivery: parseFloat(e.target.value) || 0 })} className={inputCls} />
+                  <p className="text-xs text-muted-foreground mt-1">Orders below this amount will only be available for pickup. Set to 0 to allow delivery for all orders.</p>
+                </div>
+                <div>
+                  <label className={labelCls}>Delivery Fee (KES)</label>
+                  <input type="number" min={0} value={delivery.deliveryFee} onChange={e => setDelivery({ ...delivery, deliveryFee: parseFloat(e.target.value) || 0 })} className={inputCls} />
+                  <p className="text-xs text-muted-foreground mt-1">Standard delivery charge applied to qualifying orders</p>
+                </div>
+                <div>
+                  <label className={labelCls}>Free Delivery Threshold (KES)</label>
+                  <input type="number" min={0} value={delivery.freeDeliveryThreshold} onChange={e => setDelivery({ ...delivery, freeDeliveryThreshold: parseFloat(e.target.value) || 0 })} className={inputCls} />
+                  <p className="text-xs text-muted-foreground mt-1">Orders above this amount get free delivery. Set to 0 to always charge delivery.</p>
+                </div>
+                <div>
+                  <label className={labelCls}>Estimated Delivery Time</label>
+                  <input type="text" value={delivery.estimatedDeliveryTime} onChange={e => setDelivery({ ...delivery, estimatedDeliveryTime: e.target.value })} className={inputCls} placeholder="e.g. 30-60 mins" />
+                </div>
+                <div>
+                  <label className={labelCls}>Delivery Radius</label>
+                  <input type="text" value={delivery.deliveryRadius} onChange={e => setDelivery({ ...delivery, deliveryRadius: e.target.value })} className={inputCls} placeholder="e.g. 10 km" />
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>Delivery Notes (shown to customers)</label>
+                <textarea value={delivery.deliveryNotes} onChange={e => setDelivery({ ...delivery, deliveryNotes: e.target.value })} className={inputCls} rows={2} placeholder="e.g. Delivery available within Nairobi only" />
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-3">Delivery Rules Summary</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between py-2 border-b border-border">
+                <span className="text-muted-foreground">Delivery Status</span>
+                <span className={`font-medium ${delivery.deliveryEnabled ? 'text-green-600' : 'text-red-600'}`}>{delivery.deliveryEnabled ? 'Enabled' : 'Disabled'}</span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-border">
+                <span className="text-muted-foreground">Minimum Order for Delivery</span>
+                <span className="font-medium">KES {delivery.minimumOrderForDelivery.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-border">
+                <span className="text-muted-foreground">Delivery Fee</span>
+                <span className="font-medium">KES {delivery.deliveryFee.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-border">
+                <span className="text-muted-foreground">Free Delivery Above</span>
+                <span className="font-medium">KES {delivery.freeDeliveryThreshold.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-muted-foreground">Est. Delivery Time</span>
+                <span className="font-medium">{delivery.estimatedDeliveryTime || 'Not set'}</span>
+              </div>
+            </div>
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+              <strong>Example:</strong> With current settings, orders below KES {delivery.minimumOrderForDelivery.toLocaleString()} can only be picked up. Orders between KES {delivery.minimumOrderForDelivery.toLocaleString()} and KES {delivery.freeDeliveryThreshold.toLocaleString()} pay KES {delivery.deliveryFee.toLocaleString()} delivery fee. Orders above KES {delivery.freeDeliveryThreshold.toLocaleString()} get free delivery.
+            </div>
           </div>
         </div>
       )}
