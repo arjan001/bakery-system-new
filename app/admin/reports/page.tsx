@@ -500,38 +500,49 @@ export default function ReportsPage() {
     const csvRows = plReports.map(r => [r.period, r.revenue.toFixed(2), r.costs.toFixed(2), r.profit.toFixed(2), r.margin.toFixed(1)]);
 
     // P&L Breakdown - compute from cost entries and sales data
-    const rawMaterialsCost = costEntries.filter(c => c.costType === 'raw_materials' || c.category?.toLowerCase().includes('raw') || c.category?.toLowerCase().includes('ingredient')).reduce((s, c) => s + c.amount, 0);
-    const directCosts = costEntries.filter(c => c.costType === 'direct_cost' || c.category?.toLowerCase().includes('production') || c.category?.toLowerCase().includes('labor') || c.category?.toLowerCase().includes('packaging')).reduce((s, c) => s + c.amount, 0);
-    const generalExpenses = costEntries.filter(c => c.costType === 'general_expense' || (!['raw_materials', 'direct_cost'].includes(c.costType))).reduce((s, c) => s + c.amount, 0) - rawMaterialsCost - directCosts;
-    const totalDirectCosts = rawMaterialsCost + directCosts;
-    const grossProfit = totalRevenue - totalDirectCosts - (rawMaterialsCost > 0 ? 0 : totalCosts * 0.6);
-    const netProfit = totalProfit;
+    // Formula: Total Sales - Direct Costs = Gross Profit
+    //          Gross Profit - (Indirect Costs + General Expenses) = Net Profit
 
-    // Use actual data if available, otherwise derive from P&L reports
-    const displayRawMaterials = rawMaterialsCost > 0 ? rawMaterialsCost : totalCosts * 0.45;
-    const displayDirectCosts = directCosts > 0 ? directCosts : totalCosts * 0.15;
-    const displayGrossProfit = totalRevenue - displayRawMaterials - displayDirectCosts;
-    const displayGeneralExpenses = generalExpenses > 0 ? generalExpenses : totalCosts - displayRawMaterials - displayDirectCosts;
-    const displayNetProfit = displayGrossProfit - (displayGeneralExpenses > 0 ? displayGeneralExpenses : 0);
+    // Direct costs: raw materials, production costs, labor, packaging
+    const rawMaterialsCost = costEntries.filter(c => c.costType === 'raw_materials' || c.category?.toLowerCase().includes('raw') || c.category?.toLowerCase().includes('ingredient')).reduce((s, c) => s + c.amount, 0);
+    const productionCosts = costEntries.filter(c => c.costType === 'direct_cost' || c.category?.toLowerCase().includes('production') || c.category?.toLowerCase().includes('labor') || c.category?.toLowerCase().includes('packaging')).reduce((s, c) => s + c.amount, 0);
+    const displayDirectCosts = rawMaterialsCost + productionCosts;
+
+    // Gross Profit = Total Sales - Direct Costs
+    const displayGrossProfit = totalRevenue - displayDirectCosts;
+
+    // Indirect costs: utilities, rent, maintenance
+    const indirectCosts = costEntries.filter(c => c.costType === 'indirect_cost' || c.category?.toLowerCase().includes('utility') || c.category?.toLowerCase().includes('rent') || c.category?.toLowerCase().includes('maintenance')).reduce((s, c) => s + c.amount, 0);
+
+    // General expenses: everything else that isn't direct or indirect
+    const generalExpenses = costEntries.filter(c => {
+      const ct = c.costType || '';
+      const cat = (c.category || '').toLowerCase();
+      return !['raw_materials', 'direct_cost', 'indirect_cost'].includes(ct) &&
+        !cat.includes('raw') && !cat.includes('ingredient') &&
+        !cat.includes('production') && !cat.includes('labor') &&
+        !cat.includes('packaging') && !cat.includes('utility') &&
+        !cat.includes('rent') && !cat.includes('maintenance');
+    }).reduce((s, c) => s + c.amount, 0);
+
+    const displayGeneralExpenses = indirectCosts + generalExpenses;
+
+    // Net Profit = Gross Profit - (Indirect Costs + General Expenses)
+    const displayNetProfit = displayGrossProfit - displayGeneralExpenses;
 
     return (
       <div className="space-y-6">
         {/* Financial Summary Cards - Arranged in P&L Order */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div className="bg-card border-2 border-emerald-200 rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-1">Total Revenue</p>
+            <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-1">Total Sales</p>
             <p className="text-2xl font-bold text-emerald-600">{formatKES(totalRevenue)}</p>
             <p className="text-xs text-muted-foreground mt-1">Sales + POS income</p>
           </div>
           <div className="bg-card border-2 border-red-200 rounded-xl p-5 shadow-sm">
             <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-1">Direct Costs</p>
             <p className="text-2xl font-bold text-red-600">{formatKES(displayDirectCosts)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Production & labor</p>
-          </div>
-          <div className="bg-card border-2 border-amber-200 rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Raw Materials</p>
-            <p className="text-2xl font-bold text-amber-600">{formatKES(displayRawMaterials)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Ingredients & supplies</p>
+            <p className="text-xs text-muted-foreground mt-1">Raw materials + production</p>
           </div>
           <div className="bg-card border-2 border-blue-200 rounded-xl p-5 shadow-sm">
             <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Gross Profit</p>
@@ -539,9 +550,14 @@ export default function ReportsPage() {
             <p className="text-xs text-muted-foreground mt-1">{totalRevenue > 0 ? `Margin: ${((displayGrossProfit / totalRevenue) * 100).toFixed(1)}%` : '-'}</p>
           </div>
           <div className="bg-card border-2 border-purple-200 rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">General Expenses</p>
-            <p className="text-2xl font-bold text-purple-600">{formatKES(displayGeneralExpenses > 0 ? displayGeneralExpenses : 0)}</p>
+            <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">Indirect + Expenses</p>
+            <p className="text-2xl font-bold text-purple-600">{formatKES(displayGeneralExpenses)}</p>
             <p className="text-xs text-muted-foreground mt-1">Overhead & admin</p>
+          </div>
+          <div className={`bg-card border-2 rounded-xl p-5 shadow-sm ${displayNetProfit >= 0 ? 'border-emerald-300' : 'border-red-300'}`}>
+            <p className="text-xs font-semibold uppercase tracking-wide mb-1 text-muted-foreground">Net Profit</p>
+            <p className={`text-2xl font-bold ${displayNetProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(displayNetProfit)}</p>
+            <p className="text-xs text-muted-foreground mt-1">{totalRevenue > 0 ? `Net margin: ${((displayNetProfit / totalRevenue) * 100).toFixed(1)}%` : '-'}</p>
           </div>
         </div>
 
@@ -558,11 +574,11 @@ export default function ReportsPage() {
             </div>
           </div>
           <div className="mt-3 grid grid-cols-5 gap-2 text-xs">
-            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">Revenue</p><p className="font-bold text-emerald-600">{formatKES(totalRevenue)}</p></div>
-            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Direct</p><p className="font-bold text-red-600">{formatKES(displayDirectCosts)}</p></div>
-            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Materials</p><p className="font-bold text-amber-600">{formatKES(displayRawMaterials)}</p></div>
-            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">= Gross</p><p className="font-bold text-blue-600">{formatKES(displayGrossProfit)}</p></div>
-            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Expenses</p><p className="font-bold text-purple-600">{formatKES(displayGeneralExpenses > 0 ? displayGeneralExpenses : 0)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">Total Sales</p><p className="font-bold text-emerald-600">{formatKES(totalRevenue)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Direct Costs</p><p className="font-bold text-red-600">{formatKES(displayDirectCosts)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">= Gross Profit</p><p className="font-bold text-blue-600">{formatKES(displayGrossProfit)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- (Indirect + Expenses)</p><p className="font-bold text-purple-600">{formatKES(displayGeneralExpenses)}</p></div>
+            <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">= Net Profit</p><p className={`font-bold ${displayNetProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(displayNetProfit)}</p></div>
           </div>
         </div>
 

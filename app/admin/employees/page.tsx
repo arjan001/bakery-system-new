@@ -175,7 +175,7 @@ export default function EmployeesPage() {
   const [impersonating, setImpersonating] = useState<string | null>(null);
   const [rolePermissionsMap, setRolePermissionsMap] = useState<Record<string, string[]>>({});
   const [availablePermissions, setAvailablePermissions] = useState<string[]>(ALL_PERMISSIONS);
-  const [loginRoles, setLoginRoles] = useState<string[]>(['Admin', 'Administrator', 'Baker', 'Driver', 'Sales', 'Cashier', 'Viewer']);
+  const [loginRoles, setLoginRoles] = useState<string[]>(['Admin', 'Administrator', 'Baker', 'Cashier', 'Driver', 'Outlet Staff', 'POS Attendant', 'Sales', 'Viewer']);
   const [outlets, setOutlets] = useState<{ id: string; name: string; outlet_type: string; is_main_branch: boolean }[]>([]);
 
   const fetchEmployees = useCallback(async () => {
@@ -418,7 +418,7 @@ export default function EmployeesPage() {
   const [loginPassword, setLoginPassword] = useState('');
 
   const departments = ['Production', 'Sales', 'Delivery', 'Administration', 'Quality Control', 'Packaging', 'Cleaning'];
-  const [categories, setCategories] = useState<string[]>(['Baker', 'Driver', 'Sales', 'Admin', 'Quality', 'Packer', 'Supervisor', 'Manager', 'Rider', 'Cleaner']);
+  const [categories, setCategories] = useState<string[]>(['Baker', 'Cashier', 'Cleaner', 'Driver', 'Admin', 'Manager', 'Outlet Staff', 'Packer', 'Quality', 'Rider', 'Sales', 'Supervisor']);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const designations: Employee['designation'][] = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof'];
