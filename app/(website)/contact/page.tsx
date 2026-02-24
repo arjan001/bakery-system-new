@@ -68,8 +68,8 @@ export default function ContactPage() {
               <p className="text-gray-500 text-sm mb-4">
                 For partnerships, careers, media, or reaching out to leadership.
               </p>
-              <a href="mailto:ceo@snacko-bakers.com" className="text-gray-600 text-sm hover:text-orange-600 transition-colors block mb-1">
-                ceo@snacko-bakers.com
+              <a href="mailto:ceo@snackoh-bakers.com" className="text-gray-600 text-sm hover:text-orange-600 transition-colors block mb-1">
+                ceo@snackoh-bakers.com
               </a>
               <a href="mailto:sales@snackoh-bakers.com" className="text-gray-600 text-sm hover:text-orange-600 transition-colors block">
                 sales@snackoh-bakers.com
@@ -131,9 +131,9 @@ export default function ContactPage() {
                   </a>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">CEO</p>
-                  <a href="mailto:ceo@snacko-bakers.com" className="text-gray-800 font-semibold hover:text-orange-600 transition-colors">
-                    ceo@snacko-bakers.com
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Leadership</p>
+                  <a href="mailto:ceo@snackoh-bakers.com" className="text-gray-800 font-semibold hover:text-orange-600 transition-colors">
+                    ceo@snackoh-bakers.com
                   </a>
                 </div>
                 <div>
