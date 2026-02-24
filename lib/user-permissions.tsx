@@ -35,61 +35,155 @@ export function useUserPermissions() {
   return useContext(UserPermissionsContext);
 }
 
+// Comprehensive permission-to-route mapping — every admin route must be covered
+const permRouteMap: Record<string, string[]> = {
+  'View Dashboard': ['/admin'],
+  'Access POS': ['/admin/pos'],
+  'Manage Orders': ['/admin/orders', '/admin/order-tracking'],
+  'Manage Customers': ['/admin/customers'],
+  'Manage Deliveries': ['/admin/delivery', '/admin/order-tracking', '/admin/rider-reports'],
+  'Manage Pricing': ['/admin/pricing'],
+  'Manage Inventory': [
+    '/admin/inventory',
+    '/admin/stock-reorder',
+    '/admin/purchasing',
+    '/admin/distributors',
+    '/admin/distribution',
+    '/admin/assets',
+  ],
+  'Manage Purchases': ['/admin/purchasing', '/admin/distributors'],
+  'Manage Recipes': [
+    '/admin/recipes',
+    '/admin/food-info',
+    '/admin/production',
+    '/admin/picking-lists',
+    '/admin/lot-tracking',
+    '/admin/waste-control',
+  ],
+  'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
+  'View Reports': ['/admin/reports', '/admin/employee-productivity'],
+  'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
+  'Manage Outlets': [
+    '/admin/outlets',
+    '/admin/outlet-inventory',
+    '/admin/outlet-requisitions',
+    '/admin/outlet-returns',
+    '/admin/outlet-products',
+    '/admin/outlet-employees',
+    '/admin/outlet-reports',
+    '/admin/outlet-waste',
+    '/admin/outlet-settings',
+  ],
+  'View Outlets': [
+    '/admin/outlets',
+    '/admin/outlet-inventory',
+    '/admin/outlet-requisitions',
+    '/admin/outlet-returns',
+    '/admin/outlet-products',
+    '/admin/outlet-reports',
+  ],
+  'Manage Outlet Inventory': ['/admin/outlet-inventory'],
+  'Manage Requisitions': ['/admin/outlet-requisitions'],
+  'Approve Requisitions': ['/admin/outlet-requisitions'],
+  'System Settings': ['/admin/settings', '/admin/roles-permissions', '/admin/audit-logs'],
+  'View Audit Logs': ['/admin/audit-logs'],
+};
+
+// Role-specific default routes — these are granted automatically based on role,
+// before any database permissions are checked
+const roleDefaultRoutes: Record<string, string[]> = {
+  // Rider/Driver: STRICTLY limited — only delivery-related modules
+  Rider: [
+    '/admin',
+    '/admin/delivery',
+    '/admin/order-tracking',
+    '/admin/rider-reports',
+    '/admin/account',
+  ],
+  Driver: [
+    '/admin',
+    '/admin/delivery',
+    '/admin/order-tracking',
+    '/admin/rider-reports',
+    '/admin/account',
+  ],
+  // Baker: production-focused modules
+  Baker: [
+    '/admin',
+    '/admin/recipes',
+    '/admin/food-info',
+    '/admin/production',
+    '/admin/picking-lists',
+    '/admin/lot-tracking',
+    '/admin/waste-control',
+    '/admin/account',
+  ],
+  // Cashier / POS Attendant: POS and basic order management
+  Cashier: [
+    '/admin',
+    '/admin/pos',
+    '/admin/orders',
+    '/admin/customers',
+    '/admin/account',
+  ],
+  'POS Attendant': [
+    '/admin',
+    '/admin/pos',
+    '/admin/orders',
+    '/admin/customers',
+    '/admin/account',
+  ],
+  // Sales: order management, customers, delivery
+  Sales: [
+    '/admin',
+    '/admin/orders',
+    '/admin/order-tracking',
+    '/admin/delivery',
+    '/admin/customers',
+    '/admin/pricing',
+    '/admin/account',
+  ],
+};
+
+// Roles that are STRICTLY restricted — they can ONLY access their default routes,
+// regardless of any additional permissions in the database.
+const strictlyRestrictedRoles = new Set(['Rider', 'Driver']);
+
 // Map permissions to allowed sidebar routes
 export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean): string[] {
   if (isAdmin) return []; // empty means all allowed
 
-  // Strict role-based restrictions for Rider and Driver — these roles can ONLY access
-  // the routes listed below, regardless of any additional permissions in the database.
-  if (role === 'Rider' || role === 'Driver') {
-    return [
-      '/admin',             // dashboard
-      '/admin/delivery',    // delivery/schedule orders
-      '/admin/order-tracking',
-      '/admin/rider-reports',
-      '/admin/account',     // own account settings
-    ];
+  // Strictly restricted roles: ONLY their default routes, no additional permissions
+  if (strictlyRestrictedRoles.has(role)) {
+    return roleDefaultRoutes[role] || ['/admin/account'];
   }
 
   const routes: string[] = [];
 
-  const permRouteMap: Record<string, string[]> = {
-    'View Dashboard': ['/admin'],
-    'Access POS': ['/admin/pos'],
-    'Manage Orders': ['/admin/orders', '/admin/delivery'],
-    'Manage Inventory': ['/admin/inventory', '/admin/purchasing', '/admin/distributors', '/admin/distribution', '/admin/assets', '/admin/stock-reorder'],
-    'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
-    'Manage Customers': ['/admin/customers'],
-    'Manage Deliveries': ['/admin/delivery', '/admin/orders', '/admin/order-tracking', '/admin/rider-reports'],
-    'View Reports': ['/admin/reports', '/admin/employee-productivity'],
-    'Manage Recipes': ['/admin/recipes', '/admin/food-info', '/admin/production', '/admin/picking-lists', '/admin/lot-tracking', '/admin/waste-control'],
-    'Manage Pricing': ['/admin/pricing'],
-    'Manage Purchases': ['/admin/purchasing'],
-    'System Settings': ['/admin/settings', '/admin/roles-permissions'],
-    'Manage Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
-    'View Outlets': ['/admin/outlets', '/admin/outlet-inventory', '/admin/outlet-requisitions'],
-    'Manage Outlet Inventory': ['/admin/outlet-inventory'],
-    'Manage Requisitions': ['/admin/outlet-requisitions'],
-    'Approve Requisitions': ['/admin/outlet-requisitions'],
-  };
-
-  if (role === 'Sales') {
-    routes.push('/admin'); // dashboard
-    routes.push('/admin/orders');
-    routes.push('/admin/delivery');
-  }
-  if (role === 'Cashier') {
-    routes.push('/admin/pos');
+  // Add role-specific default routes
+  const defaults = roleDefaultRoutes[role];
+  if (defaults) {
+    routes.push(...defaults);
   }
 
+  // Add routes from database permissions
   for (const perm of permissions) {
     const r = permRouteMap[perm];
     if (r) routes.push(...r);
   }
 
+  // Deduplicate and ensure account page is always accessible
   const unique = [...new Set(routes)];
   if (!unique.includes('/admin/account')) unique.push('/admin/account');
   return unique;
+}
+
+// Check if a specific route is allowed for the user
+export function isRouteAllowed(pathname: string, permissions: string[], role: string, isAdmin: boolean): boolean {
+  if (isAdmin) return true;
+  const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin);
+  if (allowedRoutes.length === 0 && isAdmin) return true;
+  return allowedRoutes.some(route => pathname === route || pathname.startsWith(route + '/'));
 }
 
 export function UserPermissionsProvider({ children }: { children: React.ReactNode }) {
@@ -125,7 +219,7 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
       // Check if this user has an employee record with specific role/permissions
       const { data: emp } = await supabase
         .from('employees')
-        .select('login_role, permissions, system_access')
+        .select('id, login_role, permissions, system_access')
         .eq('login_email', email)
         .single();
 
@@ -149,16 +243,11 @@ export function UserPermissionsProvider({ children }: { children: React.ReactNod
         let outletName: string | null = null;
         let isOutletAdmin = false;
         try {
-          const { data: empRecord } = await supabase
-            .from('employees')
-            .select('id')
-            .eq('login_email', email)
-            .single();
-          if (empRecord?.id) {
+          if (emp.id) {
             const { data: outletEmp } = await supabase
               .from('outlet_employees')
               .select('outlet_id, is_outlet_admin, outlet_role')
-              .eq('employee_id', empRecord.id)
+              .eq('employee_id', emp.id)
               .eq('status', 'Active')
               .in('outlet_role', ['Admin', 'Manager'])
               .limit(1)
