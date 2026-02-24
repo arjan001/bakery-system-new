@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search } from 'lucide-react';
+import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search, Loader2 } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 import { useUserPermissions } from '@/lib/user-permissions';
 
@@ -561,6 +561,24 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
               </div>
             </div>
 
+            {/* Route & Distance */}
+            {(selectedDelivery.departureLocation || selectedDelivery.distanceKm > 0) && (
+              <div className="border border-border rounded-lg p-4">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Route Information</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {selectedDelivery.departureLocation && (
+                    <div><span className="text-muted-foreground">From:</span> <span className="font-medium ml-1">{selectedDelivery.departureLocation}</span></div>
+                  )}
+                  {selectedDelivery.customerLocation && (
+                    <div><span className="text-muted-foreground">To:</span> <span className="font-medium ml-1">{selectedDelivery.customerLocation}</span></div>
+                  )}
+                  {selectedDelivery.distanceKm > 0 && (
+                    <div><span className="text-muted-foreground">Distance:</span> <strong className="ml-1">{selectedDelivery.distanceKm} km</strong></div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Items */}
             {selectedDelivery.items.length > 0 && (
               <div className="border border-border rounded-lg p-4">
@@ -693,6 +711,70 @@ function AdminDeliveryView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [customerSearch, setCustomerSearch] = useState('');
+
+  // Distance calculation state
+  const [calculatingDistance, setCalculatingDistance] = useState(false);
+  const [distanceError, setDistanceError] = useState('');
+  const [distanceInfo, setDistanceInfo] = useState('');
+
+  // Location suggestions for departure
+  const [departureSuggestions, setDepartureSuggestions] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
+  const [showDepartureSuggestions, setShowDepartureSuggestions] = useState(false);
+  const [departureSearchTimeout, setDepartureSearchTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // Fetch location suggestions using Nominatim
+  const fetchLocationSuggestions = async (query: string) => {
+    if (query.length < 3) {
+      setDepartureSuggestions([]);
+      return;
+    }
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=ke&limit=5`);
+      const data = await res.json();
+      setDepartureSuggestions(data || []);
+      setShowDepartureSuggestions(true);
+    } catch {
+      setDepartureSuggestions([]);
+    }
+  };
+
+  const handleDepartureInputChange = (value: string) => {
+    setFormData(prev => ({ ...prev, departureLocation: value }));
+    if (departureSearchTimeout) clearTimeout(departureSearchTimeout);
+    const timeout = setTimeout(() => fetchLocationSuggestions(value), 400);
+    setDepartureSearchTimeout(timeout);
+  };
+
+  const selectDepartureSuggestion = (suggestion: { display_name: string }) => {
+    setFormData(prev => ({ ...prev, departureLocation: suggestion.display_name }));
+    setShowDepartureSuggestions(false);
+    setDepartureSuggestions([]);
+  };
+
+  // Calculate distance using Google Distance Matrix API via server endpoint
+  const calculateDistance = async (origin: string, destination: string) => {
+    if (!origin || !destination) return;
+    setCalculatingDistance(true);
+    setDistanceError('');
+    setDistanceInfo('');
+    try {
+      const res = await fetch('/api/distance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFormData(prev => ({ ...prev, distanceKm: data.distanceKm }));
+        setDistanceInfo(`${data.distanceText} — est. ${data.durationText}`);
+      } else {
+        setDistanceError(data.message || 'Could not calculate distance');
+      }
+    } catch {
+      setDistanceError('Failed to connect to distance service');
+    }
+    setCalculatingDistance(false);
+  };
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -896,6 +978,9 @@ function AdminDeliveryView() {
       tripEndMileage: 0,
     });
     setCustomerSearch('');
+    setDistanceError('');
+    setDistanceInfo('');
+    setDepartureSuggestions([]);
   };
 
   const openNewForm = () => {
@@ -1276,15 +1361,32 @@ function AdminDeliveryView() {
           <div className="border border-border rounded-lg p-4 bg-secondary/30">
             <p className="text-sm font-semibold mb-3">Route & Mileage Details</p>
             <div className="grid grid-cols-2 gap-4 mb-3">
-              <div>
+              <div className="relative">
                 <label className="block text-xs text-muted-foreground mb-1">Departure Location</label>
                 <input
                   type="text"
                   placeholder="e.g. Main Bakery, Nairobi"
                   value={formData.departureLocation}
-                  onChange={(e) => setFormData({ ...formData, departureLocation: e.target.value })}
+                  onChange={(e) => handleDepartureInputChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowDepartureSuggestions(false), 200)}
+                  onFocus={() => { if (departureSuggestions.length > 0) setShowDepartureSuggestions(true); }}
                   className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
                 />
+                {showDepartureSuggestions && departureSuggestions.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {departureSuggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-secondary transition-colors border-b border-border last:border-0"
+                        onMouseDown={() => selectDepartureSuggestion(s)}
+                      >
+                        <MapPin size={10} className="inline mr-1 text-muted-foreground" />
+                        {s.display_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Destination</label>
@@ -1297,47 +1399,83 @@ function AdminDeliveryView() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Distance (km)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  value={formData.distanceKm || ''}
-                  onChange={(e) => setFormData({ ...formData, distanceKm: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
-                  placeholder="0.0"
-                />
+
+            {/* Distance auto-calculation */}
+            <div className="mb-3">
+              <div className="flex items-end gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-muted-foreground mb-1">Distance (km) — Auto-calculated via Google Maps</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={formData.distanceKm || ''}
+                    readOnly
+                    className="w-full px-3 py-2 border border-border rounded-lg outline-none bg-muted text-sm font-medium"
+                    placeholder="Will auto-fill when calculated"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={calculatingDistance || !formData.departureLocation || !(selectedCustomer?.location || selectedCustomer?.address)}
+                  onClick={() => {
+                    const destination = selectedCustomer?.gpsLat && selectedCustomer?.gpsLng && selectedCustomer.gpsLat !== 0
+                      ? `${selectedCustomer.gpsLat},${selectedCustomer.gpsLng}`
+                      : selectedCustomer?.address || selectedCustomer?.location || '';
+                    calculateDistance(formData.departureLocation, destination);
+                  }}
+                  className="px-4 py-2 bg-foreground text-background text-xs font-semibold rounded-lg hover:opacity-90 disabled:opacity-40 transition-opacity flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  {calculatingDistance ? <><Loader2 size={12} className="animate-spin" /> Calculating...</> : <><Navigation size={12} /> Calculate Distance</>}
+                </button>
               </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Trip Start Mileage</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  value={formData.tripStartMileage || ''}
-                  onChange={(e) => setFormData({ ...formData, tripStartMileage: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
-                  placeholder="Odometer reading"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Trip End Mileage</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  value={formData.tripEndMileage || ''}
-                  onChange={(e) => setFormData({ ...formData, tripEndMileage: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
-                  placeholder="Odometer reading"
-                />
+              {distanceInfo && (
+                <p className="text-xs text-green-600 mt-1.5 font-medium">{distanceInfo}</p>
+              )}
+              {distanceError && (
+                <p className="text-xs text-red-600 mt-1.5">{distanceError}</p>
+              )}
+              {!formData.departureLocation && (
+                <p className="text-xs text-muted-foreground mt-1">Enter departure location and select a customer to calculate distance</p>
+              )}
+            </div>
+
+            {/* Odometer readings - manual entries */}
+            <div className="border-t border-border pt-3 mt-3">
+              <p className="text-xs font-semibold text-muted-foreground mb-2">Odometer Readings (Manual Entry)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Trip Start Mileage</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={formData.tripStartMileage || ''}
+                    onChange={(e) => setFormData({ ...formData, tripStartMileage: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                    placeholder="Odometer reading at start"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Trip End Mileage</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={formData.tripEndMileage || ''}
+                    onChange={(e) => setFormData({ ...formData, tripEndMileage: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                    placeholder="Odometer reading at end"
+                  />
+                </div>
               </div>
             </div>
             {formData.tripStartMileage > 0 && formData.tripEndMileage > formData.tripStartMileage && (
               <p className="text-xs text-muted-foreground mt-2">
-                Trip distance from mileage: <strong>{(formData.tripEndMileage - formData.tripStartMileage).toFixed(1)} km</strong>
+                Trip distance from odometer: <strong>{(formData.tripEndMileage - formData.tripStartMileage).toFixed(1)} km</strong>
+                {formData.distanceKm > 0 && (
+                  <span className="ml-2">| Google Maps estimate: <strong>{formData.distanceKm.toFixed(1)} km</strong></span>
+                )}
               </p>
             )}
           </div>
@@ -1568,18 +1706,25 @@ function AdminDeliveryView() {
                   <div><span className="text-muted-foreground">Departure:</span> <strong className="ml-2">{showDetail.departureLocation || '—'}</strong></div>
                   <div><span className="text-muted-foreground">Destination:</span> <strong className="ml-2">{showDetail.customerLocation || '—'}</strong></div>
                   {showDetail.distanceKm > 0 && (
-                    <div><span className="text-muted-foreground">Distance:</span> <strong className="ml-2">{showDetail.distanceKm} km</strong></div>
-                  )}
-                  {showDetail.tripStartMileage > 0 && (
-                    <div><span className="text-muted-foreground">Start Mileage:</span> <strong className="ml-2">{showDetail.tripStartMileage.toLocaleString()} km</strong></div>
-                  )}
-                  {showDetail.tripEndMileage > 0 && (
-                    <div><span className="text-muted-foreground">End Mileage:</span> <strong className="ml-2">{showDetail.tripEndMileage.toLocaleString()} km</strong></div>
-                  )}
-                  {showDetail.tripStartMileage > 0 && showDetail.tripEndMileage > showDetail.tripStartMileage && (
-                    <div><span className="text-muted-foreground">Trip Distance:</span> <strong className="ml-2">{(showDetail.tripEndMileage - showDetail.tripStartMileage).toFixed(1)} km</strong></div>
+                    <div><span className="text-muted-foreground">Google Maps Distance:</span> <strong className="ml-2">{showDetail.distanceKm} km</strong></div>
                   )}
                 </div>
+                {(showDetail.tripStartMileage > 0 || showDetail.tripEndMileage > 0) && (
+                  <div className="border-t border-border mt-3 pt-3">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">Odometer Readings</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                      {showDetail.tripStartMileage > 0 && (
+                        <div><span className="text-muted-foreground">Start Reading:</span> <strong className="ml-2">{showDetail.tripStartMileage.toLocaleString()} km</strong></div>
+                      )}
+                      {showDetail.tripEndMileage > 0 && (
+                        <div><span className="text-muted-foreground">End Reading:</span> <strong className="ml-2">{showDetail.tripEndMileage.toLocaleString()} km</strong></div>
+                      )}
+                      {showDetail.tripStartMileage > 0 && showDetail.tripEndMileage > showDetail.tripStartMileage && (
+                        <div><span className="text-muted-foreground">Actual Trip Distance:</span> <strong className="ml-2">{(showDetail.tripEndMileage - showDetail.tripStartMileage).toFixed(1)} km</strong></div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

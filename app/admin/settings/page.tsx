@@ -157,6 +157,7 @@ export default function SettingsPage() {
     estimatedDeliveryTime: '30-60 mins',
     deliveryRadius: '10 km',
     deliveryNotes: '',
+    googleMapsApiKey: '',
   });
 
   // ── Offers ──
@@ -1944,6 +1945,24 @@ export default function SettingsPage() {
               <div>
                 <label className={labelCls}>Delivery Notes (shown to customers)</label>
                 <textarea value={delivery.deliveryNotes} onChange={e => setDelivery({ ...delivery, deliveryNotes: e.target.value })} className={inputCls} rows={2} placeholder="e.g. Delivery available within Nairobi only" />
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-1">Google Maps Integration</h3>
+            <p className="text-xs text-muted-foreground mb-4">Configure Google Maps API for automatic distance calculation between departure and destination locations in delivery tracking.</p>
+            <div className="space-y-4">
+              <div>
+                <label className={labelCls}>Google Maps API Key *</label>
+                <input type="password" value={delivery.googleMapsApiKey} onChange={e => setDelivery({ ...delivery, googleMapsApiKey: e.target.value })} className={inputCls} placeholder="Enter your Google Maps API key" />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Required APIs: Distance Matrix API, Places API. Get your key from{' '}
+                  <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Cloud Console</a>
+                </p>
+              </div>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                <strong>How it works:</strong> When creating a delivery, the system will automatically calculate the driving distance (km) between the departure location and the customer&apos;s destination using Google Maps. Odometer readings remain manual for actual trip logging.
               </div>
             </div>
           </div>
