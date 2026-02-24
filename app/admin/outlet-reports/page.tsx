@@ -247,10 +247,7 @@ export default function OutletReportsPage() {
     }));
 
     setOutlets(outletList);
-    if (outletList.length > 0 && !selectedOutletId) {
-      setSelectedOutletId(outletList[0].id);
-    }
-  }, [selectedOutletId]);
+  }, []);
 
   // ─── Fetch Report Data ──────────────────────────────────────────────────────
 
@@ -450,6 +447,13 @@ export default function OutletReportsPage() {
   useEffect(() => {
     fetchOutlets();
   }, [fetchOutlets]);
+
+  // Auto-select first outlet once outlets are loaded
+  useEffect(() => {
+    if (outlets.length > 0 && !selectedOutletId) {
+      setSelectedOutletId(outlets[0].id);
+    }
+  }, [outlets, selectedOutletId]);
 
   useEffect(() => {
     if (selectedOutletId) {
