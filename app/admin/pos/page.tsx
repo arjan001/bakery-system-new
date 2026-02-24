@@ -229,16 +229,52 @@ export default function POSPage() {
   const lastPrintedReceiptRef = useRef<string | null>(null);
 
   // ── Fetch products from inventory / pricing ──
+  // Single POS system — all branches see the same product catalog from pricing_tiers,
+  // but stock levels reflect the outlet's own inventory when available
   const fetchProducts = useCallback(async () => {
     const { data } = await supabase.from('pricing_tiers').select('*').eq('active', true);
     if (data && data.length > 0) {
-      setProducts(data.map((r: Record<string, unknown>) => ({
-        id: r.id as string, name: (r.product_name || '') as string, sku: (r.product_code || '') as string,
-        retailPrice: (r.retail_price || 0) as number, wholesalePrice: (r.wholesale_price || 0) as number,
-        stock: 999, category: 'Products',
-      })));
+      // If a branch outlet is detected, fetch outlet inventory for stock levels
+      let outletStockMap: Record<string, number> = {};
+      let hasOutletInventory = false;
+
+      if (outletId) {
+        try {
+          const { data: outletInv } = await supabase
+            .from('outlet_inventory')
+            .select('item_name, quantity')
+            .eq('outlet_id', outletId)
+            .eq('status', 'Active');
+
+          if (outletInv && outletInv.length > 0) {
+            hasOutletInventory = true;
+            outletInv.forEach((item: Record<string, unknown>) => {
+              const name = ((item.item_name || '') as string).toLowerCase();
+              outletStockMap[name] = (outletStockMap[name] || 0) + ((item.quantity || 0) as number);
+            });
+          }
+        } catch { /* outlet_inventory may not exist yet */ }
+      }
+
+      setProducts(data.map((r: Record<string, unknown>) => {
+        const productName = ((r.product_name || '') as string);
+        // Use outlet stock if available for this branch, otherwise show available (999 = unlimited)
+        const stock = hasOutletInventory
+          ? (outletStockMap[productName.toLowerCase()] ?? 0)
+          : 999;
+
+        return {
+          id: r.id as string,
+          name: productName,
+          sku: (r.product_code || '') as string,
+          retailPrice: (r.retail_price || 0) as number,
+          wholesalePrice: (r.wholesale_price || 0) as number,
+          stock,
+          category: 'Products',
+        };
+      }));
     }
-  }, []);
+  }, [outletId]);
 
   const fetchCustomers = useCallback(async () => {
     const { data } = await supabase.from('customers').select('*').eq('status', 'Active').order('name');

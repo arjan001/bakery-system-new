@@ -66,11 +66,11 @@ interface OutletEmployee {
   employee?: Employee;
 }
 
-type OutletRole = 'Admin' | 'Manager' | 'Cashier' | 'Barista' | 'Server' | 'Staff';
+type OutletRole = 'Admin' | 'Manager' | 'Cashier' | 'Barista' | 'Server' | 'Outlet Staff' | 'Staff';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const OUTLET_ROLES: OutletRole[] = ['Admin', 'Manager', 'Cashier', 'Barista', 'Server', 'Staff'];
+const OUTLET_ROLES: OutletRole[] = ['Admin', 'Manager', 'Cashier', 'Barista', 'Server', 'Outlet Staff', 'Staff'];
 const STATUSES = ['Active', 'Inactive', 'Transferred'] as const;
 const ITEMS_PER_PAGE = 10;
 
@@ -89,6 +89,7 @@ const ROLE_BADGE_COLORS: Record<OutletRole, string> = {
   Cashier: 'bg-green-100 text-green-800',
   Barista: 'bg-amber-100 text-amber-800',
   Server: 'bg-teal-100 text-teal-800',
+  'Outlet Staff': 'bg-indigo-100 text-indigo-800',
   Staff: 'bg-gray-100 text-gray-800',
 };
 
@@ -445,21 +446,72 @@ export default function OutletEmployeesPage() {
     setSaving(true);
 
     try {
-      const row = {
-        outlet_id: selectedOutletId,
-        employee_id: assignForm.employee_id,
-        outlet_role: assignForm.outlet_role,
-        is_outlet_admin: assignForm.is_outlet_admin,
-        permissions: assignForm.permissions,
-        status: 'Active',
-        assigned_date: new Date().toISOString().split('T')[0],
-        notes: assignForm.notes.trim() || null,
-      };
+      // Check if there's an existing inactive/transferred record for this employee at this outlet
+      const { data: existingRecords } = await supabase
+        .from('outlet_employees')
+        .select('id, status')
+        .eq('outlet_id', selectedOutletId)
+        .eq('employee_id', assignForm.employee_id);
 
-      const { error } = await supabase.from('outlet_employees').insert(row);
-      if (error) throw error;
+      const existingInactive = existingRecords?.find(
+        (r: Record<string, unknown>) => r.status === 'Inactive' || r.status === 'Transferred'
+      );
+      const existingActive = existingRecords?.find(
+        (r: Record<string, unknown>) => r.status === 'Active'
+      );
 
+      if (existingActive) {
+        showToast('This employee is already actively assigned to this outlet', 'error');
+        setSaving(false);
+        return;
+      }
+
+      if (existingInactive) {
+        // Reactivate the existing record instead of inserting a new one
+        const updateRow = {
+          outlet_role: assignForm.outlet_role,
+          is_outlet_admin: assignForm.is_outlet_admin,
+          permissions: assignForm.permissions,
+          status: 'Active',
+          assigned_date: new Date().toISOString().split('T')[0],
+          notes: assignForm.notes.trim() || 'Reassigned to outlet',
+        };
+
+        const { error } = await supabase
+          .from('outlet_employees')
+          .update(updateRow)
+          .eq('id', existingInactive.id as string);
+        if (error) throw error;
+      } else {
+        // Insert new assignment
+        const row = {
+          outlet_id: selectedOutletId,
+          employee_id: assignForm.employee_id,
+          outlet_role: assignForm.outlet_role,
+          is_outlet_admin: assignForm.is_outlet_admin,
+          permissions: assignForm.permissions,
+          status: 'Active',
+          assigned_date: new Date().toISOString().split('T')[0],
+          notes: assignForm.notes.trim() || null,
+        };
+
+        const { error } = await supabase.from('outlet_employees').insert(row);
+        if (error) throw error;
+      }
+
+      // Also update the employee's primary_outlet_id for easier POS resolution
       const emp = allEmployees.find(e => e.id === assignForm.employee_id);
+      if (emp && !emp.primary_outlet_id) {
+        const selectedOutlet = outlets.find(o => o.id === selectedOutletId);
+        await supabase
+          .from('employees')
+          .update({
+            primary_outlet_id: selectedOutletId,
+            primary_outlet_name: selectedOutlet?.name || '',
+          })
+          .eq('id', assignForm.employee_id);
+      }
+
       logAudit({
         action: 'CREATE',
         module: 'Outlet Employees',
@@ -477,7 +529,11 @@ export default function OutletEmployeesPage() {
       setShowAssignModal(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
-      showToast(`Failed to assign employee: ${msg}`, 'error');
+      if (msg.includes('duplicate') || msg.includes('unique')) {
+        showToast('This employee is already assigned to this outlet. Try editing their existing assignment instead.', 'error');
+      } else {
+        showToast(`Failed to assign employee: ${msg}`, 'error');
+      }
     } finally {
       setSaving(false);
     }

@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS employee_categories (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Seed default categories including Rider and Cleaner
+-- Seed default categories including Rider, Cleaner, Cashier, and Outlet Staff
 INSERT INTO employee_categories (name, description) VALUES
   ('Baker', 'Bakery production staff'),
   ('Driver', 'Delivery drivers'),
@@ -45,5 +45,7 @@ INSERT INTO employee_categories (name, description) VALUES
   ('Supervisor', 'Team supervisors'),
   ('Manager', 'Department managers'),
   ('Rider', 'Delivery riders (motorcycle/bicycle)'),
-  ('Cleaner', 'Cleaning and sanitation staff')
+  ('Cleaner', 'Cleaning and sanitation staff'),
+  ('Cashier', 'Point of sale cashiers'),
+  ('Outlet Staff', 'Staff assigned to branch outlets')
 ON CONFLICT (name) DO NOTHING;

@@ -121,15 +121,41 @@ interface OutletRequisition {
   status: string;
   total_cost: number;
   created_at: string;
+  requisition_number: string;
+  requested_by: string;
+  priority: string;
+}
+
+interface OutletExpense {
+  id: string;
+  category: string;
+  amount: number;
+  description: string;
+  expense_date: string;
+  cost_type: string;
+}
+
+interface OutletRequisitionItem {
+  id: string;
+  requisition_id: string;
+  product_name: string;
+  quantity_requested: number;
+  quantity_approved: number;
+  quantity_fulfilled: number;
+  unit_price: number;
+  total_cost: number;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TabKey = 'overview' | 'sales' | 'inventory' | 'returns' | 'waste';
+type TabKey = 'overview' | 'sales' | 'pnl' | 'expenses' | 'requisitions' | 'inventory' | 'returns' | 'waste';
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'overview', label: 'Overview', icon: <TrendingUp className="w-4 h-4" /> },
   { key: 'sales', label: 'Sales', icon: <ShoppingCart className="w-4 h-4" /> },
+  { key: 'pnl', label: 'P&L', icon: <TrendingUp className="w-4 h-4" /> },
+  { key: 'expenses', label: 'Expenses', icon: <DollarSign className="w-4 h-4" /> },
+  { key: 'requisitions', label: 'Requisitions', icon: <Layers className="w-4 h-4" /> },
   { key: 'inventory', label: 'Inventory', icon: <Package className="w-4 h-4" /> },
   { key: 'returns', label: 'Returns', icon: <RotateCcw className="w-4 h-4" /> },
   { key: 'waste', label: 'Waste', icon: <Trash2 className="w-4 h-4" /> },
@@ -220,6 +246,8 @@ export default function OutletReportsPage() {
   const [wasteRecords, setWasteRecords] = useState<OutletWasteRecord[]>([]);
   const [employees, setEmployees] = useState<OutletEmployee[]>([]);
   const [requisitions, setRequisitions] = useState<OutletRequisition[]>([]);
+  const [requisitionItems, setRequisitionItems] = useState<OutletRequisitionItem[]>([]);
+  const [expenses, setExpenses] = useState<OutletExpense[]>([]);
 
   // ─── Selected Outlet ────────────────────────────────────────────────────────
   const selectedOutlet = useMemo(() => outlets.find(o => o.id === selectedOutletId), [outlets, selectedOutletId]);
@@ -432,7 +460,51 @@ export default function OutletReportsPage() {
         status: (r.status || 'Pending') as string,
         total_cost: (r.total_cost || 0) as number,
         created_at: (r.created_at || '') as string,
+        requisition_number: (r.requisition_number || '') as string,
+        requested_by: (r.requested_by || '') as string,
+        priority: (r.priority || 'Normal') as string,
       })));
+
+      // Fetch Requisition Items for the requisitions
+      const mappedReqs = (reqData || []).map((r: Record<string, unknown>) => r.id as string);
+      if (mappedReqs.length > 0) {
+        try {
+          const { data: reqItemsData } = await supabase
+            .from('outlet_requisition_items')
+            .select('*')
+            .in('requisition_id', mappedReqs);
+
+          setRequisitionItems((reqItemsData || []).map((r: Record<string, unknown>) => ({
+            id: r.id as string,
+            requisition_id: (r.requisition_id || '') as string,
+            product_name: (r.product_name || '') as string,
+            quantity_requested: (r.quantity_requested || 0) as number,
+            quantity_approved: (r.quantity_approved || 0) as number,
+            quantity_fulfilled: (r.quantity_fulfilled || 0) as number,
+            unit_price: (r.unit_price || 0) as number,
+            total_cost: (r.total_cost || 0) as number,
+          })));
+        } catch { setRequisitionItems([]); }
+      } else {
+        setRequisitionItems([]);
+      }
+
+      // Fetch Expenses (cost_entries)
+      try {
+        let expQuery = supabase.from('cost_entries').select('*').order('created_at', { ascending: false });
+        if (dateFrom) expQuery = expQuery.gte('created_at', `${dateFrom}T00:00:00`);
+        if (dateTo) expQuery = expQuery.lte('created_at', `${dateTo}T23:59:59`);
+        const { data: expData } = await expQuery;
+
+        setExpenses((expData || []).map((r: Record<string, unknown>) => ({
+          id: r.id as string,
+          category: (r.category || 'General') as string,
+          amount: (r.amount || 0) as number,
+          description: (r.description || '') as string,
+          expense_date: (r.created_at || '') as string,
+          cost_type: (r.cost_type || 'general_expense') as string,
+        })));
+      } catch { setExpenses([]); }
 
     } catch (err) {
       console.error('Error fetching report data:', err);
@@ -694,6 +766,125 @@ export default function OutletReportsPage() {
 
   const totalWasteCost = useMemo(() => wasteRecords.reduce((sum, w) => sum + w.cost, 0), [wasteRecords]);
 
+  // ─── Computed: Expenses Breakdown ──────────────────────────────────────────
+
+  const expensesByCategory = useMemo(() => {
+    const grouped: Record<string, { count: number; totalAmount: number }> = {};
+    expenses.forEach(e => {
+      const cat = e.category || 'General';
+      if (!grouped[cat]) grouped[cat] = { count: 0, totalAmount: 0 };
+      grouped[cat].count += 1;
+      grouped[cat].totalAmount += e.amount;
+    });
+    return Object.entries(grouped)
+      .map(([category, data]) => ({ category, ...data }))
+      .sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [expenses]);
+
+  const expensesByCostType = useMemo(() => {
+    const grouped: Record<string, { count: number; totalAmount: number }> = {};
+    expenses.forEach(e => {
+      const type = e.cost_type || 'general_expense';
+      if (!grouped[type]) grouped[type] = { count: 0, totalAmount: 0 };
+      grouped[type].count += 1;
+      grouped[type].totalAmount += e.amount;
+    });
+    return Object.entries(grouped)
+      .map(([costType, data]) => ({ costType, ...data }))
+      .sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [expenses]);
+
+  const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + e.amount, 0), [expenses]);
+
+  // ─── Computed: Requisitions Breakdown ──────────────────────────────────────
+
+  const requisitionsByStatus = useMemo(() => {
+    const grouped: Record<string, { count: number; totalCost: number }> = {};
+    requisitions.forEach(r => {
+      const status = r.status || 'Pending';
+      if (!grouped[status]) grouped[status] = { count: 0, totalCost: 0 };
+      grouped[status].count += 1;
+      grouped[status].totalCost += r.total_cost;
+    });
+    return Object.entries(grouped)
+      .map(([status, data]) => ({ status, ...data }))
+      .sort((a, b) => b.count - a.count);
+  }, [requisitions]);
+
+  const topRequisitionItems = useMemo(() => {
+    const grouped: Record<string, { quantity: number; totalCost: number }> = {};
+    requisitionItems.forEach(item => {
+      const name = item.product_name || 'Unknown';
+      if (!grouped[name]) grouped[name] = { quantity: 0, totalCost: 0 };
+      grouped[name].quantity += item.quantity_requested;
+      grouped[name].totalCost += item.total_cost;
+    });
+    return Object.entries(grouped)
+      .map(([product, data]) => ({ product, ...data }))
+      .sort((a, b) => b.totalCost - a.totalCost)
+      .slice(0, 15);
+  }, [requisitionItems]);
+
+  const totalRequisitionsCost = useMemo(() => requisitions.reduce((sum, r) => sum + r.total_cost, 0), [requisitions]);
+
+  // ─── Computed: P&L Metrics ─────────────────────────────────────────────────
+
+  const pnlMetrics = useMemo(() => {
+    const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
+
+    // Direct costs = raw materials + production costs from cost_entries
+    const directCosts = expenses
+      .filter(e => e.cost_type === 'direct_cost' || e.cost_type === 'raw_materials' ||
+        e.category?.toLowerCase().includes('raw') || e.category?.toLowerCase().includes('ingredient') ||
+        e.category?.toLowerCase().includes('production') || e.category?.toLowerCase().includes('labor') ||
+        e.category?.toLowerCase().includes('packaging'))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Also count requisitions cost as direct costs (purchases from main bakery)
+    const requisitionsCost = requisitions
+      .filter(r => r.status !== 'Cancelled' && r.status !== 'Rejected')
+      .reduce((sum, r) => sum + r.total_cost, 0);
+
+    const totalDirectCosts = directCosts + requisitionsCost;
+    const grossProfit = totalSales - totalDirectCosts;
+
+    // Indirect costs + general expenses
+    const indirectCosts = expenses
+      .filter(e => e.cost_type === 'indirect_cost' ||
+        e.category?.toLowerCase().includes('utility') || e.category?.toLowerCase().includes('rent') ||
+        e.category?.toLowerCase().includes('maintenance'))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const generalExpenses = expenses
+      .filter(e => !['direct_cost', 'raw_materials', 'indirect_cost'].includes(e.cost_type) &&
+        !e.category?.toLowerCase().includes('raw') && !e.category?.toLowerCase().includes('ingredient') &&
+        !e.category?.toLowerCase().includes('production') && !e.category?.toLowerCase().includes('labor') &&
+        !e.category?.toLowerCase().includes('packaging') && !e.category?.toLowerCase().includes('utility') &&
+        !e.category?.toLowerCase().includes('rent') && !e.category?.toLowerCase().includes('maintenance'))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const wasteCost = wasteRecords.reduce((sum, w) => sum + w.cost, 0);
+    const totalIndirectAndGeneral = indirectCosts + generalExpenses + wasteCost;
+    const netProfit = grossProfit - totalIndirectAndGeneral;
+    const grossMargin = totalSales > 0 ? (grossProfit / totalSales) * 100 : 0;
+    const netMargin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0;
+
+    return {
+      totalSales,
+      totalDirectCosts,
+      requisitionsCost,
+      directCosts,
+      grossProfit,
+      indirectCosts,
+      generalExpenses,
+      wasteCost,
+      totalIndirectAndGeneral,
+      netProfit,
+      grossMargin,
+      netMargin,
+    };
+  }, [sales, expenses, requisitions, wasteRecords]);
+
   // ─── Export Handlers ────────────────────────────────────────────────────────
 
   const handleExportOverview = () => {
@@ -764,6 +955,47 @@ export default function OutletReportsPage() {
       w.approval_status,
     ]);
     exportCSV(`outlet_waste_${selectedOutlet?.code || 'report'}`, headers, rows);
+  };
+
+  const handleExportExpenses = () => {
+    const headers = ['Date', 'Category', 'Cost Type', 'Description', 'Amount'];
+    const rows = expenses.map(e => [
+      formatDate(e.expense_date),
+      e.category,
+      e.cost_type.replace(/_/g, ' '),
+      e.description,
+      formatKES(e.amount),
+    ]);
+    exportCSV(`outlet_expenses_${selectedOutlet?.code || 'report'}`, headers, rows);
+  };
+
+  const handleExportRequisitions = () => {
+    const headers = ['Date', 'Req #', 'Requested By', 'Status', 'Priority', 'Total Cost'];
+    const rows = requisitions.map(r => [
+      formatDate(r.created_at),
+      r.requisition_number,
+      r.requested_by,
+      r.status,
+      r.priority,
+      formatKES(r.total_cost),
+    ]);
+    exportCSV(`outlet_requisitions_${selectedOutlet?.code || 'report'}`, headers, rows);
+  };
+
+  const handleExportPnl = () => {
+    const headers = ['Metric', 'Amount'];
+    const rows = [
+      ['Total Sales', formatKES(pnlMetrics.totalSales)],
+      ['Direct Costs (Purchases/Materials)', formatKES(pnlMetrics.totalDirectCosts)],
+      ['Gross Profit', formatKES(pnlMetrics.grossProfit)],
+      ['Gross Margin', `${pnlMetrics.grossMargin.toFixed(1)}%`],
+      ['Indirect Costs', formatKES(pnlMetrics.indirectCosts)],
+      ['General Expenses', formatKES(pnlMetrics.generalExpenses)],
+      ['Waste Cost', formatKES(pnlMetrics.wasteCost)],
+      ['Net Profit', formatKES(pnlMetrics.netProfit)],
+      ['Net Margin', `${pnlMetrics.netMargin.toFixed(1)}%`],
+    ];
+    exportCSV(`outlet_pnl_${selectedOutlet?.code || 'report'}`, headers, rows);
   };
 
   // ─── Tab Content Renderers ──────────────────────────────────────────────────
@@ -1567,6 +1799,405 @@ export default function OutletReportsPage() {
     </div>
   );
 
+  const renderPnlTab = () => (
+    <div className="space-y-6">
+      {/* Export */}
+      <div className="flex justify-end">
+        <button onClick={handleExportPnl} className="flex items-center gap-2 px-4 py-2 text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium transition-colors">
+          <Download className="w-4 h-4" /> Export CSV
+        </button>
+      </div>
+
+      {/* P&L Flow Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="bg-card border-2 border-emerald-200 rounded-xl p-5 shadow-sm">
+          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-1">Total Sales</p>
+          <p className="text-2xl font-bold text-emerald-600">{formatKES(pnlMetrics.totalSales)}</p>
+          <p className="text-xs text-muted-foreground mt-1">POS revenue this period</p>
+        </div>
+        <div className="bg-card border-2 border-red-200 rounded-xl p-5 shadow-sm">
+          <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-1">Direct Costs</p>
+          <p className="text-2xl font-bold text-red-600">{formatKES(pnlMetrics.totalDirectCosts)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Purchases + materials</p>
+        </div>
+        <div className="bg-card border-2 border-blue-200 rounded-xl p-5 shadow-sm">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Gross Profit</p>
+          <p className={`text-2xl font-bold ${pnlMetrics.grossProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{formatKES(pnlMetrics.grossProfit)}</p>
+          <p className="text-xs text-muted-foreground mt-1">{pnlMetrics.grossMargin.toFixed(1)}% margin</p>
+        </div>
+        <div className="bg-card border-2 border-purple-200 rounded-xl p-5 shadow-sm">
+          <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">Indirect + Expenses</p>
+          <p className="text-2xl font-bold text-purple-600">{formatKES(pnlMetrics.totalIndirectAndGeneral)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Overhead + waste</p>
+        </div>
+        <div className={`bg-card border-2 rounded-xl p-5 shadow-sm ${pnlMetrics.netProfit >= 0 ? 'border-emerald-300' : 'border-red-300'}`}>
+          <p className="text-xs font-semibold uppercase tracking-wide mb-1 text-muted-foreground">Net Profit</p>
+          <p className={`text-2xl font-bold ${pnlMetrics.netProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(pnlMetrics.netProfit)}</p>
+          <p className="text-xs text-muted-foreground mt-1">{pnlMetrics.netMargin.toFixed(1)}% margin</p>
+        </div>
+      </div>
+
+      {/* Net Profit Card - Full Width */}
+      <div className={`border-2 rounded-xl p-6 shadow-sm ${pnlMetrics.netProfit >= 0 ? 'border-emerald-300 bg-emerald-50/50' : 'border-red-300 bg-red-50/50'}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Profit & Loss Summary</p>
+            <p className={`text-3xl font-bold ${pnlMetrics.netProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(pnlMetrics.netProfit)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-muted-foreground">Net Margin</p>
+            <p className={`text-2xl font-bold ${pnlMetrics.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{pnlMetrics.netMargin.toFixed(1)}%</p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-5 gap-2 text-xs">
+          <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">Total Sales</p><p className="font-bold text-emerald-600">{formatKES(pnlMetrics.totalSales)}</p></div>
+          <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Direct Costs</p><p className="font-bold text-red-600">{formatKES(pnlMetrics.totalDirectCosts)}</p></div>
+          <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">= Gross Profit</p><p className="font-bold text-blue-600">{formatKES(pnlMetrics.grossProfit)}</p></div>
+          <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">- Indirect + Expenses</p><p className="font-bold text-purple-600">{formatKES(pnlMetrics.totalIndirectAndGeneral)}</p></div>
+          <div className="text-center p-2 bg-white/60 rounded-lg"><p className="text-muted-foreground">= Net Profit</p><p className={`font-bold ${pnlMetrics.netProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(pnlMetrics.netProfit)}</p></div>
+        </div>
+      </div>
+
+      {/* P&L Breakdown Table */}
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">Detailed P&L Breakdown</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-secondary">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Line Item</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-border bg-emerald-50/30">
+                <td className="px-5 py-3 font-semibold text-emerald-700">Total Sales Revenue</td>
+                <td className="px-5 py-3 text-right font-bold text-emerald-700">{formatKES(pnlMetrics.totalSales)}</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="px-5 py-3 text-muted-foreground pl-8">Less: Raw Materials / Purchases</td>
+                <td className="px-5 py-3 text-right text-red-600">({formatKES(pnlMetrics.directCosts)})</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="px-5 py-3 text-muted-foreground pl-8">Less: Requisitions from Main Bakery</td>
+                <td className="px-5 py-3 text-right text-red-600">({formatKES(pnlMetrics.requisitionsCost)})</td>
+              </tr>
+              <tr className="border-b-2 border-border bg-blue-50/30">
+                <td className="px-5 py-3 font-semibold text-blue-700">Gross Profit</td>
+                <td className={`px-5 py-3 text-right font-bold ${pnlMetrics.grossProfit >= 0 ? 'text-blue-700' : 'text-red-700'}`}>{formatKES(pnlMetrics.grossProfit)}</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="px-5 py-3 text-muted-foreground pl-8">Less: Indirect Costs (Utilities, Rent, etc.)</td>
+                <td className="px-5 py-3 text-right text-red-600">({formatKES(pnlMetrics.indirectCosts)})</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="px-5 py-3 text-muted-foreground pl-8">Less: General Expenses</td>
+                <td className="px-5 py-3 text-right text-red-600">({formatKES(pnlMetrics.generalExpenses)})</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="px-5 py-3 text-muted-foreground pl-8">Less: Waste Costs</td>
+                <td className="px-5 py-3 text-right text-red-600">({formatKES(pnlMetrics.wasteCost)})</td>
+              </tr>
+              <tr className={`${pnlMetrics.netProfit >= 0 ? 'bg-emerald-50/50' : 'bg-red-50/50'}`}>
+                <td className="px-5 py-4 font-bold text-lg">Net Profit / (Loss)</td>
+                <td className={`px-5 py-4 text-right font-bold text-lg ${pnlMetrics.netProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(pnlMetrics.netProfit)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderExpensesTab = () => (
+    <div className="space-y-6">
+      {/* Export */}
+      <div className="flex justify-end">
+        <button onClick={handleExportExpenses} className="flex items-center gap-2 px-4 py-2 text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium transition-colors">
+          <Download className="w-4 h-4" /> Export CSV
+        </button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="Total Expenses"
+          value={formatKES(totalExpenses)}
+          subtitle={`${expenses.length} entries`}
+          icon={<DollarSign className="w-5 h-5" />}
+          borderColor="border-l-red-500"
+        />
+        <StatCard
+          title="Expense Categories"
+          value={String(expensesByCategory.length)}
+          subtitle="Unique categories"
+          icon={<Layers className="w-5 h-5" />}
+          borderColor="border-l-blue-500"
+        />
+        <StatCard
+          title="Avg per Entry"
+          value={formatKES(expenses.length > 0 ? totalExpenses / expenses.length : 0)}
+          subtitle="Average expense"
+          icon={<TrendingUp className="w-5 h-5" />}
+          borderColor="border-l-purple-500"
+        />
+      </div>
+
+      {/* Expenses by Category */}
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">Expenses by Category</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-secondary">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Category</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entries</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Amount</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">% of Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expensesByCategory.length === 0 ? (
+                <tr><td colSpan={4} className="px-5 py-8 text-center text-muted-foreground">No expense data for selected period</td></tr>
+              ) : (
+                expensesByCategory.map(item => (
+                  <tr key={item.category} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-foreground">{item.category}</td>
+                    <td className="px-5 py-3 text-right text-foreground">{item.count}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-red-600">{formatKES(item.totalAmount)}</td>
+                    <td className="px-5 py-3 text-right text-muted-foreground">
+                      {totalExpenses > 0 ? ((item.totalAmount / totalExpenses) * 100).toFixed(1) : '0.0'}%
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {expensesByCategory.length > 0 && (
+              <tfoot>
+                <tr className="bg-secondary/50 font-semibold">
+                  <td className="px-5 py-3 text-foreground">Total</td>
+                  <td className="px-5 py-3 text-right text-foreground">{expenses.length}</td>
+                  <td className="px-5 py-3 text-right text-red-600">{formatKES(totalExpenses)}</td>
+                  <td className="px-5 py-3 text-right text-foreground">100%</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+
+      {/* Expenses by Cost Type */}
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">Expenses by Cost Type</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-secondary">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cost Type</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entries</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expensesByCostType.length === 0 ? (
+                <tr><td colSpan={3} className="px-5 py-8 text-center text-muted-foreground">No expense data</td></tr>
+              ) : (
+                expensesByCostType.map(item => (
+                  <tr key={item.costType} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-foreground capitalize">{item.costType.replace(/_/g, ' ')}</td>
+                    <td className="px-5 py-3 text-right text-foreground">{item.count}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-red-600">{formatKES(item.totalAmount)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderRequisitionsTab = () => (
+    <div className="space-y-6">
+      {/* Export */}
+      <div className="flex justify-end">
+        <button onClick={handleExportRequisitions} className="flex items-center gap-2 px-4 py-2 text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium transition-colors">
+          <Download className="w-4 h-4" /> Export CSV
+        </button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatCard
+          title="Total Requisitions"
+          value={String(requisitions.length)}
+          subtitle="In selected period"
+          icon={<Layers className="w-5 h-5" />}
+          borderColor="border-l-blue-500"
+        />
+        <StatCard
+          title="Total Requisitions Cost"
+          value={formatKES(totalRequisitionsCost)}
+          subtitle="All requisitions"
+          icon={<DollarSign className="w-5 h-5" />}
+          borderColor="border-l-amber-500"
+        />
+        <StatCard
+          title="Fulfilled"
+          value={String(requisitions.filter(r => r.status === 'Fulfilled' || r.status === 'Partially_Fulfilled').length)}
+          subtitle={formatKES(requisitions.filter(r => r.status === 'Fulfilled' || r.status === 'Partially_Fulfilled').reduce((s, r) => s + r.total_cost, 0))}
+          icon={<Package className="w-5 h-5" />}
+          borderColor="border-l-emerald-500"
+        />
+        <StatCard
+          title="Pending"
+          value={String(requisitions.filter(r => r.status === 'Pending' || r.status === 'Approved').length)}
+          subtitle={formatKES(requisitions.filter(r => r.status === 'Pending' || r.status === 'Approved').reduce((s, r) => s + r.total_cost, 0))}
+          icon={<Clock className="w-5 h-5" />}
+          borderColor="border-l-orange-500"
+        />
+      </div>
+
+      {/* Requisitions by Status */}
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">Requisitions by Status</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-secondary">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Count</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requisitionsByStatus.length === 0 ? (
+                <tr><td colSpan={3} className="px-5 py-8 text-center text-muted-foreground">No requisitions data</td></tr>
+              ) : (
+                requisitionsByStatus.map(item => (
+                  <tr key={item.status} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        item.status === 'Fulfilled' ? 'bg-green-100 text-green-800' :
+                        item.status === 'Approved' ? 'bg-blue-100 text-blue-800' :
+                        item.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                        item.status === 'Rejected' || item.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {item.status.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right font-medium text-foreground">{item.count}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-foreground">{formatKES(item.totalCost)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Top Requested Items */}
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">Top Requested Items</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-secondary">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">#</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Product</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Qty Requested</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topRequisitionItems.length === 0 ? (
+                <tr><td colSpan={4} className="px-5 py-8 text-center text-muted-foreground">No requisition items data</td></tr>
+              ) : (
+                topRequisitionItems.map((item, idx) => (
+                  <tr key={item.product} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                    <td className="px-5 py-3 text-muted-foreground font-medium">{idx + 1}</td>
+                    <td className="px-5 py-3 font-medium text-foreground">{item.product}</td>
+                    <td className="px-5 py-3 text-right text-foreground">{item.quantity.toLocaleString()}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-foreground">{formatKES(item.totalCost)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Requisitions List */}
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">Requisitions Detail</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-secondary">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Req #</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Requested By</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Priority</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requisitions.length === 0 ? (
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">No requisitions in selected period</td></tr>
+              ) : (
+                requisitions.map(req => (
+                  <tr key={req.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                    <td className="px-5 py-3 text-foreground">{formatDate(req.created_at)}</td>
+                    <td className="px-5 py-3 font-medium text-foreground">{req.requisition_number || '-'}</td>
+                    <td className="px-5 py-3 text-foreground">{req.requested_by || '-'}</td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        req.priority === 'Urgent' ? 'bg-red-100 text-red-800' :
+                        req.priority === 'High' ? 'bg-orange-100 text-orange-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>{req.priority}</span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        req.status === 'Fulfilled' ? 'bg-green-100 text-green-800' :
+                        req.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                        req.status === 'Approved' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>{req.status.replace(/_/g, ' ')}</span>
+                    </td>
+                    <td className="px-5 py-3 text-right font-semibold text-foreground">{formatKES(req.total_cost)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {requisitions.length > 0 && (
+              <tfoot>
+                <tr className="bg-secondary/50 font-semibold">
+                  <td className="px-5 py-3 text-foreground" colSpan={5}>Total</td>
+                  <td className="px-5 py-3 text-right text-foreground">{formatKES(totalRequisitionsCost)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -1704,6 +2335,9 @@ export default function OutletReportsPage() {
             {/* Tab Content */}
             {activeTab === 'overview' && renderOverviewTab()}
             {activeTab === 'sales' && renderSalesTab()}
+            {activeTab === 'pnl' && renderPnlTab()}
+            {activeTab === 'expenses' && renderExpensesTab()}
+            {activeTab === 'requisitions' && renderRequisitionsTab()}
             {activeTab === 'inventory' && renderInventoryTab()}
             {activeTab === 'returns' && renderReturnsTab()}
             {activeTab === 'waste' && renderWasteTab()}
