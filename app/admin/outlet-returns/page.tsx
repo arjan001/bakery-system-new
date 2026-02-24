@@ -1106,7 +1106,7 @@ export default function OutletReturnsPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Wholesale Recovery Value</p>
-              <p className="text-2xl font-bold text-green-600">${wholesaleRecoveryValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-2xl font-bold text-green-600">KES {wholesaleRecoveryValue.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
           </div>
         </div>
@@ -1241,7 +1241,7 @@ export default function OutletReturnsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right font-medium">{ret.total_items.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-semibold">${ret.total_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="px-4 py-3 text-right font-semibold">KES {ret.total_value.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="px-4 py-3 text-center">
                     {ret.quality_grade ? (
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${getQualityGradeColor(ret.quality_grade)}`}>
@@ -1827,11 +1827,11 @@ export default function OutletReturnsPage() {
               </div>
               <div className="p-3 bg-secondary/50 rounded-lg text-center">
                 <p className="text-xs text-muted-foreground">Total Value</p>
-                <p className="text-xl font-bold">${detailReturn.total_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="text-xl font-bold">KES {detailReturn.total_value.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="p-3 bg-secondary/50 rounded-lg text-center">
                 <p className="text-xs text-muted-foreground">Wholesale Value</p>
-                <p className="text-xl font-bold text-green-600">${detailReturn.wholesale_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="text-xl font-bold text-green-600">KES {detailReturn.wholesale_value.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             </div>
 
@@ -2019,7 +2019,7 @@ export default function OutletReturnsPage() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Total Value:</span>{' '}
-                  <span className="font-medium ml-1">${processReturn.total_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-medium ml-1">KES {processReturn.total_value.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
             </div>
@@ -2225,8 +2225,8 @@ export default function OutletReturnsPage() {
                 <p className="text-xs text-red-700 mt-1">
                   This will reject the return from{' '}
                   <strong>{rejectReturn.outlet_name}</strong> with{' '}
-                  {rejectReturn.total_items.toLocaleString()} items valued at $
-                  {rejectReturn.total_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Items will remain at the outlet.
+                  {rejectReturn.total_items.toLocaleString()} items valued at KES{' '}
+                  {rejectReturn.total_value.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Items will remain at the outlet.
                 </p>
               </div>
             </div>

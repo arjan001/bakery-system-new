@@ -743,9 +743,6 @@ export default function OutletSettingsPage() {
                       className={inputCls}
                     >
                       <option value="KES">KES (Kenyan Shilling)</option>
-                      <option value="USD">USD (US Dollar)</option>
-                      <option value="EUR">EUR (Euro)</option>
-                      <option value="GBP">GBP (British Pound)</option>
                       <option value="TZS">TZS (Tanzanian Shilling)</option>
                       <option value="UGX">UGX (Ugandan Shilling)</option>
                     </select>

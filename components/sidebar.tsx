@@ -47,6 +47,7 @@ import {
   PieChart,
   Recycle,
   SlidersHorizontal,
+  DatabaseZap,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 
@@ -150,6 +151,7 @@ const allNavGroups: NavGroup[] = [
       { label: 'Reports & Ledger', href: '/admin/reports', tip: 'Financial reports, P&L, sales, debtors, creditors & ledger', icon: BarChart3 },
       { label: 'Audit Logs', href: '/admin/audit-logs', tip: 'Track system activity, user actions & access logs', icon: ScrollText },
       { label: 'Settings', href: '/admin/settings', tip: 'System config, receipt, theme & security', icon: Settings },
+      { label: 'Data Cleanup', href: '/admin/cleanup-data', tip: 'Remove test/dummy data for a clean start', icon: DatabaseZap },
     ],
   },
   {
