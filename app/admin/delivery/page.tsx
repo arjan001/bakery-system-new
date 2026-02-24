@@ -61,6 +61,10 @@ interface Delivery {
   notes: string;
   specialInstructions: string;
   createdAt: string;
+  departureLocation: string;
+  distanceKm: number;
+  tripStartMileage: number;
+  tripEndMileage: number;
 }
 
 const TIME_SLOTS = [
@@ -111,6 +115,10 @@ function dbToDelivery(r: Record<string, unknown>): Delivery {
     notes: (r.notes || '') as string,
     specialInstructions: (r.special_instructions || '') as string,
     createdAt: (r.created_at || '') as string,
+    departureLocation: (r.departure_location || '') as string,
+    distanceKm: (r.distance_km || 0) as number,
+    tripStartMileage: (r.trip_start_mileage || 0) as number,
+    tripEndMileage: (r.trip_end_mileage || 0) as number,
   };
 }
 
@@ -675,6 +683,10 @@ function AdminDeliveryView() {
     items: [{ ...emptyItem }] as DeliveryItem[],
     notes: '',
     specialInstructions: '',
+    departureLocation: '',
+    distanceKm: 0,
+    tripStartMileage: 0,
+    tripEndMileage: 0,
   });
 
   // Search and filter
@@ -833,6 +845,10 @@ function AdminDeliveryView() {
       items_count: formData.items.filter(i => i.name.trim()).length,
       notes: formData.notes,
       special_instructions: formData.specialInstructions,
+      departure_location: formData.departureLocation,
+      distance_km: formData.distanceKm || null,
+      trip_start_mileage: formData.tripStartMileage || null,
+      trip_end_mileage: formData.tripEndMileage || null,
     };
 
     try {
@@ -874,6 +890,10 @@ function AdminDeliveryView() {
       items: [{ ...emptyItem }],
       notes: '',
       specialInstructions: '',
+      departureLocation: '',
+      distanceKm: 0,
+      tripStartMileage: 0,
+      tripEndMileage: 0,
     });
     setCustomerSearch('');
   };
@@ -896,6 +916,10 @@ function AdminDeliveryView() {
       items: d.items.length > 0 ? d.items : [{ ...emptyItem }],
       notes: d.notes,
       specialInstructions: d.specialInstructions,
+      departureLocation: d.departureLocation,
+      distanceKm: d.distanceKm,
+      tripStartMileage: d.tripStartMileage,
+      tripEndMileage: d.tripEndMileage,
     });
     setEditingId(d.id);
     setShowForm(true);
@@ -1248,6 +1272,76 @@ function AdminDeliveryView() {
             )}
           </div>
 
+          {/* Section: Route & Mileage */}
+          <div className="border border-border rounded-lg p-4 bg-secondary/30">
+            <p className="text-sm font-semibold mb-3">Route & Mileage Details</p>
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Departure Location</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Main Bakery, Nairobi"
+                  value={formData.departureLocation}
+                  onChange={(e) => setFormData({ ...formData, departureLocation: e.target.value })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Destination</label>
+                <input
+                  type="text"
+                  value={selectedCustomer?.location || selectedCustomer?.address || ''}
+                  readOnly
+                  placeholder="Auto-filled from customer"
+                  className="w-full px-3 py-2 border border-border rounded-lg outline-none bg-muted text-sm text-muted-foreground"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Distance (km)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={formData.distanceKm || ''}
+                  onChange={(e) => setFormData({ ...formData, distanceKm: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Trip Start Mileage</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={formData.tripStartMileage || ''}
+                  onChange={(e) => setFormData({ ...formData, tripStartMileage: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                  placeholder="Odometer reading"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Trip End Mileage</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={formData.tripEndMileage || ''}
+                  onChange={(e) => setFormData({ ...formData, tripEndMileage: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                  placeholder="Odometer reading"
+                />
+              </div>
+            </div>
+            {formData.tripStartMileage > 0 && formData.tripEndMileage > formData.tripStartMileage && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Trip distance from mileage: <strong>{(formData.tripEndMileage - formData.tripStartMileage).toFixed(1)} km</strong>
+              </p>
+            )}
+          </div>
+
           {/* Section: Driver & Vehicle Assignment */}
           <div className="grid grid-cols-2 gap-4">
             <div className="border border-border rounded-lg p-4 bg-secondary/30">
@@ -1465,6 +1559,29 @@ function AdminDeliveryView() {
               <div><span className="text-muted-foreground">Vehicle:</span> <span className="font-medium ml-2">{showDetail.vehicleName || '—'}</span></div>
               <div><span className="text-muted-foreground">Items:</span> <span className="font-medium ml-2">{showDetail.items.length} item(s)</span></div>
             </div>
+
+            {/* Route & Mileage Details */}
+            {(showDetail.departureLocation || showDetail.distanceKm > 0 || showDetail.tripStartMileage > 0) && (
+              <div className="border border-border rounded-lg p-4">
+                <p className="text-sm font-semibold mb-3">Route & Mileage</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div><span className="text-muted-foreground">Departure:</span> <strong className="ml-2">{showDetail.departureLocation || '—'}</strong></div>
+                  <div><span className="text-muted-foreground">Destination:</span> <strong className="ml-2">{showDetail.customerLocation || '—'}</strong></div>
+                  {showDetail.distanceKm > 0 && (
+                    <div><span className="text-muted-foreground">Distance:</span> <strong className="ml-2">{showDetail.distanceKm} km</strong></div>
+                  )}
+                  {showDetail.tripStartMileage > 0 && (
+                    <div><span className="text-muted-foreground">Start Mileage:</span> <strong className="ml-2">{showDetail.tripStartMileage.toLocaleString()} km</strong></div>
+                  )}
+                  {showDetail.tripEndMileage > 0 && (
+                    <div><span className="text-muted-foreground">End Mileage:</span> <strong className="ml-2">{showDetail.tripEndMileage.toLocaleString()} km</strong></div>
+                  )}
+                  {showDetail.tripStartMileage > 0 && showDetail.tripEndMileage > showDetail.tripStartMileage && (
+                    <div><span className="text-muted-foreground">Trip Distance:</span> <strong className="ml-2">{(showDetail.tripEndMileage - showDetail.tripStartMileage).toFixed(1)} km</strong></div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Customer details */}
             <div className="border border-border rounded-lg p-4">

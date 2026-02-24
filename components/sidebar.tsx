@@ -79,6 +79,7 @@ const allNavGroups: NavGroup[] = [
       { label: 'Recipes & Products', href: '/admin/recipes', tip: 'Define recipes with ingredients, costs & output', icon: BookOpen },
       { label: 'Product Catalogue', href: '/admin/food-info', tip: 'Allergens, nutrition info & certifications', icon: UtensilsCrossed },
       { label: 'Production Runs', href: '/admin/production', tip: 'Schedule & track production batches', icon: Factory },
+      { label: 'Store Requisitions', href: '/admin/store-requisitions', tip: 'Request ingredients from store with approval flow', icon: ClipboardCopy },
       { label: 'Picking Lists', href: '/admin/picking-lists', tip: 'Ingredient lists for production batches', icon: ClipboardList },
       { label: 'Lot Tracking', href: '/admin/lot-tracking', tip: 'Track batches, expiry dates & traceability', icon: ScanLine },
       { label: 'Waste Control', href: '/admin/waste-control', tip: 'Record & analyze production waste', icon: Trash2 },
@@ -128,6 +129,7 @@ const allNavGroups: NavGroup[] = [
     color: 'border-l-rose-500',
     items: [
       { label: 'Expenses', href: '/admin/expenses', tip: 'Track & manage business expenses', icon: Receipt },
+      { label: 'Credit Invoices', href: '/admin/credit-invoices', tip: 'Invoicing for credit sales with payment tracking', icon: FileText },
       { label: 'Debtors', href: '/admin/debtors', tip: 'Track credit sales & customer debts', icon: TrendingDown },
       { label: 'Creditors', href: '/admin/creditors', tip: 'Supplier credit & payment schedules', icon: CreditCard },
     ],
