@@ -53,8 +53,8 @@ export default function Dashboard() {
           supabase.from('employees').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
           supabase.from('orders').select('id', { count: 'exact', head: true }),
           supabase.from('inventory_items').select('id', { count: 'exact', head: true }),
-          supabase.from('outlets').select('id', { count: 'exact', head: true }).eq('status', 'Active').catch(() => ({ count: 0, data: null, error: null })),
-          supabase.from('outlet_requisitions').select('id', { count: 'exact', head: true }).eq('status', 'Pending').catch(() => ({ count: 0, data: null, error: null })),
+          supabase.from('outlets').select('id', { count: 'exact', head: true }).eq('status', 'Active').then(r => r).catch(() => ({ count: 0, data: null, error: null })),
+          supabase.from('outlet_requisitions').select('id', { count: 'exact', head: true }).eq('status', 'Pending').then(r => r).catch(() => ({ count: 0, data: null, error: null })),
         ]).then(([recipes, products, employees, orders, inventory, outlets, requisitions]) => {
           setStats(prev => ({
             ...prev,
