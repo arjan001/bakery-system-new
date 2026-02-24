@@ -161,8 +161,9 @@ export default function AdminLayout({
 
   async function checkAuth() {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      // Use getUser() for secure server-validated session check
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (user && !error) {
         setAuthenticated(true);
       } else {
         router.push('/auth/login');
