@@ -46,6 +46,19 @@ const emptyForm = {
   temperatureLog: '',
 };
 
+interface ProductOption {
+  id: string;
+  productName: string;
+  code: string;
+}
+
+interface DistributorOption {
+  id: string;
+  name: string;
+  companyName: string;
+  status: string;
+}
+
 export default function LotTrackingPage() {
   const [lots, setLots] = useState<LotTracking[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
@@ -56,6 +69,31 @@ export default function LotTrackingPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [detailLot, setDetailLot] = useState<LotTracking | null>(null);
   const [formData, setFormData] = useState({ ...emptyForm });
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [distributors, setDistributors] = useState<DistributorOption[]>([]);
+
+  const fetchProducts = useCallback(async () => {
+    const { data } = await supabase.from('food_info').select('id, product_name, code').order('product_name', { ascending: true });
+    if (data) {
+      setProducts(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        productName: (r.product_name || '') as string,
+        code: (r.code || '') as string,
+      })));
+    }
+  }, []);
+
+  const fetchDistributors = useCallback(async () => {
+    const { data } = await supabase.from('distributors').select('id, name, company_name, status').order('name', { ascending: true });
+    if (data) {
+      setDistributors(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        name: (r.name || '') as string,
+        companyName: (r.company_name || '') as string,
+        status: (r.status || '') as string,
+      })));
+    }
+  }, []);
 
   const fetchLots = useCallback(async () => {
     const { data } = await supabase
@@ -88,7 +126,9 @@ export default function LotTrackingPage() {
 
   useEffect(() => {
     fetchLots();
-  }, [fetchLots]);
+    fetchProducts();
+    fetchDistributors();
+  }, [fetchLots, fetchProducts, fetchDistributors]);
 
   // --- Helpers ---
   const isExpiringSoon = (date: string) => {
@@ -761,9 +801,9 @@ export default function LotTrackingPage() {
                 <input
                   type="text"
                   value={formData.productCode}
-                  onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
-                  placeholder="PRD-001"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-muted"
+                  placeholder="Auto-filled from product"
+                  readOnly
                   required
                 />
               </div>
@@ -771,14 +811,24 @@ export default function LotTrackingPage() {
                 <label className="block text-sm font-medium mb-1">
                   Product Name <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   value={formData.productName}
-                  onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+                  onChange={(e) => {
+                    const selected = products.find(p => p.productName === e.target.value);
+                    setFormData({
+                      ...formData,
+                      productName: e.target.value,
+                      productCode: selected?.code || '',
+                    });
+                  }}
                   className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
-                  placeholder="Whole Wheat Bread"
                   required
-                />
+                >
+                  <option value="">Select a product</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.productName}>{p.productName} ({p.code})</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
@@ -806,24 +856,34 @@ export default function LotTrackingPage() {
                 <label className="block text-sm font-medium mb-1">
                   Supplier <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   value={formData.supplier}
                   onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
-                  placeholder="Supplier name"
                   required
-                />
+                >
+                  <option value="">Select a supplier</option>
+                  {distributors
+                    .filter(d => d.status === 'Active')
+                    .map((d) => (
+                    <option key={d.id} value={d.name}>{d.name}{d.companyName ? ` - ${d.companyName}` : ''}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Received From (Distributor)</label>
-                <input
-                  type="text"
+                <select
                   value={formData.receivedFrom}
                   onChange={(e) => setFormData({ ...formData, receivedFrom: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
-                  placeholder="Distributor or intermediary"
-                />
+                >
+                  <option value="">Select a distributor (optional)</option>
+                  {distributors
+                    .filter(d => d.status === 'Active')
+                    .map((d) => (
+                    <option key={d.id} value={d.name}>{d.name}{d.companyName ? ` - ${d.companyName}` : ''}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
