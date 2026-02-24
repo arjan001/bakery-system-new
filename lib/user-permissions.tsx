@@ -59,10 +59,11 @@ const permRouteMap: Record<string, string[]> = {
     '/admin/picking-lists',
     '/admin/lot-tracking',
     '/admin/waste-control',
+    '/admin/store-requisitions',
   ],
   'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
   'View Reports': ['/admin/reports', '/admin/employee-productivity'],
-  'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors'],
+  'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors', '/admin/credit-invoices'],
   'Manage Outlets': [
     '/admin/outlets',
     '/admin/outlet-inventory',
@@ -116,6 +117,7 @@ const roleDefaultRoutes: Record<string, string[]> = {
     '/admin/picking-lists',
     '/admin/lot-tracking',
     '/admin/waste-control',
+    '/admin/store-requisitions',
     '/admin/account',
   ],
   // Cashier / POS Attendant: POS and basic order management
