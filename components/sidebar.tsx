@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState, useEffect, useMemo } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useUserPermissions, getAllowedRoutes } from '@/lib/user-permissions';
+import { useSidebarNotifications, SidebarBadge } from '@/lib/use-sidebar-notifications';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -48,6 +49,9 @@ import {
   Recycle,
   SlidersHorizontal,
   DatabaseZap,
+  Search,
+  X,
+  Command,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 
@@ -163,6 +167,29 @@ const allNavGroups: NavGroup[] = [
   },
 ];
 
+// Badge color mappings
+const badgeColors: Record<SidebarBadge['color'], { bg: string; text: string; ring: string }> = {
+  red: { bg: 'bg-red-500', text: 'text-white', ring: 'ring-red-400' },
+  amber: { bg: 'bg-amber-500', text: 'text-white', ring: 'ring-amber-400' },
+  green: { bg: 'bg-green-500', text: 'text-white', ring: 'ring-green-400' },
+  blue: { bg: 'bg-blue-500', text: 'text-white', ring: 'ring-blue-400' },
+  purple: { bg: 'bg-purple-500', text: 'text-white', ring: 'ring-purple-400' },
+  rose: { bg: 'bg-rose-500', text: 'text-white', ring: 'ring-rose-400' },
+};
+
+// Notification badge component
+function NotificationBadge({ badge, collapsed }: { badge: SidebarBadge; collapsed: boolean }) {
+  const colors = badgeColors[badge.color];
+  return (
+    <span
+      className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold rounded-full ${colors.bg} ${colors.text} ${badge.pulse ? 'animate-pulse ring-2 ring-offset-1 ' + colors.ring : ''} ${collapsed ? 'absolute -top-1 -right-1' : 'ml-auto shrink-0'}`}
+      title={badge.label || `${badge.count} items`}
+    >
+      {badge.count > 99 ? '99+' : badge.count}
+    </span>
+  );
+}
+
 // Loading skeleton for the sidebar
 function SidebarSkeleton({ collapsed }: { collapsed: boolean }) {
   return (
@@ -188,13 +215,28 @@ function SidebarSkeleton({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+// Flat search result item with group context
+interface SearchResult {
+  item: NavItem;
+  group: NavGroup;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
   const [businessName, setBusinessName] = useState('SNACKOH');
   const { isAdmin, permissions, role, loading: permsLoading, isOutletAdmin } = useUserPermissions();
   const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
+  const badges = useSidebarNotifications();
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchResultsRef = useRef<HTMLDivElement>(null);
 
   // Load logo from database/localStorage
   useEffect(() => {
@@ -220,6 +262,24 @@ export function Sidebar() {
     loadBranding();
   }, []);
 
+  // Keyboard shortcut: Ctrl+K or Cmd+K to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        if (collapsed) setCollapsed(false);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+      // Escape to clear/blur search
+      if (e.key === 'Escape' && searchFocused) {
+        setSearchQuery('');
+        searchInputRef.current?.blur();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [collapsed, searchFocused]);
+
   // Memoize filtered nav groups to avoid recalculating on every render
   const navGroups = useMemo(() => {
     if (permsLoading) return [];
@@ -237,8 +297,74 @@ export function Sidebar() {
       .filter(group => group.items.length > 0);
   }, [isAdmin, permissions, role, permsLoading, isOutletAdmin]);
 
+  // Search results - flat list of matching items
+  const searchResults: SearchResult[] = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    const results: SearchResult[] = [];
+    for (const group of navGroups) {
+      for (const item of group.items) {
+        const matchLabel = item.label.toLowerCase().includes(q);
+        const matchTip = item.tip.toLowerCase().includes(q);
+        const matchGroup = group.title.toLowerCase().includes(q);
+        if (matchLabel || matchTip || matchGroup) {
+          results.push({ item, group });
+        }
+      }
+    }
+    return results;
+  }, [searchQuery, navGroups]);
+
+  // Reset selected index when results change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [searchResults.length]);
+
+  // Handle keyboard navigation in search results
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!searchResults.length) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(i => (i + 1) % searchResults.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(i => (i - 1 + searchResults.length) % searchResults.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const selected = searchResults[selectedIndex];
+      if (selected) {
+        router.push(selected.item.href);
+        setSearchQuery('');
+        searchInputRef.current?.blur();
+      }
+    }
+  }, [searchResults, selectedIndex, router]);
+
+  // Scroll selected result into view
+  useEffect(() => {
+    if (searchResultsRef.current) {
+      const el = searchResultsRef.current.children[selectedIndex] as HTMLElement;
+      if (el) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [selectedIndex]);
+
+  const isSearching = searchQuery.trim().length > 0;
+
+  // Count total badges for collapsed indicator
+  const totalBadgeCount = useMemo(() => {
+    return Object.values(badges).reduce((sum, b) => sum + b.count, 0);
+  }, [badges]);
+
+  const hasPulsingBadges = useMemo(() => {
+    return Object.values(badges).some(b => b.pulse);
+  }, [badges]);
+
   return (
     <aside className={`flex flex-col border-r border-border bg-sidebar transition-all duration-300 ${collapsed ? 'w-[60px]' : 'w-64'}`}>
+      {/* Header with logo and collapse button */}
       <div className="border-b border-border p-4 flex items-center justify-between">
         {!collapsed && (
           <Link href="/admin" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
@@ -262,10 +388,108 @@ export function Sidebar() {
         </button>
       </div>
 
+      {/* Search bar */}
+      <div className={`border-b border-border ${collapsed ? 'px-1.5 py-2' : 'px-3 py-2.5'}`}>
+        {collapsed ? (
+          <button
+            onClick={() => {
+              setCollapsed(false);
+              setTimeout(() => searchInputRef.current?.focus(), 100);
+            }}
+            className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-secondary text-muted-foreground transition-colors relative"
+            title="Search modules (Ctrl+K)"
+          >
+            <Search size={18} />
+            {totalBadgeCount > 0 && (
+              <span className={`absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center ${hasPulsingBadges ? 'animate-pulse' : ''}`}>
+                {totalBadgeCount > 99 ? '!' : totalBadgeCount}
+              </span>
+            )}
+          </button>
+        ) : (
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search modules..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+              onKeyDown={handleSearchKeyDown}
+              className="w-full pl-8 pr-8 py-1.5 text-sm rounded-lg bg-secondary/70 border border-border/50 text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all"
+            />
+            {searchQuery ? (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X size={14} />
+              </button>
+            ) : (
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 text-[10px] text-muted-foreground/50 pointer-events-none">
+                <Command size={10} />K
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       <nav className="flex-1 overflow-y-auto py-3 px-1.5">
         {permsLoading ? (
           <SidebarSkeleton collapsed={collapsed} />
+        ) : isSearching ? (
+          /* Search results view */
+          <div ref={searchResultsRef}>
+            {searchResults.length === 0 ? (
+              <div className="px-3 py-8 text-center">
+                <Search size={24} className="text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No modules found</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Try a different search term</p>
+              </div>
+            ) : (
+              <>
+                <p className="px-3 mb-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                </p>
+                <div className="space-y-0.5">
+                  {searchResults.map((result, idx) => {
+                    const { item, group } = result;
+                    const isActive = pathname === item.href;
+                    const isSelected = idx === selectedIndex;
+                    const Icon = item.icon;
+                    const badge = badges[item.href];
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => { setSearchQuery(''); }}
+                        title={item.tip}
+                        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14.5px] font-semibold transition-colors border-l-2 ${
+                          isActive
+                            ? `bg-primary/10 text-primary ${group.color}`
+                            : isSelected
+                              ? `border-l-transparent bg-secondary text-foreground`
+                              : `border-l-transparent text-sidebar-foreground hover:bg-secondary/70`
+                        }`}
+                      >
+                        <Icon size={17} strokeWidth={isActive ? 2.5 : 2} className="shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="truncate block">{item.label}</span>
+                          <span className="text-[10px] text-muted-foreground font-normal truncate block">{group.title}</span>
+                        </div>
+                        {badge && <NotificationBadge badge={badge} collapsed={false} />}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         ) : (
+          /* Normal navigation view */
           navGroups.map((group) => (
             <div key={group.title} className="mb-4">
               {!collapsed && (
@@ -276,23 +500,30 @@ export function Sidebar() {
                 {group.items.map((item) => {
                   const isActive = pathname === item.href;
                   const Icon = item.icon;
+                  const badge = badges[item.href];
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
-                      title={item.tip}
+                      title={badge ? `${item.tip} (${badge.count} ${badge.label || 'pending'})` : item.tip}
                       className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14.5px] font-semibold transition-colors border-l-2 ${
                         isActive
                           ? `bg-primary/10 text-primary ${group.color}`
                           : `border-l-transparent text-sidebar-foreground hover:bg-secondary/70`
-                      } ${collapsed ? 'justify-center px-0' : ''}`}
+                      } ${collapsed ? 'justify-center px-0 relative' : ''}`}
                     >
                       <Icon
                         size={collapsed ? 20 : 17}
                         strokeWidth={isActive ? 2.5 : 2}
                         className="shrink-0"
                       />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
+                      {!collapsed && (
+                        <>
+                          <span className="truncate">{item.label}</span>
+                          {badge && <NotificationBadge badge={badge} collapsed={false} />}
+                        </>
+                      )}
+                      {collapsed && badge && <NotificationBadge badge={badge} collapsed={true} />}
                     </Link>
                   );
                 })}
