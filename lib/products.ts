@@ -400,13 +400,11 @@ function buildDetails(row: Record<string, unknown>): string {
   if (row.allergens && Array.isArray(row.allergens) && (row.allergens as string[]).length > 0) {
     parts.push(`Allergens: ${(row.allergens as string[]).join(', ')}`);
   }
-  if (row.certification) parts.push(`Certification: ${row.certification}`);
   return parts.length > 0 ? parts.join('. ') + '.' : 'Freshly prepared in our bakery.';
 }
 
 function buildTags(row: Record<string, unknown>): string[] {
   const tags: string[] = ['Fresh'];
-  if (row.certification) tags.push(row.certification as string);
   if (row.allergens && Array.isArray(row.allergens)) {
     if (!(row.allergens as string[]).includes('Gluten')) tags.push('Gluten-Free');
   }
