@@ -587,6 +587,12 @@ function Footer() {
             <img src="/mpesa.png" alt="M-Pesa" className="h-10 object-contain" />
           </div>
         </div>
+        <div className="max-w-7xl mx-auto px-6 pb-4 flex items-center justify-center">
+          <div className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-4 py-2.5">
+            <img src="/odpc-logo.png" alt="ODPC - Office of the Data Protection Commissioner" className="h-10 object-contain" />
+            <span className="text-xs text-gray-400">ODPC Certified — Office of the Data Protection Commissioner</span>
+          </div>
+        </div>
         <div className="max-w-7xl mx-auto px-6 pb-5 flex items-center justify-center">
           <p className="text-xs text-gray-600">
             Developed by{' '}
