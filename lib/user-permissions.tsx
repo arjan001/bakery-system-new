@@ -100,6 +100,7 @@ const roleDefaultRoutes: Record<string, string[]> = {
     '/admin/order-tracking',
     '/admin/rider-reports',
     '/admin/account',
+    '/admin/documentation',
   ],
   Driver: [
     '/admin',
@@ -107,6 +108,7 @@ const roleDefaultRoutes: Record<string, string[]> = {
     '/admin/order-tracking',
     '/admin/rider-reports',
     '/admin/account',
+    '/admin/documentation',
   ],
   // Baker: production-focused modules
   Baker: [
@@ -194,9 +196,10 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
     );
   }
 
-  // Deduplicate and ensure account page is always accessible
+  // Deduplicate and ensure account page and documentation are always accessible
   const unique = [...new Set(routes)];
   if (!unique.includes('/admin/account')) unique.push('/admin/account');
+  if (!unique.includes('/admin/documentation')) unique.push('/admin/documentation');
   return unique;
 }
 
