@@ -21,7 +21,10 @@ The Snackoh Bakers Management System is a comprehensive bakery ERP (Enterprise R
 11. [System & Settings Modules](#11-system--settings-modules)
 12. [E-Commerce Website](#12-e-commerce-website)
 13. [Roles & Permissions Guide (Admin)](#13-roles--permissions-guide)
-14. [Troubleshooting](#14-troubleshooting)
+14. [Security Best Practices](#14-security-best-practices)
+15. [Tips & Tricks](#15-tips--tricks)
+16. [Troubleshooting](#16-troubleshooting)
+17. [Glossary](#glossary)
 
 ---
 
@@ -698,7 +701,73 @@ Custom Roles
 
 ---
 
-## 14. Troubleshooting
+## 14. Security Best Practices
+
+Following these practices helps protect the business, customer data, and your account.
+
+### Password Safety
+- Use a strong password with at least 8 characters, including uppercase, lowercase, numbers, and a symbol.
+- Never share your login credentials with anyone, including colleagues.
+- Change your password regularly through **Account Settings**.
+- If you suspect someone else knows your password, change it immediately and notify your administrator.
+
+### Session Management
+- Always **log out** when you finish your shift or leave a shared device.
+- Do not leave the system open on unattended computers or phones.
+- If you use the installed app on a shared device, log out after every session.
+
+### Data Handling
+- Do not share customer information (phone numbers, email addresses, order details) outside the system.
+- When processing M-Pesa payments, verify the phone number with the customer rather than sharing it aloud.
+- Never take screenshots of customer data or financial reports for personal use.
+- Report any unusual activity or suspicious data changes to your administrator immediately.
+
+### Device Security
+- Keep your browser and operating system updated.
+- Avoid accessing the system on public Wi-Fi without a secure connection.
+- If your phone or computer is lost or stolen, notify your administrator immediately so they can disable your system access.
+
+### Recognizing Suspicious Activity
+If you notice any of the following, report it to your administrator right away:
+- Orders or transactions you did not create appearing under your name.
+- Being logged out unexpectedly or your password no longer working.
+- Unusual changes to inventory quantities, pricing, or customer records.
+- Unfamiliar employees or roles appearing in the system.
+
+---
+
+## 15. Tips & Tricks
+
+### Keyboard Shortcuts
+- **Ctrl+R / Cmd+R:** Refresh the page to see the latest data.
+- **Ctrl+F / Cmd+F:** Use browser search to quickly find text on any page.
+- **Tab / Shift+Tab:** Navigate between form fields without using the mouse.
+- **Enter:** Submit most forms after filling in the required fields.
+
+### Productivity Tips
+- **Install the App:** Use the "Install App" button to add the system to your home screen. It opens faster and works more reliably than a browser tab.
+- **Collapse the Sidebar:** Click the arrow on the sidebar to collapse it and gain more workspace, especially on smaller screens.
+- **Use Filters:** Most list pages (Orders, Inventory, Employees) have search bars and filter options. Use them to find records quickly rather than scrolling.
+- **Bookmark Your Module:** If you primarily use one module (e.g., POS or Delivery), bookmark it directly in your browser for quick access.
+
+### POS Tips
+- **Quick Product Search:** Start typing a product name in the POS search bar to filter products instantly.
+- **Frequent Items:** Products you sell most often appear first in the POS product grid.
+- **Receipt Options:** After a sale, you can print, share via WhatsApp, or email the receipt to the customer.
+
+### Order Management Tips
+- **Online Order Alerts:** Keep your browser tab open or use the installed app so you can hear the alarm when new online orders arrive.
+- **Status Updates:** Update order status promptly as it progresses (Confirmed, In Production, Ready, Out for Delivery, Delivered) so customers and riders have accurate information.
+- **Bulk Actions:** Select multiple orders to perform batch status updates.
+
+### Branch Management Tips
+- **Requisition Planning:** Submit requisitions early in the day so the main bakery can include them in the current production run.
+- **Stock Counts:** Regularly compare your outlet inventory with the system records to catch discrepancies early.
+- **End-of-Day Returns:** Process returns before end of day to keep inventory accurate for the next morning.
+
+---
+
+## 16. Troubleshooting
 
 ### I can't see a module in the sidebar
 - Your role may not have permission to access that module.
@@ -737,6 +806,57 @@ Custom Roles
 ### I'm seeing "System access is disabled"
 - Your administrator has disabled your system access.
 - Contact your manager or administrator to re-enable it.
+
+### POS is not showing any products
+- Check that products have been added to the **Product Catalogue**.
+- If you are at a branch, verify that products have been assigned to your outlet via **Outlet Products**.
+- Try refreshing the page. If the issue persists, contact your administrator.
+
+### A customer says they paid via M-Pesa but the order still shows "Pending"
+- Go to the order and click **Verify Payment** to manually check with M-Pesa.
+- M-Pesa callbacks can occasionally be delayed by up to a few minutes.
+- If the payment is confirmed but the status did not update, manually update the order status and notify your administrator.
+
+### Inventory quantities seem incorrect
+- Check the **Audit Logs** for recent changes to that inventory item.
+- Verify whether any production runs consumed the material.
+- Confirm that outlet requisitions or returns were recorded properly.
+- Run a physical stock count and update the records using a stock adjustment.
+
+### I accidentally created a duplicate order or record
+- Do not delete it yourself. Contact your administrator, who can review the **Audit Logs** and safely remove the duplicate.
+- Avoid rapid double-clicks on "Create" or "Submit" buttons to prevent duplicates in the future.
+
+### The receipt is not printing
+- Ensure your printer is connected and powered on.
+- Check that your browser allows pop-ups for the system URL.
+- Try using the "Share" or "Download" option to save the receipt as a PDF and print manually.
+- Contact your administrator if the issue continues.
+
+---
+
+## Glossary
+
+| Term | Definition |
+|------|------------|
+| **ERP** | Enterprise Resource Planning -- a system that integrates all business operations into one platform. |
+| **POS** | Point of Sale -- the module used to process in-store customer purchases. |
+| **M-Pesa** | A mobile money transfer service widely used in Kenya for payments. |
+| **STK Push** | A payment prompt sent directly to a customer's phone by M-Pesa during checkout. |
+| **KPI** | Key Performance Indicator -- a metric used to evaluate business performance. |
+| **Requisition** | A formal request from a branch outlet to the main bakery for products or materials. |
+| **Lot Tracking** | Recording production batch numbers and expiry dates for traceability and quality control. |
+| **Picking List** | A list of ingredients needed for a production run, used to gather materials before baking. |
+| **RLS** | Row-Level Security -- a database feature that restricts data access based on user identity. |
+| **Audit Log** | A chronological record of all actions performed in the system for accountability and compliance. |
+| **Debtor** | A customer who has purchased on credit and owes money to the business. |
+| **Creditor** | A supplier to whom the business owes money for goods or services received. |
+| **Branch / Outlet** | A physical bakery location separate from the main production facility. |
+| **Production Run** | A scheduled batch of products to be baked, with planned quantities and timelines. |
+| **Waste Control** | The process of recording and analyzing product loss due to overproduction, damage, or expiry. |
+| **Login Role** | The role assigned to an employee's system account that determines their module access. |
+| **System Access** | A toggle that enables or disables an employee's ability to log into the system. |
+| **Impersonation** | An admin feature that allows viewing the system as another user for troubleshooting. |
 
 ---
 
