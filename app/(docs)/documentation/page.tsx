@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BookOpenText, ArrowUp, ChevronRight } from 'lucide-react';
+import { BookOpenText, ArrowUp, ChevronRight, Play, X, Video } from 'lucide-react';
 import Link from 'next/link';
 
 const markdownContent = `# Snackoh Bakers - Employee Training Manual
@@ -904,61 +904,240 @@ If you notice any of the following, report it to your administrator right away:
 *Last Updated: February 2026*
 `;
 
+// Video tutorial data - add video URLs here when available
+const videoTutorials = [
+  {
+    id: 1,
+    title: 'Getting Started with the System',
+    description: 'Learn how to log in, navigate the dashboard, and configure your account settings.',
+    videoUrl: '', // Add YouTube/video URL when available
+    thumbnail: '',
+  },
+  {
+    id: 2,
+    title: 'POS System Tutorial',
+    description: 'Complete walkthrough of processing sales, accepting payments, and generating receipts.',
+    videoUrl: '',
+    thumbnail: '',
+  },
+  {
+    id: 3,
+    title: 'Managing Orders & Deliveries',
+    description: 'How to create orders, track deliveries, and manage the full order lifecycle.',
+    videoUrl: '',
+    thumbnail: '',
+  },
+  {
+    id: 4,
+    title: 'Production & Inventory',
+    description: 'Managing recipes, production runs, inventory tracking, and stock reorders.',
+    videoUrl: '',
+    thumbnail: '',
+  },
+  {
+    id: 5,
+    title: 'Branch Management',
+    description: 'Setting up outlets, managing requisitions, and tracking branch performance.',
+    videoUrl: '',
+    thumbnail: '',
+  },
+  {
+    id: 6,
+    title: 'Roles & Permissions',
+    description: 'How to create roles, assign permissions, and manage employee access control.',
+    videoUrl: '',
+    thumbnail: '',
+  },
+];
+
+function getYouTubeEmbedUrl(url: string): string | null {
+  if (!url) return null;
+  // Handle youtube.com/watch?v=ID
+  const watchMatch = url.match(/(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]+)/);
+  if (watchMatch) return `https://www.youtube.com/embed/${watchMatch[1]}?autoplay=1`;
+  // Handle youtu.be/ID
+  const shortMatch = url.match(/(?:youtu\.be\/)([a-zA-Z0-9_-]+)/);
+  if (shortMatch) return `https://www.youtube.com/embed/${shortMatch[1]}?autoplay=1`;
+  // Handle youtube.com/embed/ID
+  const embedMatch = url.match(/(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/);
+  if (embedMatch) return `https://www.youtube.com/embed/${embedMatch[1]}?autoplay=1`;
+  // For non-YouTube URLs, return the URL directly
+  return url;
+}
+
 export default function PublicDocumentationPage() {
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [videoModal, setVideoModal] = useState<{ open: boolean; url: string; title: string }>({
+    open: false,
+    url: '',
+    title: '',
+  });
 
-  const handleScroll = () => {
-    setShowScrollTop(window.scrollY > 400);
-  };
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Listen for scroll on window since this page uses the website layout's scroll
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('scroll', handleScroll);
-    window.addEventListener('scroll', handleScroll);
-  }
+  const openVideoModal = (videoUrl: string, title: string) => {
+    const embedUrl = getYouTubeEmbedUrl(videoUrl);
+    if (embedUrl) {
+      setVideoModal({ open: true, url: embedUrl, title });
+    }
+  };
+
+  const closeVideoModal = () => {
+    setVideoModal({ open: false, url: '', title: '' });
+  };
 
   return (
     <div className="bg-white">
-      {/* Hero Section */}
-      <section className="relative bg-gray-950 text-white py-20 md:py-28">
-        <img
-          src="https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=1400&q=80&fit=crop"
-          alt="Documentation"
-          className="absolute inset-0 w-full h-full object-cover opacity-20"
-        />
+      {/* Hero Section - warm gradient background with high contrast text */}
+      <section className="relative bg-gradient-to-br from-orange-600 via-amber-600 to-orange-700 text-white py-20 md:py-28 overflow-hidden">
+        {/* Decorative background pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-0 left-0 w-72 h-72 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-white rounded-full translate-x-1/3 translate-y-1/3" />
+          <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
+        </div>
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 rounded-xl bg-orange-600/20 border border-orange-500/30">
-              <BookOpenText size={32} className="text-orange-400" />
+            <div className="p-3 rounded-xl bg-white/20 border border-white/30 backdrop-blur-sm">
+              <BookOpenText size={32} className="text-white" />
             </div>
           </div>
-          <p className="text-xs text-orange-400 font-bold tracking-widest uppercase mb-3">System Documentation</p>
-          <h1 className="text-4xl md:text-5xl font-black leading-tight mb-4">
+          <p className="text-xs text-white/90 font-bold tracking-widest uppercase mb-3">System Documentation</p>
+          <h1 className="text-4xl md:text-5xl font-black leading-tight mb-4 text-white drop-shadow-sm">
             Employee Training Manual
           </h1>
-          <p className="text-white/70 text-base max-w-2xl mx-auto leading-relaxed">
+          <p className="text-white/85 text-base max-w-2xl mx-auto leading-relaxed">
             Complete system documentation covering all modules of the Snackoh Bakers Management System. From production and inventory to sales, deliveries, and multi-branch operations.
           </p>
           <div className="flex flex-wrap justify-center gap-3 mt-8">
             <a
               href="#1-getting-started"
-              className="px-6 py-3 bg-orange-600 text-white font-bold text-sm rounded-full hover:bg-orange-700 transition-colors inline-flex items-center gap-2"
+              className="px-6 py-3 bg-white text-orange-700 font-bold text-sm rounded-full hover:bg-orange-50 transition-colors inline-flex items-center gap-2 shadow-lg"
             >
               Get Started <ChevronRight size={15} />
             </a>
             <Link
-              href="/shop"
-              className="px-6 py-3 border-2 border-white/30 text-white font-bold text-sm rounded-full hover:border-orange-400 hover:text-orange-400 transition-colors"
+              href="/"
+              className="px-6 py-3 border-2 border-white/50 text-white font-bold text-sm rounded-full hover:bg-white/10 transition-colors"
             >
-              Browse Shop
+              Back to Website
             </Link>
           </div>
         </div>
       </section>
+
+      {/* Video Tutorials Section */}
+      <section className="py-12 md:py-16 bg-gray-50">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <div className="flex justify-center mb-3">
+              <div className="p-2.5 rounded-lg bg-orange-100">
+                <Video size={24} className="text-orange-600" />
+              </div>
+            </div>
+            <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2">Video Tutorials</h2>
+            <p className="text-gray-500 text-sm max-w-lg mx-auto">
+              Watch step-by-step video guides for each module. Click on a tutorial to watch.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {videoTutorials.map((tutorial) => {
+              const hasVideo = !!tutorial.videoUrl;
+              return (
+                <div
+                  key={tutorial.id}
+                  className={`bg-white rounded-xl border border-gray-200 overflow-hidden transition-all ${
+                    hasVideo
+                      ? 'hover:shadow-lg hover:border-orange-300 cursor-pointer'
+                      : 'opacity-80'
+                  }`}
+                  onClick={() => hasVideo && openVideoModal(tutorial.videoUrl, tutorial.title)}
+                >
+                  {/* Thumbnail / Placeholder */}
+                  <div className="relative aspect-video bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                    {hasVideo ? (
+                      <>
+                        {tutorial.thumbnail ? (
+                          <img
+                            src={tutorial.thumbnail}
+                            alt={tutorial.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="w-14 h-14 rounded-full bg-orange-600 flex items-center justify-center shadow-lg">
+                              <Play size={24} className="text-white ml-1" />
+                            </div>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-full bg-orange-600/90 flex items-center justify-center shadow-lg opacity-0 hover:opacity-100 transition-opacity">
+                            <Play size={24} className="text-white ml-1" />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 px-4">
+                        <div className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
+                          <Play size={24} className="text-gray-500 ml-1" />
+                        </div>
+                        <span className="text-xs font-bold text-orange-600 bg-orange-100 px-3 py-1 rounded-full">
+                          Coming Soon
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-4">
+                    <h3 className="font-bold text-gray-900 text-sm mb-1">{tutorial.title}</h3>
+                    <p className="text-xs text-gray-500 leading-relaxed">{tutorial.description}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Video Modal */}
+      {videoModal.open && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80"
+          onClick={closeVideoModal}
+        >
+          <div
+            className="relative w-full max-w-4xl aspect-video bg-black rounded-xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={closeVideoModal}
+              className="absolute -top-10 right-0 w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors z-10"
+              title="Close video"
+            >
+              <X size={18} />
+            </button>
+            <iframe
+              src={videoModal.url}
+              title={videoModal.title}
+              className="w-full h-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      )}
 
       {/* Documentation Content */}
       <section className="py-12 md:py-16">
