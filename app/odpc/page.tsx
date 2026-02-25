@@ -100,7 +100,7 @@ export default function ODPCCompliancePage() {
                 <tbody className="divide-y divide-gray-100">
                   <tr>
                     <td className="px-4 py-2.5 text-gray-600">Micro &amp; Small (1-50 employees, up to KES 5M turnover)</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-gray-900">2,000</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-gray-900">4,000</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-2.5 text-gray-600">Medium (51-99 employees, KES 5M-50M turnover)</td>
