@@ -46,6 +46,9 @@ Once logged in, go to **Account Settings** (bottom of the sidebar) to:
 - Update your password.
 - Manage your certificates and personal info.
 
+![Account Settings — View and manage your profile, password, and personal information](/docs/account-settings.png)
+*Figure 1: Account Settings page where employees can update their profile and password.*
+
 ### Navigation
 
 - The **sidebar** (left panel) shows only the modules you have access to.
@@ -116,6 +119,9 @@ The Dashboard provides a quick overview of the business:
 - **Recent Activity:** Latest orders, deliveries, and system events.
 - **Quick Actions:** Shortcuts to common tasks.
 
+![Dashboard — Overview of key business metrics and recent activity](/docs/dashboard.png)
+*Figure 2: The main Dashboard showing KPIs, recent orders, and quick-action shortcuts.*
+
 ---
 
 ## 4. POS System
@@ -127,6 +133,9 @@ The Point of Sale module is used for in-store sales:
 - **Accept Payments:** M-Pesa, cash, and other payment methods.
 - **Print Receipts:** Generate customer receipts.
 - **Daily Transactions:** View sales history for the current shift.
+
+![POS System — Process in-store sales with product search, payment, and receipt generation](/docs/pos.png)
+*Figure 3: The POS System interface for processing in-store sales with product browsing, cart management, and payment options.*
 
 ### How to Process a Sale:
 1. Open **POS System** from the sidebar.
@@ -146,30 +155,63 @@ The Point of Sale module is used for in-store sales:
 - Set product prices based on ingredient costs and margins.
 - Track recipe variations and versions.
 
+![Recipes Overview — View all recipes with ingredients, costing, and product details](/docs/recipe.png)
+*Figure 4: The Recipes overview listing all recipes with their ingredients, costing information, and product links.*
+
+![AI Recipe Generation — Use AI to auto-generate recipe details and ingredient lists](/docs/recipe-ai.png)
+*Figure 5: The AI Recipe tool that automatically generates recipe details, ingredient lists, and costing estimates.*
+
+![Manual Recipe — Create and manage detailed recipes with ingredients and costing](/docs/manual-recipe.png)
+*Figure 6: The Manual Recipe page where bakers define ingredients, quantities, and costing for each product.*
+
 ### 5.2 Product Catalogue
 - Manage allergen information for each product.
 - Add nutritional facts and certifications.
 - Mark halal, vegan, gluten-free, or other dietary labels.
+
+![Product Catalogue — View and manage all products with allergen info and dietary labels](/docs/product.png)
+*Figure 7: The Product Catalogue listing all products with their allergen information, dietary labels, and pricing.*
+
+![Add Product — Create a new product entry with details, allergens, and nutritional facts](/docs/product-add.png)
+*Figure 8: Adding a new product to the catalogue with allergen details, nutritional information, and dietary labels.*
 
 ### 5.3 Production Runs
 - Schedule production batches for the day/week.
 - Track batch status: Planned, In Progress, Completed.
 - Record actual output vs. planned output.
 
+![Production Runs — Schedule and track production batches with status monitoring](/docs/production-runs-batch.png)
+*Figure 9: The Production Runs page showing scheduled batches with their status, planned output, and progress.*
+
+![Add Production Run — Create a new production batch with product selection and scheduling](/docs/production-runs-batch-add.png)
+*Figure 10: Creating a new production run batch with product selection, quantity targets, and scheduling details.*
+
 ### 5.4 Picking Lists
 - Auto-generated ingredient lists for scheduled production runs.
 - Used by bakers to gather ingredients before production.
 - Helps ensure all materials are available.
+
+![Add Picking List — Create a new picking list for scheduled production runs](/docs/add-picking-list.png)
+*Figure 11: Adding a new picking list to prepare ingredients for a production batch.*
 
 ### 5.5 Lot Tracking
 - Track production batch numbers for traceability.
 - Record expiry dates and shelf life.
 - Trace any product back to its production batch if quality issues arise.
 
+![Lot Tracking Overview — View all tracked production lots with batch numbers and expiry dates](/docs/lot-tracking.png)
+*Figure 12: The Lot Tracking overview listing all production batches with their status, batch numbers, and expiry dates.*
+
+![Add Lot — Record a new production lot with batch number and expiry date](/docs/add-lot.png)
+*Figure 13: Adding a new lot entry to track batch numbers and expiry dates for traceability.*
+
 ### 5.6 Waste Control
 - Record and categorize production waste.
 - Track waste by product type, cause (overproduction, damage, expiry).
 - Analyze waste patterns to reduce losses.
+
+![Add Waste Record — Log production waste by product type and cause](/docs/ad-waste.png)
+*Figure 14: Recording waste in the Waste Control module to track and reduce production losses.*
 
 ---
 
@@ -182,12 +224,24 @@ The Point of Sale module is used for in-store sales:
 - Segment customers by location, purchase frequency, etc.
 - Track customer geo-location data for delivery planning.
 
+![Customer Management — View and manage customer profiles and order history](/docs/customer.png)
+*Figure 15: The Customer Management page showing customer profiles, contact details, and order history.*
+
+![Add Customer — Create a new customer profile with contact and location details](/docs/ad-customer.png)
+*Figure 16: Adding a new customer record with contact information and delivery location.*
+
 ### 6.2 Orders
 **Who can see this:** Sales, Cashier, Admin (or anyone with "Manage Orders" permission)
 
 - **Create Orders:** New orders for customers (walk-in, phone, or online).
 - **Manage Orders:** Update status (Pending, Confirmed, In Production, Ready, Delivered).
 - **Online Orders:** Review and confirm orders from the website (M-Pesa payments).
+
+![Orders Overview — View and manage all customer orders with status tracking](/docs/orders.png)
+*Figure 17: The Orders page showing all orders with their current status, customer details, and payment information.*
+
+![Manual Order — Create a new order manually for walk-in or phone customers](/docs/orders-manual.png)
+*Figure 18: Creating a manual order with product selection, customer details, and payment method.*
 
 ### How to Process an Online Order:
 1. You will hear an **alarm** when a new online order arrives.
@@ -203,12 +257,24 @@ The Point of Sale module is used for in-store sales:
 - View delivery progress and ETAs.
 - Filter by status, date, or customer.
 
+![Order Tracking — Track real-time status and progress of all orders](/docs/orders-tracking.png)
+*Figure 19: The Order Tracking page showing all orders with real-time status updates, filters, and delivery progress.*
+
+![Order Tracking Detail — Detailed view of a specific order's delivery timeline](/docs/order-tracking-detail.png)
+*Figure 20: A detailed order tracking view showing the full delivery timeline and status milestones.*
+
 ### 6.4 Delivery
 **Who can see this:** Sales, Rider, Admin (or anyone with "Manage Deliveries" permission)
 
 - Schedule deliveries and assign riders/drivers.
 - View delivery routes and assignments.
 - Track delivery completion and customer feedback.
+
+![Delivery Overview — View all scheduled deliveries with rider assignments and status](/docs/delivery.png)
+*Figure 21: The Delivery module showing all deliveries with assigned riders, routes, and completion status.*
+
+![Add Delivery — Schedule a new delivery with rider assignment and route details](/docs/delivery-add.png)
+*Figure 22: Creating a new delivery assignment with rider selection, route, and delivery schedule.*
 
 ### How to Assign a Delivery:
 1. Go to **Delivery** module.
@@ -230,6 +296,12 @@ The Point of Sale module is used for in-store sales:
 - Create bulk pricing rules and discounts.
 - Compare pricing across product categories.
 
+![Pricing Overview — View and manage retail and wholesale pricing tiers](/docs/pricing.png)
+*Figure 23: The Pricing page showing product pricing tiers, bulk rules, and category comparisons.*
+
+![Add Pricing — Create a new pricing tier or discount rule for products](/docs/pricing-add.png)
+*Figure 24: Adding a new pricing tier with product selection, price levels, and discount rules.*
+
 ---
 
 ## 7. Inventory Modules
@@ -241,15 +313,33 @@ The Point of Sale module is used for in-store sales:
 - View stock alerts for low-quantity items.
 - Record stock movements (received, used, adjusted).
 
+![Inventory Overview — Track stock levels of raw materials, packaging, and finished goods](/docs/inventory.png)
+*Figure 25: The Inventory overview showing current stock levels, low-stock alerts, and item categories.*
+
+![Add Inventory Item — Record a new stock entry with quantity and category details](/docs/inventory-add.png)
+*Figure 26: Adding a new inventory item with details such as quantity, category, and reorder level.*
+
 ### 7.2 Stock Reorder
 - Manage stock requisitions and reorder alerts.
 - Set minimum stock levels that trigger reorder notifications.
 - Link production runs to ingredient availability.
 
+![Stock Reorder — Monitor stock levels and trigger reorders for low-stock items](/docs/stock-reorder.png)
+*Figure 27: The Stock Reorder page showing stock levels, reorder alerts, and out-of-stock items with restock actions.*
+
+![Stock Reorder Requisitions — View and manage pending stock requisitions](/docs/stock-reorder-requisitions.png)
+*Figure 28: The Requisitions tab showing pending stock requests with quantities, priority, and approval actions.*
+
 ### 7.3 Purchasing
 - Create and manage purchase orders for suppliers.
 - Track order status: Draft, Sent, Received, Paid.
 - Compare quotes from different suppliers.
+
+![Purchasing Overview — Create and manage purchase orders for suppliers](/docs/purchasing.png)
+*Figure 29: The Purchasing page showing all purchase orders with their status, supplier details, and amounts.*
+
+![Add Purchase Order — Create a new purchase order with supplier and item selection](/docs/purchasing-add.png)
+*Figure 30: Creating a new purchase order with supplier selection, item quantities, and pricing details.*
 
 ### 7.4 Suppliers
 - Manage supplier profiles and contact information.
@@ -261,10 +351,22 @@ The Point of Sale module is used for in-store sales:
 - Track distributor sales and commissions.
 - Monitor distribution network performance.
 
+![Distributors Overview — Manage distribution agents and wholesale channels](/docs/distributor.png)
+*Figure 31: The Distributors page showing all distribution agents with their sales performance and commissions.*
+
+![Add Distributor — Register a new distribution agent with contact and sales details](/docs/distributor-add.png)
+*Figure 32: Adding a new distributor with contact information, commission rate, and assigned territory.*
+
 ### 7.6 Assets
 - Track business equipment, vehicles, and tools.
 - Record depreciation schedules.
 - Manage maintenance and repair schedules.
+
+![Asset Management — View and manage all business assets, equipment, and vehicles](/docs/asset-manage.png)
+*Figure 33: The Asset Management overview showing tracked equipment, vehicles, and tools.*
+
+![Add Asset — Register a new business asset with details and depreciation schedule](/docs/asset-add.png)
+*Figure 34: Adding a new asset to the system with details such as purchase date and depreciation.*
 
 ---
 
@@ -279,15 +381,30 @@ These modules are for managing multiple bakery locations:
 - Set branch details: name, location, operating hours.
 - Assign staff and managers to branches.
 
+![Branch Overview — View all bakery branch outlets and their details](/docs/branch.png)
+*Figure 35: The Branch Management page listing all outlet locations with their status and details.*
+
+![Add Branch — Create a new branch outlet with location and operating details](/docs/branch-add.png)
+*Figure 36: Adding a new branch outlet with name, location, and manager assignment.*
+
 ### 8.2 Outlet Inventory
 - Track stock levels at each individual branch.
 - Compare inventory across branches.
 - Record stock movements between main bakery and branches.
 
+![Outlet Inventory — Track and manage stock levels at each branch location](/docs/outlet-inventory.png)
+*Figure 37: The Outlet Inventory page showing stock levels per branch with comparison and movement tracking.*
+
 ### 8.3 Outlet Requisitions
 - Branches can request products from the main bakery.
 - Managers can approve or reject requisitions.
 - Track requisition status: Pending, Approved, Dispatched, Received.
+
+![Outlet Requisitions — View and manage product requests from branch outlets](/docs/outlet-requisition.png)
+*Figure 38: The Outlet Requisitions page showing all branch product requests with their approval status.*
+
+![Add Outlet Requisition — Submit a new product request from a branch to the main bakery](/docs/outlet-requisition-add.png)
+*Figure 39: Creating a new outlet requisition with product selection, quantities, and delivery preferences.*
 
 ### How to Submit a Requisition:
 1. Go to **Outlet Requisitions**.
@@ -301,29 +418,50 @@ These modules are for managing multiple bakery locations:
 - Track return reasons and quantities.
 - Ensures freshness standards are maintained.
 
+![Outlet Returns — Track and manage product returns from branch outlets to the main bakery](/docs/outlet-returns.png)
+*Figure 40: The Outlet Returns page showing returned items with reasons, quantities, and processing status.*
+
 ### 8.5 Outlet Products
 - Manage the product catalog available at each branch.
 - Set branch-specific pricing if needed.
 - Control which products each branch can sell.
+
+![Outlet Products — Manage the product catalog available at each branch](/docs/outlet-products.png)
+*Figure 41: The Outlet Products page showing the product catalog for each branch with pricing and availability.*
 
 ### 8.6 Branch Employees
 - View and manage staff assigned to each branch.
 - Track work schedules and attendance.
 - Assign roles within the branch.
 
+![Branch Employees — View and manage staff assigned to a specific branch](/docs/branch-employees.png)
+*Figure 42: The Branch Employees page showing staff assigned to a branch with their roles and schedules.*
+
+![Branch Employee Assignments — Manage employee assignments, transfers, and roles per outlet](/docs/branch-employees-assign.png)
+*Figure 43: The Branch Employee assignment management view with options to view, edit, transfer, or remove staff from outlets.*
+
 ### 8.7 Branch Reports
 - View sales, inventory, and performance reports per branch.
 - Compare branch performance metrics.
 - Identify top-performing and underperforming branches.
+
+![Branch Reports — Sales, inventory, and performance reports for each branch](/docs/branch-reports.png)
+*Figure 44: Branch Reports showing performance metrics and sales comparisons across outlets.*
 
 ### 8.8 Branch Waste
 - Record waste at each branch.
 - Track waste by product type and cause.
 - Compare waste across branches to identify issues.
 
+![Branch Waste — Track and compare waste records across branch outlets](/docs/branch-waste.png)
+*Figure 45: The Branch Waste module showing waste entries by product type and cause per outlet.*
+
 ### 8.9 Branch Settings
 - Configure receipt templates, POS settings, and display options per branch.
 - Customize branch-specific operating parameters.
+
+![Branch Settings — Configure receipt templates and POS settings for each branch](/docs/branch-settings.png)
+*Figure 46: Branch Settings page where managers can configure receipts and operating parameters.*
 
 ---
 
@@ -336,15 +474,30 @@ These modules are for managing multiple bakery locations:
 - Attach receipts and supporting documents.
 - Track expense approvals and payment status.
 
+![Expenses — Record and categorize business expenses with receipt attachments](/docs/expense.png)
+*Figure 47: The Expenses page showing categorized expense entries with amounts, dates, and approval status.*
+
 ### 9.2 Debtors
 - Track credit sales and customer debts.
 - Send payment reminders.
 - Record payments and maintain customer account balances.
 
+![Debtors — Track customer debts, credit sales, and payment status](/docs/debtor.png)
+*Figure 48: The Debtors module showing outstanding customer balances and payment tracking.*
+
+![Add Debtor — Record a new debtor entry with customer and payment details](/docs/debtor-add.png)
+*Figure 49: Adding a new debtor record with customer information, amount owed, and payment terms.*
+
 ### 9.3 Creditors
 - Track amounts owed to suppliers.
 - Manage payment schedules and due dates.
 - Record payments made to suppliers.
+
+![Creditors Overview — Track amounts owed to suppliers with payment schedules](/docs/creditor.png)
+*Figure 50: The Creditors page showing supplier balances, due dates, and payment status.*
+
+![Add Creditor — Record a new creditor entry with supplier and payment details](/docs/creditor-add.png)
+*Figure 51: Adding a new creditor record with supplier information and payment terms.*
 
 ---
 
@@ -357,6 +510,9 @@ These modules are for managing multiple bakery locations:
 - Track certificates, licenses, and training records.
 - Manage payroll information and salary details.
 - Enable or disable system access for each employee.
+
+![Employees — Manage staff profiles, payroll, and system access](/docs/employee.png)
+*Figure 52: The Employees page showing all staff members with their roles, contact details, and system access status.*
 
 ### How to Add a New Employee:
 1. Go to **Employees** module.
@@ -372,12 +528,24 @@ These modules are for managing multiple bakery locations:
 - View attendance, output, and efficiency data.
 - Generate performance reports for reviews.
 
+![Employee Productivity Report — Track employee KPIs, attendance, and performance metrics](/docs/employee-productivity-report.png)
+*Figure 53: The Productivity Report showing employee performance metrics, attendance data, and efficiency ratings.*
+
 ### 10.3 Roles & Permissions
 **Who can see this:** Admin only (or anyone with "System Settings" permission)
 
 - Create and manage user roles.
 - Assign granular permissions to each role.
 - See the full guide in [Section 13](#13-roles--permissions-guide).
+
+![Roles Overview — View all defined user roles in the system](/docs/roles.png)
+*Figure 54: The Roles page listing all user roles with their descriptions and assigned employee counts.*
+
+![Add Role — Create a new user role with name and description](/docs/roles-add.png)
+*Figure 55: Adding a new role to the system with a name, description, and initial configuration.*
+
+![Role Permissions — Assign granular permissions to a specific role](/docs/roles-permissions.png)
+*Figure 56: The Permissions editor where administrators toggle individual access controls for each role.*
 
 ---
 
@@ -390,12 +558,18 @@ These modules are for managing multiple bakery locations:
 - View the general ledger and account balances.
 - Export reports for accounting purposes.
 
+![Reports & Ledger — Generate financial reports and view the general ledger](/docs/reports-ledger.png)
+*Figure 57: The Reports & Ledger page showing financial reports, account balances, and export options.*
+
 ### 11.2 Audit Logs
 **Who can see this:** Admin (or anyone with "View Audit Logs" permission)
 
 - Track all system activity: who did what and when.
 - View login/logout events, data changes, and access attempts.
 - Filter by user, action type, module, or date range.
+
+![Audit Logs — Track all system activity including user actions and access events](/docs/audit-logs.png)
+*Figure 58: The Audit Logs page showing a filterable record of all system activity by user, action, and date.*
 
 ### 11.3 Settings
 **Who can see this:** Admin only (or anyone with "System Settings" permission)
@@ -406,6 +580,9 @@ These modules are for managing multiple bakery locations:
 - **Security:** Manage authentication and access settings.
 - **Navbar Ads:** Customize the website announcement bar messages.
 - **Newsletter:** Configure the pop-up newsletter modal.
+
+![Dashboard Settings — Configure dashboard display preferences and widget options](/docs/dashboard-setting.png)
+*Figure 59: The Settings page where administrators can customize dashboard display, branding, and system configuration.*
 
 ---
 
