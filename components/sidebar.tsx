@@ -52,6 +52,7 @@ import {
   Search,
   X,
   Command,
+  BookOpenText,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 
@@ -163,6 +164,7 @@ const allNavGroups: NavGroup[] = [
     color: 'border-l-indigo-500',
     items: [
       { label: 'Account Settings', href: '/admin/account', tip: 'Your profile, password & certificates', icon: User },
+      { label: 'Documentation', href: '/admin/documentation', tip: 'Employee training manual & system guide', icon: BookOpenText },
     ],
   },
 ];
