@@ -85,7 +85,7 @@ export default function ODPCCompliancePage() {
           <div className="space-y-4 text-sm text-gray-700 leading-relaxed">
             <p>
               All data controllers and data processors are required to renew their ODPC registration annually.
-              The renewal fee is <strong className="text-gray-900">KES 2,000</strong> (Kenyan Shillings Two Thousand)
+              The renewal fee is <strong className="text-gray-900">KES 4,000</strong> (Kenyan Shillings Four Thousand)
               for Micro and Small Data Controllers/Processors, Public Entities, Charities, and Religious Entities.
             </p>
 
