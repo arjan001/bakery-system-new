@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search, Loader2 } from 'lucide-react';
+import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search, Loader2, Radio } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 import { useUserPermissions } from '@/lib/user-permissions';
+import { useRiderLocationBroadcast } from '@/lib/use-delivery-tracking';
+import { useBackgroundLocationTracking } from '@/lib/use-background-tracking';
 
 interface Customer {
   id: string;
@@ -155,6 +157,9 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
   const [currentPage, setCurrentPage] = useState(1);
   const perPage = 10;
 
+  // Background location tracking for PWA
+  const { isTracking: isBgTracking, startTracking: startBgTracking, stopTracking: stopBgTracking } = useBackgroundLocationTracking();
+
   const fetchMyDeliveries = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
@@ -186,6 +191,8 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
     logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'In Transit', rider: riderName } });
     setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: 'In Transit' as const } : d));
     if (selectedDelivery?.id === id) setSelectedDelivery(prev => prev ? { ...prev, status: 'In Transit' as const } : null);
+    // Start background location tracking for this delivery
+    startBgTracking({ deliveryId: id, riderName });
   };
 
   const handleComplete = async (id: string) => {
@@ -193,6 +200,8 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
     logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'Delivered', rider: riderName } });
     setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: 'Delivered' as const } : d));
     if (selectedDelivery?.id === id) setSelectedDelivery(prev => prev ? { ...prev, status: 'Delivered' as const } : null);
+    // Stop background tracking when delivery is completed
+    stopBgTracking();
   };
 
   const handleFailed = async (id: string) => {
@@ -201,6 +210,8 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
     logAudit({ action: 'UPDATE', module: 'Delivery', record_id: id, details: { status: 'Failed', rider: riderName } });
     setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: 'Failed' as const } : d));
     if (selectedDelivery?.id === id) setSelectedDelivery(prev => prev ? { ...prev, status: 'Failed' as const } : null);
+    // Stop background tracking when delivery fails
+    stopBgTracking();
   };
 
   const getMapUrl = (lat: number, lng: number) =>
@@ -214,10 +225,46 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
   const getGoogleMapsDirections = (destLat: number, destLng: number) =>
     `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=driving`;
 
-  // GPS tracking for auto-delivery
+  // GPS tracking for auto-delivery + live broadcast
   const [riderLocation, setRiderLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [watchId, setWatchId] = useState<number | null>(null);
   const [locationError, setLocationError] = useState('');
+
+  // Maintain broadcast channels for In Transit deliveries
+  const broadcastChannelsRef = useRef<Map<string, ReturnType<typeof supabase.channel>>>(new Map());
+
+  // Setup/teardown broadcast channels when deliveries change
+  useEffect(() => {
+    const inTransit = deliveries.filter(d =>
+      d.driverName?.toLowerCase().includes(riderName.toLowerCase()) && d.status === 'In Transit'
+    );
+    const currentChannels = broadcastChannelsRef.current;
+    const activeIds = new Set(inTransit.map(d => d.id));
+
+    // Remove channels for deliveries no longer in transit
+    for (const [id, ch] of currentChannels.entries()) {
+      if (!activeIds.has(id)) {
+        supabase.removeChannel(ch);
+        currentChannels.delete(id);
+      }
+    }
+
+    // Create channels for new In Transit deliveries
+    for (const d of inTransit) {
+      if (!currentChannels.has(d.id)) {
+        const ch = supabase.channel(`delivery-tracking-${d.id}`);
+        ch.subscribe();
+        currentChannels.set(d.id, ch);
+      }
+    }
+
+    return () => {
+      for (const [, ch] of currentChannels.entries()) {
+        supabase.removeChannel(ch);
+      }
+      currentChannels.clear();
+    };
+  }, [deliveries, riderName]);
 
   const startLocationTracking = useCallback(() => {
     if (!navigator.geolocation) {
@@ -229,12 +276,29 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setRiderLocation(loc);
         setLocationError('');
+
+        // Broadcast rider location on all active broadcast channels
+        for (const [deliveryId, channel] of broadcastChannelsRef.current.entries()) {
+          channel.send({
+            type: 'broadcast',
+            event: 'rider-location',
+            payload: {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+              timestamp: Date.now(),
+              deliveryId,
+              riderName,
+            },
+          });
+        }
       },
       (err) => setLocationError(err.message),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
     setWatchId(id);
-  }, []);
+  }, [riderName]);
 
   useEffect(() => {
     startLocationTracking();
@@ -329,9 +393,17 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
             <p className="text-xs md:text-sm text-muted-foreground">Welcome back, {riderName || 'Rider'} &mdash; {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
           </div>
           {/* GPS Status */}
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${riderLocation ? 'bg-green-100 text-green-800' : locationError ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
-            <div className={`w-2 h-2 rounded-full ${riderLocation ? 'bg-green-500 animate-pulse' : locationError ? 'bg-red-500' : 'bg-amber-500 animate-pulse'}`} />
-            {riderLocation ? 'GPS Active - Live Tracking' : locationError ? `GPS Error: ${locationError}` : 'Acquiring GPS...'}
+          <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${riderLocation ? 'bg-green-100 text-green-800' : locationError ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+              <div className={`w-2 h-2 rounded-full ${riderLocation ? 'bg-green-500 animate-pulse' : locationError ? 'bg-red-500' : 'bg-amber-500 animate-pulse'}`} />
+              {riderLocation ? 'GPS Active - Live Tracking' : locationError ? `GPS Error: ${locationError}` : 'Acquiring GPS...'}
+            </div>
+            {isBgTracking && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-800">
+                <Radio size={12} className="animate-pulse" />
+                Background Tracking Active
+              </div>
+            )}
           </div>
         </div>
       </div>
