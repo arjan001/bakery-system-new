@@ -14,7 +14,6 @@ const CLEANUP_TABLES = [
   'picking_list_items',
   'purchase_order_items',
   'recipe_ingredients',
-  'employee_certificates',
   'inventory_transactions',
   'outlet_return_items',
   'outlet_inventory_transactions',
@@ -69,19 +68,20 @@ const CLEANUP_TABLES = [
   'stock_requisitions',
   'pos_sessions',
   'expenses',
-  'audit_log',
   'newsletter_subscribers',
   'offers',
-  'employees',
 ];
 
-// Tables to preserve (system config)
+// Tables to preserve (system config, users & access control)
 const PRESERVED_TABLES = [
   'roles',
   'permissions',
   'role_permissions',
   'users',
+  'employees',
   'employee_categories',
+  'employee_certificates',
+  'audit_log',
   'business_settings',
   'mpesa_settings',
   'outlets',
@@ -194,16 +194,23 @@ export default function CleanupDataPage() {
           <li>All orders, POS sales, and delivery records</li>
           <li>All inventory items and transaction history</li>
           <li>All debtor and creditor records</li>
-          <li>All employee records and productivity data</li>
           <li>All recipes, pricing tiers, and food info</li>
           <li>All asset records and maintenance logs</li>
           <li>All waste records, returns, and requisitions</li>
           <li>All outlet-specific data (inventory, sales, returns, waste)</li>
-          <li>All audit logs</li>
+          <li>All production runs, picking lists, and lot tracking</li>
         </ul>
-        <p className="text-sm font-bold text-red-800">
-          The following will be PRESERVED: Roles, Permissions, Users, Outlets, Employee Categories, Business Settings, M-Pesa Settings.
+        <p className="text-sm font-bold text-red-800 mb-2">
+          The following will be PRESERVED (never deleted):
         </p>
+        <ul className="text-sm text-green-700 space-y-1 list-disc pl-5">
+          <li>Roles, Permissions & Role Assignments</li>
+          <li>Users & Auth Accounts</li>
+          <li>All Employee Records & Certificates</li>
+          <li>Audit Logs (full history retained)</li>
+          <li>Outlets, Employee Categories, Business Settings</li>
+          <li>M-Pesa Settings, Product Categories, Menu/Ingredient Settings</li>
+        </ul>
       </div>
 
       {/* Confirmation */}

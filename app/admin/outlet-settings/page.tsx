@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 import {
   Settings,
   Receipt,
@@ -326,6 +327,12 @@ export default function OutletSettingsPage() {
       }
 
       showToast(`${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} settings saved successfully`, 'success');
+      logAudit({
+        action: 'UPDATE',
+        module: 'Outlet Settings',
+        record_id: selectedOutletId,
+        details: { outlet: selectedOutlet?.name, tab: activeTab },
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       showToast(`Failed to save settings: ${msg}`, 'error');

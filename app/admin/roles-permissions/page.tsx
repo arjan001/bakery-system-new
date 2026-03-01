@@ -22,16 +22,52 @@ interface Role {
   createdAt: string;
 }
 
-const DEFAULT_CATEGORIES = ['Dashboard', 'Recipes', 'Production', 'Orders', 'Employees', 'POS', 'Inventory', 'Admin', 'Delivery', 'Finance'];
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  loginRole: string;
+  permissions: string[];
+  systemAccess: boolean;
+  department: string;
+}
+
+const DEFAULT_CATEGORIES = ['Dashboard', 'Recipes', 'Production', 'Orders', 'Employees', 'POS', 'Inventory', 'Admin', 'Delivery', 'Finance', 'Outlets', 'System', 'Reports'];
 
 export default function RolesPermissionsPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+
+  const fetchEmployees = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('employees')
+        .select('id, name, login_email, login_role, permissions, system_access, department')
+        .order('name', { ascending: true });
+      if (data) {
+        setEmployees(data.map((e: Record<string, unknown>) => {
+          let perms: string[] = [];
+          try {
+            perms = typeof e.permissions === 'string' ? JSON.parse(e.permissions as string) : (e.permissions as string[]) || [];
+          } catch { perms = []; }
+          return {
+            id: e.id as string,
+            name: (e.name || '') as string,
+            email: (e.login_email || '') as string,
+            loginRole: (e.login_role || '') as string,
+            permissions: perms,
+            systemAccess: e.system_access !== false,
+            department: (e.department || '') as string,
+          };
+        }));
+      }
+    } catch { /* employees table may not exist */ }
+  }, []);
 
   const fetchRoles = useCallback(async () => {
     const { data } = await supabase.from('roles').select('*').order('created_at', { ascending: true });
     if (data) {
-      // Also fetch role_permissions mapping
       const { data: rp } = await supabase.from('role_permissions').select('*');
       const rpMap: Record<string, string[]> = {};
       (rp || []).forEach((r: Record<string, unknown>) => {
@@ -39,7 +75,23 @@ export default function RolesPermissionsPage() {
         if (!rpMap[rid]) rpMap[rid] = [];
         rpMap[rid].push(r.permission_id as string);
       });
-      setRoles(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, description: (r.description || '') as string, permissions: rpMap[r.id as string] || [], userCount: 0, createdAt: ((r.created_at || '') as string).split('T')[0] })));
+
+      // Count employees per role
+      const { data: empCounts } = await supabase.from('employees').select('login_role');
+      const roleCountMap: Record<string, number> = {};
+      (empCounts || []).forEach((e: Record<string, unknown>) => {
+        const role = (e.login_role || '') as string;
+        if (role) roleCountMap[role] = (roleCountMap[role] || 0) + 1;
+      });
+
+      setRoles(data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        name: (r.name || '') as string,
+        description: (r.description || '') as string,
+        permissions: rpMap[r.id as string] || [],
+        userCount: roleCountMap[(r.name || '') as string] || 0,
+        createdAt: ((r.created_at || '') as string).split('T')[0],
+      })));
     }
   }, []);
 
@@ -48,9 +100,9 @@ export default function RolesPermissionsPage() {
     if (data) setPermissions(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, description: (r.description || '') as string, category: (r.category || '') as string, enabled: r.enabled !== false })));
   }, []);
 
-  useEffect(() => { fetchRoles(); fetchPermissions(); }, [fetchRoles, fetchPermissions]);
+  useEffect(() => { fetchRoles(); fetchPermissions(); fetchEmployees(); }, [fetchRoles, fetchPermissions, fetchEmployees]);
 
-  const [activeTab, setActiveTab] = useState<'roles' | 'permissions'>('roles');
+  const [activeTab, setActiveTab] = useState<'roles' | 'permissions' | 'users'>('roles');
 
   // Role form state
   const [showRoleForm, setShowRoleForm] = useState(false);
@@ -62,6 +114,14 @@ export default function RolesPermissionsPage() {
   const [showPermForm, setShowPermForm] = useState(false);
   const [editingPermId, setEditingPermId] = useState<string | null>(null);
   const [permFormData, setPermFormData] = useState({ name: '', description: '', category: 'Dashboard', customCategory: '' });
+
+  // User assignment state
+  const [showUserAssign, setShowUserAssign] = useState(false);
+  const [assigningEmployee, setAssigningEmployee] = useState<Employee | null>(null);
+  const [assignRole, setAssignRole] = useState('');
+  const [assignPerms, setAssignPerms] = useState<string[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('All');
 
   // Category filter
   const [filterCategory, setFilterCategory] = useState('All');
@@ -206,6 +266,69 @@ export default function RolesPermissionsPage() {
     }
   };
 
+  // ── User Assignment ─────────────────────────────────────
+  const handleAssignUser = (emp: Employee) => {
+    setAssigningEmployee(emp);
+    setAssignRole(emp.loginRole);
+    setAssignPerms(emp.permissions);
+    setShowUserAssign(true);
+  };
+
+  const toggleAssignPerm = (permName: string) => {
+    setAssignPerms(prev =>
+      prev.includes(permName) ? prev.filter(p => p !== permName) : [...prev, permName]
+    );
+  };
+
+  const handleSubmitAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assigningEmployee) return;
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({
+          login_role: assignRole,
+          permissions: JSON.stringify(assignPerms),
+        })
+        .eq('id', assigningEmployee.id);
+
+      if (!error) {
+        logAudit({
+          action: 'ASSIGN',
+          module: 'Roles & Permissions',
+          record_id: assigningEmployee.id,
+          details: {
+            employee: assigningEmployee.name,
+            email: assigningEmployee.email,
+            role: assignRole,
+            permissions: assignPerms,
+            previousRole: assigningEmployee.loginRole,
+          },
+        });
+        await fetchEmployees();
+        await fetchRoles();
+      }
+    } catch { /* fallback */ }
+    setShowUserAssign(false);
+    setAssigningEmployee(null);
+  };
+
+  const handleToggleAccess = async (emp: Employee) => {
+    const newAccess = !emp.systemAccess;
+    const action = newAccess ? 'enable' : 'disable';
+    if (!confirm(`${newAccess ? 'Enable' : 'Disable'} system access for ${emp.name}?`)) return;
+    try {
+      await supabase.from('employees').update({ system_access: newAccess }).eq('id', emp.id);
+      logAudit({
+        action: 'UPDATE',
+        module: 'Roles & Permissions',
+        record_id: emp.id,
+        details: { employee: emp.name, action: `${action}_system_access` },
+      });
+      setEmployees(employees.map(e => e.id === emp.id ? { ...e, systemAccess: newAccess } : e));
+    } catch { /* fallback */ }
+  };
+
   // Get unique categories from permissions
   const allCategories = [...new Set(permissions.map(p => p.category))];
   const filteredPermissions = filterCategory === 'All' ? permissions : permissions.filter(p => p.category === filterCategory);
@@ -217,15 +340,26 @@ export default function RolesPermissionsPage() {
     return acc;
   }, {});
 
+  // Filter employees for Users tab
+  const allEmployeeRoles = [...new Set(employees.map(e => e.loginRole).filter(Boolean))];
+  const filteredEmployees = employees.filter(emp => {
+    const matchesSearch = !userSearch || emp.name.toLowerCase().includes(userSearch.toLowerCase()) || emp.email.toLowerCase().includes(userSearch.toLowerCase());
+    const matchesRole = userRoleFilter === 'All' || emp.loginRole === userRoleFilter;
+    return matchesSearch && matchesRole;
+  });
+
+  // Permission name lookup helper
+  const getPermName = (id: string) => permissions.find(p => p.id === id)?.name || id;
+
   return (
     <div className="p-8">
       <div className="mb-8">
         <h1 className="mb-2">Roles & Permissions</h1>
-        <p className="text-muted-foreground">Dynamically create and manage roles and permissions</p>
+        <p className="text-muted-foreground">Manage roles, permissions, and assign access to users</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="border border-border rounded-lg p-4 bg-card">
           <p className="text-sm text-muted-foreground">Total Roles</p>
           <p className="text-2xl font-bold">{roles.length}</p>
@@ -237,6 +371,10 @@ export default function RolesPermissionsPage() {
         <div className="border border-border rounded-lg p-4 bg-card">
           <p className="text-sm text-muted-foreground">Categories</p>
           <p className="text-2xl font-bold">{allCategories.length}</p>
+        </div>
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <p className="text-sm text-muted-foreground">Users with Access</p>
+          <p className="text-2xl font-bold">{employees.filter(e => e.systemAccess && e.loginRole).length}</p>
         </div>
       </div>
 
@@ -257,6 +395,14 @@ export default function RolesPermissionsPage() {
           }`}
         >
           Permissions ({permissions.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-3 font-semibold border-b-2 transition-colors ${
+            activeTab === 'users' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          User Assignments ({employees.length})
         </button>
       </div>
 
@@ -346,7 +492,11 @@ export default function RolesPermissionsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm">{role.userCount} users</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-sm font-medium ${role.userCount > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {role.userCount} {role.userCount === 1 ? 'user' : 'users'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{role.createdAt}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
@@ -453,6 +603,196 @@ export default function RolesPermissionsPage() {
                           <button onClick={() => handleEditPerm(perm)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium">Edit</button>
                           <button onClick={() => handleDeletePerm(perm.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors font-medium">Delete</button>
                         </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ── Users Tab ── */}
+      {activeTab === 'users' && (
+        <>
+          <div className="mb-6 flex justify-between items-center gap-4">
+            <div className="flex gap-3">
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm w-64"
+              />
+              <select
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
+              >
+                <option value="All">All Roles</option>
+                {allEmployeeRoles.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <p className="text-sm text-muted-foreground">{filteredEmployees.length} of {employees.length} employees</p>
+          </div>
+
+          {/* User Assignment Modal */}
+          <Modal isOpen={showUserAssign} onClose={() => { setShowUserAssign(false); setAssigningEmployee(null); }} title={`Assign Role & Permissions — ${assigningEmployee?.name || ''}`} size="lg">
+            <form onSubmit={handleSubmitAssignment} className="space-y-4">
+              <div className="bg-secondary/50 rounded-lg p-3 mb-2">
+                <p className="text-sm"><strong>Employee:</strong> {assigningEmployee?.name}</p>
+                <p className="text-sm text-muted-foreground">{assigningEmployee?.email}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Login Role</label>
+                <select
+                  value={assignRole}
+                  onChange={(e) => setAssignRole(e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                >
+                  <option value="">-- Select a role --</option>
+                  <option value="Admin">Admin</option>
+                  <option value="Super Admin">Super Admin</option>
+                  <option value="Administrator">Administrator</option>
+                  {roles.map(r => (
+                    <option key={r.id} value={r.name}>{r.name}</option>
+                  ))}
+                  <option value="Baker">Baker</option>
+                  <option value="Cashier">Cashier</option>
+                  <option value="POS Attendant">POS Attendant</option>
+                  <option value="Sales">Sales</option>
+                  <option value="Rider">Rider</option>
+                  <option value="Driver">Driver</option>
+                  <option value="Viewer">Viewer</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  This determines the employee&apos;s base access level. Admin/Super Admin/Administrator get full access.
+                </p>
+              </div>
+
+              <div className="bg-secondary rounded-lg p-4 max-h-64 overflow-y-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-semibold text-sm">Override Permissions (optional)</p>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setAssignPerms(permissions.map(p => p.name))} className="text-xs text-primary hover:underline">Select All</button>
+                    <span className="text-xs text-muted-foreground">|</span>
+                    <button type="button" onClick={() => setAssignPerms([])} className="text-xs text-primary hover:underline">Clear All</button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  If permissions are set here, they override the role&apos;s default permissions. Leave empty to use role-based permissions.
+                </p>
+
+                {Object.entries(groupedPermissions).map(([category, perms]) => (
+                  <div key={category} className="mb-4">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{category}</p>
+                    <div className="space-y-1">
+                      {perms.map(perm => (
+                        <label key={perm.id} className="flex items-center gap-3 p-2 hover:bg-background rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={assignPerms.includes(perm.name)}
+                            onChange={() => toggleAssignPerm(perm.name)}
+                            className="w-4 h-4 rounded border-border accent-primary"
+                          />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{perm.name}</p>
+                            <p className="text-xs text-muted-foreground">{perm.description}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-sm text-muted-foreground">{assignPerms.length} permissions selected</div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t border-border">
+                <button type="button" onClick={() => { setShowUserAssign(false); setAssigningEmployee(null); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">Save Assignment</button>
+              </div>
+            </form>
+          </Modal>
+
+          {/* Users Table */}
+          <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Employee</th>
+                  <th className="px-4 py-3 text-left font-semibold">Email</th>
+                  <th className="px-4 py-3 text-left font-semibold">Role</th>
+                  <th className="px-4 py-3 text-left font-semibold">Permissions</th>
+                  <th className="px-4 py-3 text-center font-semibold">System Access</th>
+                  <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEmployees.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No employees found</td></tr>
+                ) : (
+                  filteredEmployees.map(emp => (
+                    <tr key={emp.id} className={`border-b border-border hover:bg-secondary/50 transition-colors ${!emp.systemAccess ? 'opacity-50' : ''}`}>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="font-semibold">{emp.name}</p>
+                          {emp.department && <p className="text-xs text-muted-foreground">{emp.department}</p>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{emp.email || '—'}</td>
+                      <td className="px-4 py-3">
+                        {emp.loginRole ? (
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                            emp.loginRole === 'Admin' || emp.loginRole === 'Super Admin' || emp.loginRole === 'Administrator'
+                              ? 'bg-purple-100 text-purple-800'
+                              : emp.loginRole === 'Rider' || emp.loginRole === 'Driver'
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {emp.loginRole}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Not assigned</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {emp.permissions.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[300px]">
+                            {emp.permissions.slice(0, 3).map((p, i) => (
+                              <span key={i} className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-secondary text-muted-foreground">
+                                {p}
+                              </span>
+                            ))}
+                            {emp.permissions.length > 3 && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
+                                +{emp.permissions.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Role defaults</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleToggleAccess(emp)}
+                          className={`px-2 py-1 rounded text-xs font-semibold ${
+                            emp.systemAccess ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          {emp.systemAccess ? 'Active' : 'Disabled'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleAssignUser(emp)}
+                          className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium"
+                        >
+                          Assign Role
+                        </button>
                       </td>
                     </tr>
                   ))

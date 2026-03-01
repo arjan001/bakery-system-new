@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 // Reusable utility to log actions to the audit_log table.
 // Call this from any module after a successful CRUD operation.
 
-export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'VIEW' | 'EXPORT' | 'APPROVE' | 'REJECT';
+export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'VIEW' | 'EXPORT' | 'APPROVE' | 'REJECT' | 'CLEANUP' | 'ASSIGN';
 
 interface AuditLogParams {
   action: AuditAction;
