@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Search, ChevronLeft, ChevronRight, CheckSquare, Square, Trash2, Package, Clock, CheckCircle, Truck, XCircle, MapPin, Eye } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, CheckSquare, Square, Trash2, Package, Clock, CheckCircle, Truck, XCircle, MapPin, Eye, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { Modal } from '@/components/modal';
+import { logAudit } from '@/lib/audit-logger';
 
 interface OrderItem {
   productName: string;
@@ -28,6 +29,12 @@ interface TrackedOrder {
   fulfillment: string;
   rejectionReason: string;
   createdAt: string;
+  customerVerified?: boolean;
+  customerVerifiedAt?: string;
+  complaintRaised?: boolean;
+  complaintText?: string;
+  complaintAt?: string;
+  verificationCode?: string;
 }
 
 const STATUS_STEPS = ['Pending', 'Confirmed', 'Processing', 'Ready', 'Shipped', 'Delivered'];
@@ -80,6 +87,12 @@ export default function OrderTrackingPage() {
         fulfillment: (r.fulfillment || 'Delivery') as string,
         rejectionReason: (r.rejection_reason || '') as string,
         createdAt: (r.created_at || '') as string,
+        customerVerified: (r.customer_verified || false) as boolean,
+        customerVerifiedAt: (r.customer_verified_at || '') as string,
+        complaintRaised: (r.complaint_raised || false) as boolean,
+        complaintText: (r.complaint_text || '') as string,
+        complaintAt: (r.complaint_at || '') as string,
+        verificationCode: (r.verification_code || '') as string,
       };
     }));
     setOrders(mapped);
@@ -219,7 +232,7 @@ export default function OrderTrackingPage() {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-6 lg:p-8">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[60] px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
@@ -229,17 +242,17 @@ export default function OrderTrackingPage() {
         </div>
       )}
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-2">Order Tracking</h1>
-        <p className="text-muted-foreground">Track order status, progress, and delivery across all channels</p>
+      <div className="mb-4 md:mb-8">
+        <h1 className="text-lg md:text-2xl font-bold mb-1 md:mb-2">Order Tracking</h1>
+        <p className="text-xs md:text-sm text-muted-foreground">Track order status, progress, and delivery across all channels</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-4 mb-4 md:mb-6">
         {stats.map(s => (
-          <div key={s.label} className="border border-border rounded-lg p-4 bg-card">
-            <p className="text-sm text-muted-foreground">{s.label}</p>
-            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+          <div key={s.label} className="border border-border rounded-lg p-3 md:p-4 bg-card">
+            <p className="text-[10px] md:text-sm text-muted-foreground">{s.label}</p>
+            <p className={`text-lg md:text-2xl font-bold ${s.color}`}>{s.value}</p>
           </div>
         ))}
       </div>
@@ -565,6 +578,79 @@ export default function OrderTrackingPage() {
               <div className="border border-border rounded-lg p-3">
                 <p className="text-xs font-semibold text-muted-foreground mb-1">Delivery Notes</p>
                 <p className="text-sm">{detailOrder.deliveryNotes}</p>
+              </div>
+            )}
+
+            {/* Customer Delivery Verification */}
+            {detailOrder.status === 'Delivered' && (
+              <div className={`border-2 rounded-xl p-4 ${detailOrder.customerVerified ? 'border-green-300 bg-green-50/50' : detailOrder.complaintRaised ? 'border-red-300 bg-red-50/50' : 'border-amber-300 bg-amber-50/50'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  {detailOrder.customerVerified ? (
+                    <><ShieldCheck size={18} className="text-green-600" /><p className="text-sm font-bold text-green-800">Customer Verified Delivery</p></>
+                  ) : detailOrder.complaintRaised ? (
+                    <><AlertTriangle size={18} className="text-red-600" /><p className="text-sm font-bold text-red-800">Complaint Raised</p></>
+                  ) : (
+                    <><AlertTriangle size={18} className="text-amber-600" /><p className="text-sm font-bold text-amber-800">Pending Customer Verification</p></>
+                  )}
+                </div>
+
+                {detailOrder.customerVerified && (
+                  <p className="text-xs text-green-700">Customer confirmed delivery on {detailOrder.customerVerifiedAt ? new Date(detailOrder.customerVerifiedAt).toLocaleString() : 'N/A'}</p>
+                )}
+
+                {detailOrder.complaintRaised && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-red-700">{detailOrder.complaintText}</p>
+                    <p className="text-xs text-red-600">Filed: {detailOrder.complaintAt ? new Date(detailOrder.complaintAt).toLocaleString() : 'N/A'}</p>
+                  </div>
+                )}
+
+                {!detailOrder.customerVerified && !detailOrder.complaintRaised && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-amber-700">Customer has not yet confirmed receiving this order. Use the actions below to update.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            await supabase.from('orders').update({
+                              customer_verified: true,
+                              customer_verified_at: new Date().toISOString(),
+                            }).eq('id', detailOrder.id);
+                            logAudit({ action: 'UPDATE', module: 'Orders', record_id: detailOrder.id, details: { action: 'customer_verified', order: detailOrder.orderNumber } });
+                            setDetailOrder(prev => prev ? { ...prev, customerVerified: true, customerVerifiedAt: new Date().toISOString() } : null);
+                            setOrders(prev => prev.map(o => o.id === detailOrder.id ? { ...o, customerVerified: true, customerVerifiedAt: new Date().toISOString() } : o));
+                            showToast('Delivery verified by customer', 'success');
+                          } catch { showToast('Failed to update', 'error'); }
+                        }}
+                        className="px-4 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold flex items-center gap-1"
+                      >
+                        <ShieldCheck size={14} /> Confirm Received
+                      </button>
+                      <button
+                        onClick={() => {
+                          const complaint = prompt('Enter complaint details:');
+                          if (!complaint) return;
+                          (async () => {
+                            try {
+                              await supabase.from('orders').update({
+                                complaint_raised: true,
+                                complaint_text: complaint,
+                                complaint_at: new Date().toISOString(),
+                              }).eq('id', detailOrder.id);
+                              logAudit({ action: 'UPDATE', module: 'Orders', record_id: detailOrder.id, details: { action: 'complaint_raised', order: detailOrder.orderNumber, complaint } });
+                              setDetailOrder(prev => prev ? { ...prev, complaintRaised: true, complaintText: complaint, complaintAt: new Date().toISOString() } : null);
+                              setOrders(prev => prev.map(o => o.id === detailOrder.id ? { ...o, complaintRaised: true, complaintText: complaint, complaintAt: new Date().toISOString() } : o));
+                              showToast('Complaint raised - alert triggered', 'error');
+                            } catch { showToast('Failed to submit complaint', 'error'); }
+                          })();
+                        }}
+                        className="px-4 py-2 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold flex items-center gap-1"
+                      >
+                        <AlertTriangle size={14} /> Not Received - Raise Complaint
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

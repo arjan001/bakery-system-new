@@ -211,6 +211,76 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
   const isMyDelivery = (d: Delivery) =>
     d.driverName?.toLowerCase().includes(riderName.toLowerCase());
 
+  const getGoogleMapsDirections = (destLat: number, destLng: number) =>
+    `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=driving`;
+
+  // GPS tracking for auto-delivery
+  const [riderLocation, setRiderLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [watchId, setWatchId] = useState<number | null>(null);
+  const [locationError, setLocationError] = useState('');
+
+  const startLocationTracking = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation not supported');
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setRiderLocation(loc);
+        setLocationError('');
+      },
+      (err) => setLocationError(err.message),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    );
+    setWatchId(id);
+  }, []);
+
+  useEffect(() => {
+    startLocationTracking();
+    return () => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); };
+  }, [startLocationTracking]);
+
+  // Check proximity for auto-delivery (within 100m)
+  const checkProximity = useCallback((delivery: Delivery) => {
+    if (!riderLocation || !delivery.customerGpsLat || !delivery.customerGpsLng) return false;
+    const R = 6371000;
+    const dLat = (delivery.customerGpsLat - riderLocation.lat) * (Math.PI / 180);
+    const dLng = (delivery.customerGpsLng - riderLocation.lng) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(riderLocation.lat * (Math.PI / 180)) * Math.cos(delivery.customerGpsLat * (Math.PI / 180)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return distance <= 100;
+  }, [riderLocation]);
+
+  const calcDistanceKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLng = (lng2 - lng1) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // Auto-deliver when rider reaches customer location
+  useEffect(() => {
+    if (!riderLocation) return;
+    myActiveDeliveries.filter(d => d.status === 'In Transit').forEach(async (d) => {
+      if (checkProximity(d)) {
+        await supabase.from('deliveries').update({
+          status: 'Delivered',
+          auto_delivered: true,
+          rider_lat: riderLocation.lat,
+          rider_lng: riderLocation.lng,
+        }).eq('id', d.id);
+        logAudit({ action: 'UPDATE', module: 'Delivery', record_id: d.id, details: { status: 'Delivered', auto_delivered: true, rider: riderName } });
+        setDeliveries(prev => prev.map(del => del.id === d.id ? { ...del, status: 'Delivered' as const } : del));
+      }
+    });
+  }, [riderLocation, myActiveDeliveries, checkProximity, riderName]);
+
   // Tab filtering
   const availableDeliveries = deliveries.filter(d => d.status === 'Pending' && !isMyDelivery(d));
   const myActiveDeliveries = deliveries.filter(d =>
@@ -250,34 +320,39 @@ function RiderDeliveryView({ riderName }: { riderName: string }) {
   const todayCompleted = completedDeliveries.filter(d => d.scheduledDate === today).length;
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-6 lg:p-8">
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
+      <div className="mb-4 md:mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            <h1 className="mb-1">My Deliveries</h1>
-            <p className="text-muted-foreground">Welcome back, {riderName || 'Rider'} &mdash; {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+            <h1 className="text-lg md:text-xl font-bold mb-1">My Deliveries</h1>
+            <p className="text-xs md:text-sm text-muted-foreground">Welcome back, {riderName || 'Rider'} &mdash; {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+          </div>
+          {/* GPS Status */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${riderLocation ? 'bg-green-100 text-green-800' : locationError ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+            <div className={`w-2 h-2 rounded-full ${riderLocation ? 'bg-green-500 animate-pulse' : locationError ? 'bg-red-500' : 'bg-amber-500 animate-pulse'}`} />
+            {riderLocation ? 'GPS Active - Live Tracking' : locationError ? `GPS Error: ${locationError}` : 'Acquiring GPS...'}
           </div>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Available Orders</p>
-          <p className="text-2xl font-bold">{availableDeliveries.length}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6">
+        <div className="border border-border rounded-lg p-3 md:p-4 bg-card">
+          <p className="text-[10px] md:text-sm text-muted-foreground">Available Orders</p>
+          <p className="text-lg md:text-2xl font-bold">{availableDeliveries.length}</p>
         </div>
-        <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">My Active</p>
-          <p className="text-2xl font-bold">{myActiveDeliveries.length}</p>
+        <div className="border border-border rounded-lg p-3 md:p-4 bg-card">
+          <p className="text-[10px] md:text-sm text-muted-foreground">My Active</p>
+          <p className="text-lg md:text-2xl font-bold">{myActiveDeliveries.length}</p>
         </div>
-        <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Today Active</p>
-          <p className="text-2xl font-bold">{todayActive}</p>
+        <div className="border border-border rounded-lg p-3 md:p-4 bg-card">
+          <p className="text-[10px] md:text-sm text-muted-foreground">Today Active</p>
+          <p className="text-lg md:text-2xl font-bold">{todayActive}</p>
         </div>
-        <div className="border border-border rounded-lg p-4 bg-card">
-          <p className="text-sm text-muted-foreground">Today Completed</p>
-          <p className="text-2xl font-bold">{todayCompleted}</p>
+        <div className="border border-border rounded-lg p-3 md:p-4 bg-card">
+          <p className="text-[10px] md:text-sm text-muted-foreground">Today Completed</p>
+          <p className="text-lg md:text-2xl font-bold">{todayCompleted}</p>
         </div>
       </div>
 

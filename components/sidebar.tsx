@@ -53,6 +53,9 @@ import {
   X,
   Command,
   BookOpenText,
+  ClipboardCheck,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 
@@ -113,6 +116,7 @@ const allNavGroups: NavGroup[] = [
       { label: 'Suppliers', href: '/admin/distributors', tip: 'Manage inventory suppliers & pricing', icon: Building2 },
       { label: 'Distributors', href: '/admin/distribution', tip: 'Manage distribution agents & sales', icon: Handshake },
       { label: 'Assets', href: '/admin/assets', tip: 'Equipment, vehicles & depreciation tracking', icon: Wrench },
+      { label: 'Stock Take', href: '/admin/stock-take', tip: 'Physical stock counts, variance & reconciliation', icon: ClipboardCheck },
     ],
   },
   {
@@ -138,6 +142,7 @@ const allNavGroups: NavGroup[] = [
       { label: 'Credit Invoices', href: '/admin/credit-invoices', tip: 'Invoicing for credit sales with payment tracking', icon: FileText },
       { label: 'Debtors', href: '/admin/debtors', tip: 'Track credit sales & customer debts', icon: TrendingDown },
       { label: 'Creditors', href: '/admin/creditors', tip: 'Supplier credit & payment schedules', icon: CreditCard },
+      { label: 'Insurance', href: '/admin/insurance', tip: 'Vehicle, asset, employee & business insurance policies', icon: ShieldCheck },
     ],
   },
   {
@@ -145,6 +150,7 @@ const allNavGroups: NavGroup[] = [
     color: 'border-l-teal-500',
     items: [
       { label: 'Employees', href: '/admin/employees', tip: 'Staff profiles, certificates & payroll info', icon: UserCheck },
+      { label: 'Shift Management', href: '/admin/shifts', tip: 'Employee shifts, schedules & shift reports', icon: Clock },
       { label: 'Productivity Report', href: '/admin/employee-productivity', tip: 'Employee KPI tracking, performance & productivity metrics', icon: Activity },
       { label: 'Roles & Permissions', href: '/admin/roles-permissions', tip: 'Access control — who can do what', icon: Shield },
     ],
