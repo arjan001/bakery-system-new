@@ -6,7 +6,7 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
+type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
 
 interface NewsletterSubscriber {
   id: string;
@@ -238,6 +238,22 @@ export default function SettingsPage() {
   const [newsletterImageUploading, setNewsletterImageUploading] = useState(false);
   const [subscribers, setSubscribers] = useState<NewsletterSubscriber[]>([]);
   const [subscribersLoading, setSubscribersLoading] = useState(false);
+
+  // ── Social Media Settings ──
+  const [socialMedia, setSocialMedia] = useState({
+    instagram: '@snackohbites',
+    instagramUrl: 'https://www.instagram.com/snackohbites',
+    tiktok: '@snackohbites',
+    tiktokUrl: 'https://www.tiktok.com/@snackohbites',
+    facebook: 'Snackoh Bites',
+    facebookUrl: 'https://www.facebook.com/SnackohBites',
+    twitter: '',
+    twitterUrl: '',
+    youtube: '',
+    youtubeUrl: '',
+    whatsapp: '',
+    whatsappUrl: '',
+  });
 
   // ── M-Pesa API Settings ──
   const [mpesaApi, setMpesaApi] = useState({
@@ -695,7 +711,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal, kraEtims, shaNssf };
+    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal, socialMedia, kraEtims, shaNssf };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -739,6 +755,7 @@ export default function SettingsPage() {
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'navbar-ads', label: 'Navbar Ads', icon: '📢', tip: 'Scrolling marquee text on customer website navbar' },
     { key: 'newsletter', label: 'Newsletter', icon: '📧', tip: 'Newsletter modal settings & subscriber management' },
+    { key: 'social-media', label: 'Social Media', icon: '📲', tip: 'Social media links for Instagram, TikTok, Facebook & more' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
     { key: 'mpesa-api', label: 'M-Pesa API', icon: '📱', tip: 'M-Pesa Daraja API credentials & integration settings' },
@@ -1434,6 +1451,120 @@ export default function SettingsPage() {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── SOCIAL MEDIA ── */}
+      {activeTab === 'social-media' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-1">Social Media Links</h3>
+            <p className="text-xs text-muted-foreground mb-4">Configure your social media accounts. These links appear in the website footer.</p>
+            <div className="space-y-5">
+              {/* Instagram */}
+              <div className="border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">📸</span>
+                  <h4 className="font-semibold text-sm">Instagram</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Handle</label>
+                    <input className={inputCls} value={socialMedia.instagram} onChange={e => setSocialMedia({ ...socialMedia, instagram: e.target.value })} placeholder="@snackohbites" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>URL</label>
+                    <input className={inputCls} value={socialMedia.instagramUrl} onChange={e => setSocialMedia({ ...socialMedia, instagramUrl: e.target.value })} placeholder="https://www.instagram.com/snackohbites" />
+                  </div>
+                </div>
+              </div>
+              {/* TikTok */}
+              <div className="border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">🎵</span>
+                  <h4 className="font-semibold text-sm">TikTok</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Handle</label>
+                    <input className={inputCls} value={socialMedia.tiktok} onChange={e => setSocialMedia({ ...socialMedia, tiktok: e.target.value })} placeholder="@snackohbites" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>URL</label>
+                    <input className={inputCls} value={socialMedia.tiktokUrl} onChange={e => setSocialMedia({ ...socialMedia, tiktokUrl: e.target.value })} placeholder="https://www.tiktok.com/@snackohbites" />
+                  </div>
+                </div>
+              </div>
+              {/* Facebook */}
+              <div className="border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">📘</span>
+                  <h4 className="font-semibold text-sm">Facebook</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Page Name</label>
+                    <input className={inputCls} value={socialMedia.facebook} onChange={e => setSocialMedia({ ...socialMedia, facebook: e.target.value })} placeholder="Snackoh Bites" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>URL</label>
+                    <input className={inputCls} value={socialMedia.facebookUrl} onChange={e => setSocialMedia({ ...socialMedia, facebookUrl: e.target.value })} placeholder="https://www.facebook.com/SnackohBites" />
+                  </div>
+                </div>
+              </div>
+              {/* Twitter/X */}
+              <div className="border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">𝕏</span>
+                  <h4 className="font-semibold text-sm">Twitter / X</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Handle</label>
+                    <input className={inputCls} value={socialMedia.twitter} onChange={e => setSocialMedia({ ...socialMedia, twitter: e.target.value })} placeholder="@snackohbites" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>URL</label>
+                    <input className={inputCls} value={socialMedia.twitterUrl} onChange={e => setSocialMedia({ ...socialMedia, twitterUrl: e.target.value })} placeholder="https://x.com/snackohbites" />
+                  </div>
+                </div>
+              </div>
+              {/* YouTube */}
+              <div className="border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">▶️</span>
+                  <h4 className="font-semibold text-sm">YouTube</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Channel Name</label>
+                    <input className={inputCls} value={socialMedia.youtube} onChange={e => setSocialMedia({ ...socialMedia, youtube: e.target.value })} placeholder="Snackoh Bites" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>URL</label>
+                    <input className={inputCls} value={socialMedia.youtubeUrl} onChange={e => setSocialMedia({ ...socialMedia, youtubeUrl: e.target.value })} placeholder="https://www.youtube.com/@snackohbites" />
+                  </div>
+                </div>
+              </div>
+              {/* WhatsApp */}
+              <div className="border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">💬</span>
+                  <h4 className="font-semibold text-sm">WhatsApp</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Phone Number</label>
+                    <input className={inputCls} value={socialMedia.whatsapp} onChange={e => setSocialMedia({ ...socialMedia, whatsapp: e.target.value })} placeholder="+254 700 000 000" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Chat Link</label>
+                    <input className={inputCls} value={socialMedia.whatsappUrl} onChange={e => setSocialMedia({ ...socialMedia, whatsappUrl: e.target.value })} placeholder="https://wa.me/254700000000" />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

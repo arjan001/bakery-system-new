@@ -204,12 +204,7 @@ export default function CheckoutPage() {
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (mpesaState !== 'done') {
-      if (mpesaState === 'idle') handleMpesaPush();
-      return;
-    }
-
-    // Save order to database
+    // Save order to database (M-Pesa payment is temporarily disabled — pay on delivery/pickup)
     const orderNumber = `ON-${Date.now().toString(36).toUpperCase()}`;
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
     const customerPhone = form.phone || mpesaPhone || email;
@@ -221,8 +216,8 @@ export default function CheckoutPage() {
         customer_phone: customerPhone,
         status: 'Confirmed',
         total_amount: orderTotal,
-        payment_status: 'Paid',
-        payment_method: 'M-Pesa',
+        payment_status: 'Pending',
+        payment_method: 'Pay on Delivery/Pickup',
         source: 'Online',
         fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
         delivery_notes: fulfillment === 'ship'
@@ -449,7 +444,7 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* Payment - M-Pesa Only */}
+            {/* Payment - M-Pesa (Temporarily Disabled) */}
             <div>
               <h2 className="text-base font-black text-gray-900 mb-1">Payment</h2>
               <p className="text-xs text-gray-400 flex items-center gap-1 mb-3">
@@ -457,48 +452,13 @@ export default function CheckoutPage() {
               </p>
 
               <div className="border border-gray-200 rounded-xl overflow-hidden">
-                {/* M-Pesa payment option */}
-                <div>
-                  <div className="flex items-center gap-3 px-4 py-3.5 bg-green-50">
-                    <Smartphone size={16} className="text-green-600" />
-                    <span className="text-sm font-semibold text-gray-800 flex-1">M-Pesa</span>
-                    <img src="/mpesa.png" alt="M-Pesa" className="h-8 object-contain" />
+                <div className="px-4 py-6 bg-amber-50 text-center">
+                  <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Smartphone size={20} className="text-amber-600" />
                   </div>
-
-                  {/* M-Pesa fields */}
-                  <div className="px-4 pb-4 space-y-3 bg-green-50/50 border-t border-gray-100">
-                    <div className="bg-green-50 rounded-lg p-3 text-xs text-green-800">
-                      <p className="font-bold mb-0.5">How M-Pesa works:</p>
-                      <p>1. Enter your M-Pesa phone number below</p>
-                      <p>2. Click &quot;Send M-Pesa Request&quot; to receive a payment prompt</p>
-                      <p>3. Enter your M-Pesa PIN to complete the payment</p>
-                    </div>
-                    <input type="tel" placeholder="M-Pesa phone number (e.g. 0712 345 678)"
-                      value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value)}
-                      disabled={mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking'}
-                      className="w-full px-4 py-3 border border-green-200 rounded-xl text-sm focus:ring-2 focus:ring-green-400 outline-none bg-white" />
-                    {mpesaState !== 'idle' && (
-                      <div className={`p-3 rounded-xl text-xs font-semibold text-center ${mpesaState === 'done' ? 'bg-green-100 text-green-800' : mpesaState === 'waiting' ? 'bg-amber-50 text-amber-800 animate-pulse' : mpesaState === 'checking' ? 'bg-blue-50 text-blue-800 animate-pulse' : mpesaState === 'failed' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
-                        {mpesaState === 'sending' && 'Sending STK push...'}
-                        {mpesaState === 'waiting' && mpesaMsg}
-                        {mpesaState === 'checking' && mpesaMsg}
-                        {mpesaState === 'done' && 'Payment confirmed!'}
-                        {mpesaState === 'failed' && mpesaMsg}
-                      </div>
-                    )}
-                    {mpesaState === 'failed' && (
-                      <button type="button" onClick={() => { setMpesaState('idle'); if (pollTimerRef.current) clearInterval(pollTimerRef.current); }} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-medium hover:bg-gray-50">
-                        Try Again
-                      </button>
-                    )}
-                    <div className="p-3 border border-gray-200 rounded-xl bg-white/70 text-[11px]">
-                      <p className="font-bold mb-1">Already paid without STK?</p>
-                      <p className="text-gray-600 mb-2">Pay the exact amount and verify the latest M-Pesa payment.</p>
-                      <button type="button" onClick={() => pollMpesaMatch(orderTotal, mpesaPhone)} disabled={!mpesaPhone || mpesaState === 'checking' || mpesaState === 'waiting' || mpesaState === 'sending'} className="w-full py-2 border border-gray-200 rounded-xl text-xs font-semibold hover:bg-gray-50 disabled:opacity-40">
-                        Verify Payment — KES {orderTotal.toLocaleString()}
-                      </button>
-                    </div>
-                  </div>
+                  <h3 className="font-bold text-gray-800 mb-1">Online Payment Coming Soon</h3>
+                  <p className="text-sm text-gray-600 mb-2">M-Pesa online payment is currently being set up.</p>
+                  <p className="text-xs text-gray-500">Please place your order below and pay on delivery or at pickup.</p>
                 </div>
               </div>
             </div>
@@ -512,19 +472,8 @@ export default function CheckoutPage() {
 
             {/* Place order button */}
             <button type="submit"
-              disabled={mpesaState === 'sending' || mpesaState === 'waiting' || mpesaState === 'checking'}
-              className="w-full py-4 font-black text-base rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 bg-green-600 text-white hover:bg-green-700">
-              {mpesaState === 'idle' ? (
-                <><Lock size={16} /> Send M-Pesa Request — KES {orderTotal.toLocaleString()}</>
-              ) : mpesaState === 'done' ? (
-                <><Lock size={16} /> Confirm Order</>
-              ) : mpesaState === 'sending' || mpesaState === 'waiting' ? (
-                <><Loader2 size={16} className="animate-spin" /> Waiting for payment...</>
-              ) : mpesaState === 'checking' ? (
-                <><Loader2 size={16} className="animate-spin" /> Verifying payment...</>
-              ) : (
-                <><Lock size={16} /> Send M-Pesa Request — KES {orderTotal.toLocaleString()}</>
-              )}
+              className="w-full py-4 font-black text-base rounded-xl transition-colors flex items-center justify-center gap-2 bg-orange-600 text-white hover:bg-orange-700">
+              <Lock size={16} /> Place Order — KES {orderTotal.toLocaleString()}
             </button>
 
             {/* Footer links */}
