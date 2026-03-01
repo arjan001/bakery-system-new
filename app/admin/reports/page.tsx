@@ -93,17 +93,26 @@ interface ReportBusinessInfo {
   email: string;
   address: string;
   logoUrl: string;
+  reportLogoHeight: number;
+  reportWatermarkEnabled: boolean;
+  reportWatermarkOpacity: number;
 }
 
 function exportPDF(title: string, headers: string[], rows: string[][], businessInfo?: ReportBusinessInfo) {
   const win = window.open('', '_blank');
   if (!win) return;
-  const b = businessInfo || { businessName: 'SNACKOH BITES', tagline: 'Quality Baked Goods', phone: '', email: '', address: 'Nairobi, Kenya', logoUrl: '' };
+  const b = businessInfo || { businessName: 'SNACKOH BITES', tagline: 'Quality Baked Goods', phone: '', email: '', address: 'Nairobi, Kenya', logoUrl: '', reportLogoHeight: 45, reportWatermarkEnabled: false, reportWatermarkOpacity: 8 };
+  const logoH = b.reportLogoHeight || 45;
+  const wmEnabled = b.reportWatermarkEnabled && b.logoUrl;
+  const wmOpacity = (b.reportWatermarkOpacity || 8) / 100;
   const tableRows = rows.map((row, i) => `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">${row.map(cell => `<td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:12px">${cell}</td>`).join('')}</tr>`).join('');
   const html = `<!DOCTYPE html><html><head><title>${title} - ${b.businessName}</title><style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 40px; color: #1a1a1a; background: #fff; }
-    .report { max-width: 900px; margin: 0 auto; }
+    .report { max-width: 900px; margin: 0 auto; position: relative; }
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 0; opacity: ${wmOpacity}; }
+    .watermark img { max-width: 400px; max-height: 400px; }
+    .content { position: relative; z-index: 1; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #ea580c; }
     .logo-section h1 { font-size: 24px; font-weight: 800; color: #ea580c; letter-spacing: -0.5px; }
     .logo-section .tagline { font-size: 11px; color: #888; margin-top: 2px; }
@@ -125,12 +134,14 @@ function exportPDF(title: string, headers: string[], rows: string[][], businessI
     .footer .company { font-size: 12px; font-weight: 700; color: #333; }
     .footer .details { font-size: 10px; color: #999; margin-top: 4px; line-height: 1.6; }
     .footer .powered { font-size: 9px; color: #ccc; margin-top: 8px; }
-    @media print { body { padding: 20px; } .no-print { display: none; } }
+    @media print { body { padding: 20px; } .no-print { display: none; } .watermark { position: fixed; } }
   </style></head><body>
   <div class="report">
+    ${wmEnabled ? `<div class="watermark"><img src="${b.logoUrl}" alt="Watermark" /></div>` : ''}
+    <div class="content">
     <div class="header">
       <div class="logo-section">
-        ${b.logoUrl ? `<img src="${b.logoUrl}" alt="${b.businessName}" style="height:45px;margin-bottom:6px" />` : ''}
+        ${b.logoUrl ? `<img src="${b.logoUrl}" alt="${b.businessName}" style="height:${logoH}px;margin-bottom:6px" />` : ''}
         <h1>${b.businessName}</h1>
         <div class="tagline">${b.tagline}</div>
         <div class="contact">${b.address}${b.phone ? `<br>${b.phone}` : ''}${b.email ? ` | ${b.email}` : ''}</div>
@@ -146,6 +157,7 @@ function exportPDF(title: string, headers: string[], rows: string[][], businessI
       <div class="company">${b.businessName}</div>
       <div class="details">${b.address}${b.phone ? ` | ${b.phone}` : ''}${b.email ? ` | ${b.email}` : ''}</div>
       <div class="powered">Confidential - For internal use only</div>
+    </div>
     </div>
   </div>
   <script>window.onload=function(){window.print()}</script>
@@ -218,6 +230,7 @@ export default function ReportsPage() {
   // Business settings for report header
   const [reportBizInfo, setReportBizInfo] = useState<ReportBusinessInfo>({
     businessName: 'SNACKOH BITES', tagline: 'Quality Baked Goods', phone: '', email: '', address: 'Nairobi, Kenya', logoUrl: '',
+    reportLogoHeight: 45, reportWatermarkEnabled: false, reportWatermarkOpacity: 8,
   });
 
   // Data states
@@ -353,6 +366,9 @@ export default function ReportsPage() {
             email: (g.email as string) || prev.email,
             address: (g.address as string) || prev.address,
             logoUrl: (g.logoUrl as string) || prev.logoUrl,
+            reportLogoHeight: (g.reportLogoHeight as number) || prev.reportLogoHeight,
+            reportWatermarkEnabled: g.reportWatermarkEnabled !== undefined ? (g.reportWatermarkEnabled as boolean) : prev.reportWatermarkEnabled,
+            reportWatermarkOpacity: (g.reportWatermarkOpacity as number) || prev.reportWatermarkOpacity,
           }));
           return;
         }

@@ -130,6 +130,32 @@ export function Header() {
   });
 
   const [notifications, setNotifications] = useState<OnlineOrderNotif[]>([]);
+  const [adminLogoUrl, setAdminLogoUrl] = useState('');
+  const [adminBusinessName, setAdminBusinessName] = useState('SNACKOH BAKERS');
+
+  // Load branding for admin header
+  useEffect(() => {
+    async function loadBranding() {
+      try {
+        const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'general').single();
+        if (!error && data?.value) {
+          const g = data.value as Record<string, string>;
+          if (g.logoUrl) setAdminLogoUrl(g.logoUrl);
+          if (g.businessName) setAdminBusinessName(g.businessName);
+          return;
+        }
+      } catch { /* table may not exist */ }
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.general?.logoUrl) setAdminLogoUrl(parsed.general.logoUrl);
+          if (parsed.general?.businessName) setAdminBusinessName(parsed.general.businessName);
+        }
+      } catch { /* ignore */ }
+    }
+    loadBranding();
+  }, []);
 
   // Initialize alarm on mount
   useEffect(() => {
@@ -336,7 +362,11 @@ export function Header() {
     <header className="border-b border-border bg-background px-6 py-3 flex items-center justify-between">
       {/* Left */}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground font-semibold tracking-wide">SNACKOH BAKERS</span>
+        {adminLogoUrl ? (
+          <img src={adminLogoUrl} alt={adminBusinessName} className="h-8 w-auto object-contain" />
+        ) : (
+          <span className="text-xs text-muted-foreground font-semibold tracking-wide">{adminBusinessName}</span>
+        )}
       </div>
 
       {/* Ringing banner — shows across the header when alarm is active */}

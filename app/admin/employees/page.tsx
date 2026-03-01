@@ -177,6 +177,7 @@ export default function EmployeesPage() {
   const [availablePermissions, setAvailablePermissions] = useState<string[]>(ALL_PERMISSIONS);
   const [loginRoles, setLoginRoles] = useState<string[]>(['Admin', 'Administrator', 'Baker', 'Cashier', 'Driver', 'Outlet Staff', 'POS Attendant', 'Sales', 'Viewer']);
   const [outlets, setOutlets] = useState<{ id: string; name: string; outlet_type: string; is_main_branch: boolean }[]>([]);
+  const [mainSuperAdminId, setMainSuperAdminId] = useState<string | null>(null);
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -197,11 +198,16 @@ export default function EmployeesPage() {
     // Fetch user activity data (last_login) from users table
     let userActivityMap: Record<string, { lastLogin: string | null; lastActivity: string | null }> = {};
     try {
-      const { data: usersData, error: usersError } = await supabase.from('users').select('email, last_login, full_name, id, role_id, is_active');
+      const { data: usersData, error: usersError } = await supabase.from('users').select('email, last_login, full_name, id, role_id, is_active').order('created_at', { ascending: true });
       if (usersError) {
         console.error('Error fetching users:', usersError.message);
       }
       if (usersData && usersData.length > 0) {
+        // The first user in the users table (ordered by created_at) is the main super admin
+        // registered via /auth/register — hide them from the employee list
+        const firstUserId = (usersData[0]?.id as string) || null;
+        setMainSuperAdminId(firstUserId);
+
         for (const u of usersData) {
           const email = ((u.email || '') as string).toLowerCase();
           if (email) {
@@ -213,6 +219,7 @@ export default function EmployeesPage() {
         }
 
         // Also add auth users who may not be in employees table (e.g. super admins)
+        // Skip the main super admin (first registered user)
         const existingEmails = new Set(empList.map(e => (e.loginEmail || e.email || '').toLowerCase()).filter(Boolean));
         const defaultEmptyForm: Employee = {
           id: '', employeeIdNumber: '', firstName: '', lastName: '', designation: 'Mr',
@@ -225,6 +232,8 @@ export default function EmployeesPage() {
           permissions: [...ALL_PERMISSIONS], lastLogin: null, lastActivity: null,
         };
         for (const authUser of usersData) {
+          // Skip the main super admin (first registered user) — hidden from all admin views
+          if (authUser.id === firstUserId) continue;
           const email = ((authUser.email || '') as string).toLowerCase();
           if (email && !existingEmails.has(email)) {
             const fullName = ((authUser.full_name || email.split('@')[0] || '') as string);
@@ -581,6 +590,8 @@ export default function EmployeesPage() {
   };
 
   const handleDelete = async (id: string) => {
+    // Prevent deletion of the main super admin
+    if (mainSuperAdminId && id === mainSuperAdminId) return;
     if (confirm('Are you sure you want to delete this employee?')) {
       const emp = employees.find(e => e.id === id);
       try {
@@ -725,6 +736,8 @@ export default function EmployeesPage() {
   };
 
   const filteredEmployees = employees.filter(emp => {
+    // Hide the main super admin (first registered user) from all views
+    if (mainSuperAdminId && emp.id === mainSuperAdminId) return false;
     const matchSearch = `${emp.firstName} ${emp.lastName} ${emp.email} ${emp.role} ${emp.employeeIdNumber}`.toLowerCase().includes(searchTerm.toLowerCase());
     const matchCategory = filterCategory === 'All' || emp.category === filterCategory;
     const matchDepartment = filterDepartment === 'All' || emp.department === filterDepartment;

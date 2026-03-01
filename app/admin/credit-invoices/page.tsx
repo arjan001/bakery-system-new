@@ -76,6 +76,9 @@ interface BusinessSettings {
   logoUrl: string;
   currency: string;
   taxRate: number;
+  invoiceLogoHeight: number;
+  reportWatermarkEnabled: boolean;
+  reportWatermarkOpacity: number;
 }
 
 const emptyItem: InvoiceItem = { name: '', quantity: 1, unitPrice: 0, total: 0 };
@@ -102,6 +105,7 @@ export default function CreditInvoicesPage() {
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>({
     businessName: 'SNACKOH BITES', tagline: 'Quality Baked Goods', phone: '+254 700 000 000',
     email: 'info@snackoh.com', address: 'Nairobi, Kenya', logoUrl: '', currency: 'KES', taxRate: 16,
+    invoiceLogoHeight: 50, reportWatermarkEnabled: false, reportWatermarkOpacity: 8,
   });
   const perPage = 10;
 
@@ -153,6 +157,9 @@ export default function CreditInvoicesPage() {
           logoUrl: (g.logoUrl as string) || prev.logoUrl,
           currency: (g.currency as string) || prev.currency,
           taxRate: (g.taxRate as number) || prev.taxRate,
+          invoiceLogoHeight: (g.invoiceLogoHeight as number) || prev.invoiceLogoHeight,
+          reportWatermarkEnabled: g.reportWatermarkEnabled !== undefined ? (g.reportWatermarkEnabled as boolean) : prev.reportWatermarkEnabled,
+          reportWatermarkOpacity: (g.reportWatermarkOpacity as number) || prev.reportWatermarkOpacity,
         }));
         return;
       }
@@ -656,6 +663,9 @@ export default function CreditInvoicesPage() {
     if (!win) return;
 
     const b = businessSettings;
+    const logoH = b.invoiceLogoHeight || 50;
+    const wmEnabled = b.reportWatermarkEnabled && b.logoUrl;
+    const wmOpacity = (b.reportWatermarkOpacity || 8) / 100;
     const itemRows = inv.items.map((item, idx) =>
       `<tr>
         <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;color:#666;text-align:center">${idx + 1}</td>
@@ -683,7 +693,10 @@ export default function CreditInvoicesPage() {
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #1a1a1a; background: #fff; }
-  .invoice { max-width: 800px; margin: 0 auto; padding: 40px; }
+  .invoice { max-width: 800px; margin: 0 auto; padding: 40px; position: relative; }
+  .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 0; opacity: ${wmOpacity}; }
+  .watermark img { max-width: 350px; max-height: 350px; }
+  .content { position: relative; z-index: 1; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; padding-bottom: 25px; border-bottom: 3px solid #ea580c; }
   .logo-section h1 { font-size: 28px; font-weight: 800; color: #ea580c; letter-spacing: -0.5px; }
   .logo-section p { font-size: 12px; color: #666; margin-top: 4px; }
@@ -709,12 +722,14 @@ export default function CreditInvoicesPage() {
   .footer .contact { font-size: 12px; color: #666; font-weight: 500; }
   .payment-section { margin-top: 25px; }
   .payment-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
-  @media print { body { padding: 0; } .invoice { padding: 20px; } .no-print { display: none; } }
+  @media print { body { padding: 0; } .invoice { padding: 20px; } .no-print { display: none; } .watermark { position: fixed; } }
 </style></head><body>
 <div class="invoice">
+  ${wmEnabled ? `<div class="watermark"><img src="${b.logoUrl}" alt="Watermark" /></div>` : ''}
+  <div class="content">
   <div class="header">
     <div class="logo-section">
-      ${b.logoUrl ? `<img src="${b.logoUrl}" alt="${b.businessName}" style="height:50px;margin-bottom:8px" />` : ''}
+      ${b.logoUrl ? `<img src="${b.logoUrl}" alt="${b.businessName}" style="height:${logoH}px;margin-bottom:8px" />` : ''}
       <h1>${b.businessName}</h1>
       <p>${b.tagline}</p>
     </div>
@@ -770,6 +785,7 @@ export default function CreditInvoicesPage() {
     <p class="contact">${b.businessName} | ${b.phone} | ${b.email}</p>
     <p>${b.address}</p>
     <p style="margin-top:10px">Thank you for your business!</p>
+  </div>
   </div>
 </div>
 <script>window.onload=function(){window.print()}</script>
