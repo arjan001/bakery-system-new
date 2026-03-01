@@ -66,6 +66,7 @@ export default function SettingsPage() {
     logoUrl: '',
     logoHeight: 60,
     logoWidthAuto: true,
+    logoPosition: 'left' as 'left' | 'center',
     invoiceLogoHeight: 50,
     reportLogoHeight: 45,
     reportWatermarkEnabled: true,
@@ -887,6 +888,49 @@ export default function SettingsPage() {
                     <span className="text-sm">Auto width (maintain aspect ratio)</span>
                   </label>
                 </div>
+              </div>
+            </div>
+
+            {/* Logo Position on Customer Website */}
+            <div className="mt-6 pt-5 border-t border-border">
+              <h4 className="text-sm font-semibold mb-3">Logo Position on Customer Website</h4>
+              <p className="text-xs text-muted-foreground mb-3">Choose how the logo is displayed in the navigation bar on the customer-facing website.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setGeneral({ ...general, logoPosition: 'left' })}
+                  className={`p-4 rounded-lg border-2 transition-colors text-left ${general.logoPosition === 'left' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}
+                >
+                  <div className="text-sm font-medium mb-1">Left (Default)</div>
+                  <p className="text-xs text-muted-foreground mb-3">Logo on the left, navigation links on the right.</p>
+                  <div className="bg-secondary rounded-lg p-2 flex items-center gap-3 h-10">
+                    <div className="w-8 h-6 bg-primary/30 rounded" />
+                    <div className="flex gap-2 ml-auto">
+                      <div className="w-8 h-2 bg-muted-foreground/30 rounded" />
+                      <div className="w-8 h-2 bg-muted-foreground/30 rounded" />
+                      <div className="w-8 h-2 bg-muted-foreground/30 rounded" />
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGeneral({ ...general, logoPosition: 'center' })}
+                  className={`p-4 rounded-lg border-2 transition-colors text-left ${general.logoPosition === 'center' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}
+                >
+                  <div className="text-sm font-medium mb-1">Center (Between Nav Items)</div>
+                  <p className="text-xs text-muted-foreground mb-3">Logo centered horizontally between navigation menu items.</p>
+                  <div className="bg-secondary rounded-lg p-2 flex items-center justify-center gap-3 h-10">
+                    <div className="flex gap-2">
+                      <div className="w-6 h-2 bg-muted-foreground/30 rounded" />
+                      <div className="w-6 h-2 bg-muted-foreground/30 rounded" />
+                    </div>
+                    <div className="w-8 h-6 bg-primary/30 rounded" />
+                    <div className="flex gap-2">
+                      <div className="w-6 h-2 bg-muted-foreground/30 rounded" />
+                      <div className="w-6 h-2 bg-muted-foreground/30 rounded" />
+                    </div>
+                  </div>
+                </button>
               </div>
             </div>
 
