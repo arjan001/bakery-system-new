@@ -6,7 +6,7 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery';
+type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
 
 interface NewsletterSubscriber {
   id: string;
@@ -158,6 +158,42 @@ export default function SettingsPage() {
     deliveryRadius: '10 km',
     deliveryNotes: '',
     googleMapsApiKey: '',
+  });
+
+  // ── KRA eTIMS Integration ──
+  const [kraEtims, setKraEtims] = useState({
+    enabled: false,
+    kraPin: '',
+    businessName: '',
+    branchId: '',
+    apiUrl: '',
+    apiKey: '',
+    apiSecret: '',
+    autoSubmit: false,
+    lastSync: '',
+    status: 'Inactive' as string,
+  });
+
+  // ── SHA / NSSF Integration ──
+  const [shaNssf, setShaNssf] = useState({
+    shaEnabled: false,
+    shaEmployerCode: '',
+    shaApiKey: '',
+    shaEndpoint: '',
+    shaAutoDeduct: false,
+    shaLastSync: '',
+    nssfEnabled: false,
+    nssfEmployerCode: '',
+    nssfApiKey: '',
+    nssfEndpoint: '',
+    nssfAutoDeduct: false,
+    nssfLastSync: '',
+    nhifEnabled: false,
+    nhifEmployerCode: '',
+    nhifApiKey: '',
+    nhifEndpoint: '',
+    nhifAutoDeduct: false,
+    nhifLastSync: '',
   });
 
   // ── Offers ──
@@ -597,6 +633,8 @@ export default function SettingsPage() {
           if (settings.security) setSecurity(prev => ({ ...prev, ...(settings.security as Record<string, unknown>) }));
           if (settings.backup) setBackup(prev => ({ ...prev, ...(settings.backup as Record<string, unknown>) }));
           if (settings.delivery) setDelivery(prev => ({ ...prev, ...(settings.delivery as Record<string, unknown>) }));
+          if (settings.kraEtims) setKraEtims(prev => ({ ...prev, ...(settings.kraEtims as Record<string, unknown>) }));
+          if (settings.shaNssf) setShaNssf(prev => ({ ...prev, ...(settings.shaNssf as Record<string, unknown>) }));
           return;
         }
       } catch {
@@ -615,6 +653,8 @@ export default function SettingsPage() {
           if (parsed.security) setSecurity(prev => ({ ...prev, ...parsed.security }));
           if (parsed.backup) setBackup(prev => ({ ...prev, ...parsed.backup }));
           if (parsed.delivery) setDelivery(prev => ({ ...prev, ...parsed.delivery }));
+          if (parsed.kraEtims) setKraEtims(prev => ({ ...prev, ...parsed.kraEtims }));
+          if (parsed.shaNssf) setShaNssf(prev => ({ ...prev, ...parsed.shaNssf }));
         }
       } catch { /* ignore */ }
     }
@@ -648,7 +688,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal };
+    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal, kraEtims, shaNssf };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -696,6 +736,8 @@ export default function SettingsPage() {
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
     { key: 'mpesa-api', label: 'M-Pesa API', icon: '📱', tip: 'M-Pesa Daraja API credentials & integration settings' },
     { key: 'posCard', label: 'POS Card', icon: '💳', tip: 'Card reader setup & POS card payment settings' },
+    { key: 'kra-etims', label: 'KRA eTIMS', icon: '🏛️', tip: 'KRA eTIMS integration for auto tax submission per sale' },
+    { key: 'sha-nssf', label: 'SHA/NSSF', icon: '🏥', tip: 'SHA, NSSF, NHIF government deductions & compliance' },
     { key: 'security', label: 'Security', icon: '🔒', tip: 'PIN policy, sessions, audit & access control' },
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
     { key: 'delivery', label: 'Delivery', icon: '🚚', tip: 'Minimum order for delivery, delivery fees & thresholds' },
@@ -1998,32 +2040,362 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ── SESSIONS ── */}
+      {/* ── SESSIONS (Enhanced Functional) ── */}
       {activeTab === 'sessions' && (
         <div className="max-w-2xl space-y-6">
-          <div className="border border-border rounded-lg p-6 bg-card">
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
             <h3 className="font-semibold mb-4">Active Sessions</h3>
             <div className="space-y-3">
               {sessions.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">No active sessions detected</p>
               ) : sessions.map(s => (
-                <div key={s.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 border border-border rounded-lg gap-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-sm font-bold">●</div>
+                    <div className="w-10 h-10 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-sm font-bold shrink-0">●</div>
                     <div>
                       <p className="text-sm font-medium">{s.email}</p>
                       <p className="text-xs text-muted-foreground">{s.device} &bull; Last active: {s.lastActive}</p>
                     </div>
                   </div>
-                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">Current</span>
+                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold w-fit">Current</span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="border border-border rounded-lg p-6 bg-card">
+
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
+            <h3 className="font-semibold mb-2">Session Security</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Session Timeout</p>
+                  <p className="text-xs text-muted-foreground">Auto-logout after inactivity (minutes)</p>
+                </div>
+                <input type="number" min={5} max={480} value={security.sessionTimeout} onChange={e => setSecurity({ ...security, sessionTimeout: parseInt(e.target.value) || 30 })} className={`${inputCls} w-20`} />
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Max Login Attempts</p>
+                  <p className="text-xs text-muted-foreground">Lock account after failed attempts</p>
+                </div>
+                <input type="number" min={3} max={10} value={security.maxLoginAttempts} onChange={e => setSecurity({ ...security, maxLoginAttempts: parseInt(e.target.value) || 5 })} className={`${inputCls} w-20`} />
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
             <h3 className="font-semibold mb-2">Session Management</h3>
             <p className="text-sm text-muted-foreground mb-4">Sign out from all other devices and sessions.</p>
-            <button className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium">Sign Out All Other Sessions</button>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    await supabase.auth.signOut({ scope: 'others' });
+                    logAudit({ action: 'UPDATE', module: 'Settings', record_id: 'sessions', details: { action: 'sign_out_other_sessions' } });
+                    setSavedMsg('All other sessions have been signed out');
+                    setTimeout(() => setSavedMsg(''), 3000);
+                  } catch {
+                    setSavedMsg('Failed to sign out other sessions');
+                    setTimeout(() => setSavedMsg(''), 3000);
+                  }
+                }}
+                className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium"
+              >
+                Sign Out All Other Sessions
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const { data } = await supabase.auth.refreshSession();
+                    if (data.session) {
+                      setSessions([{
+                        id: data.session.access_token.slice(-8),
+                        email: data.session.user.email || 'admin',
+                        lastActive: new Date().toLocaleString(),
+                        device: navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop',
+                      }]);
+                      setSavedMsg('Session refreshed');
+                      setTimeout(() => setSavedMsg(''), 3000);
+                    }
+                  } catch { /* ignore */ }
+                }}
+                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm font-medium"
+              >
+                Refresh Current Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── KRA eTIMS INTEGRATION ── */}
+      {activeTab === 'kra-etims' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border-2 border-amber-200 rounded-lg p-4 md:p-6 bg-amber-50/50">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🏛️</span>
+              <div>
+                <h3 className="font-semibold mb-1">KRA eTIMS Integration</h3>
+                <p className="text-xs text-muted-foreground">Kenya Revenue Authority Electronic Tax Invoice Management System. When enabled, tax invoices are automatically submitted to KRA for every sale made through the POS system.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">eTIMS Configuration</h3>
+              <div className={`px-2 py-1 rounded text-xs font-bold ${kraEtims.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                {kraEtims.enabled ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Enable eTIMS</p>
+                  <p className="text-xs text-muted-foreground">Auto-submit tax invoices on each sale</p>
+                </div>
+                <button type="button" onClick={() => setKraEtims({ ...kraEtims, enabled: !kraEtims.enabled })} className={`w-10 h-5 rounded-full transition-colors ${kraEtims.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${kraEtims.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>KRA PIN *</label>
+                  <input type="text" value={kraEtims.kraPin} onChange={e => setKraEtims({ ...kraEtims, kraPin: e.target.value })} className={inputCls} placeholder="e.g. A123456789Z" />
+                </div>
+                <div>
+                  <label className={labelCls}>Business Name</label>
+                  <input type="text" value={kraEtims.businessName} onChange={e => setKraEtims({ ...kraEtims, businessName: e.target.value })} className={inputCls} placeholder="Registered business name" />
+                </div>
+                <div>
+                  <label className={labelCls}>Branch ID</label>
+                  <input type="text" value={kraEtims.branchId} onChange={e => setKraEtims({ ...kraEtims, branchId: e.target.value })} className={inputCls} placeholder="Branch identifier" />
+                </div>
+                <div>
+                  <label className={labelCls}>eTIMS API URL</label>
+                  <input type="text" value={kraEtims.apiUrl} onChange={e => setKraEtims({ ...kraEtims, apiUrl: e.target.value })} className={inputCls} placeholder="https://etims.kra.go.ke/api/v1" />
+                </div>
+                <div>
+                  <label className={labelCls}>API Key</label>
+                  <input type="password" value={kraEtims.apiKey} onChange={e => setKraEtims({ ...kraEtims, apiKey: e.target.value })} className={inputCls} placeholder="eTIMS API key" />
+                </div>
+                <div>
+                  <label className={labelCls}>API Secret</label>
+                  <input type="password" value={kraEtims.apiSecret} onChange={e => setKraEtims({ ...kraEtims, apiSecret: e.target.value })} className={inputCls} placeholder="eTIMS API secret" />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Auto-Submit on Sale</p>
+                  <p className="text-xs text-muted-foreground">Automatically submit invoices to KRA when a POS sale is completed</p>
+                </div>
+                <button type="button" onClick={() => setKraEtims({ ...kraEtims, autoSubmit: !kraEtims.autoSubmit })} className={`w-10 h-5 rounded-full transition-colors ${kraEtims.autoSubmit ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${kraEtims.autoSubmit ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
+            <h3 className="font-semibold mb-3">Tax Configuration</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <span className="text-muted-foreground">VAT Rate</span>
+                <span className="font-medium">16% (Standard)</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <span className="text-muted-foreground">Exempt Items</span>
+                <span className="font-medium">0% (Configure per product)</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <span className="text-muted-foreground">Tax Invoice Prefix</span>
+                <span className="font-medium">INV-</span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">KRA eTIMS requires all businesses to submit electronic invoices. Ensure your KRA PIN and API credentials are correctly configured before enabling auto-submission.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── SHA / NSSF / NHIF INTEGRATION ── */}
+      {activeTab === 'sha-nssf' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="border-2 border-blue-200 rounded-lg p-4 md:p-6 bg-blue-50/50">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🏥</span>
+              <div>
+                <h3 className="font-semibold mb-1">Government Statutory Deductions</h3>
+                <p className="text-xs text-muted-foreground">Configure integrations with SHA (Social Health Authority), NSSF (National Social Security Fund), and NHIF (National Hospital Insurance Fund) for employee statutory deductions and compliance reporting.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* SHA */}
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🏥</span>
+                <h3 className="font-semibold">SHA (Social Health Authority)</h3>
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-bold ${shaNssf.shaEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                {shaNssf.shaEnabled ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Enable SHA Integration</p>
+                  <p className="text-xs text-muted-foreground">Social Health Insurance Fund deductions</p>
+                </div>
+                <button type="button" onClick={() => setShaNssf({ ...shaNssf, shaEnabled: !shaNssf.shaEnabled })} className={`w-10 h-5 rounded-full transition-colors ${shaNssf.shaEnabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${shaNssf.shaEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Employer Code</label>
+                  <input type="text" value={shaNssf.shaEmployerCode} onChange={e => setShaNssf({ ...shaNssf, shaEmployerCode: e.target.value })} className={inputCls} placeholder="SHA employer code" />
+                </div>
+                <div>
+                  <label className={labelCls}>API Key</label>
+                  <input type="password" value={shaNssf.shaApiKey} onChange={e => setShaNssf({ ...shaNssf, shaApiKey: e.target.value })} className={inputCls} placeholder="SHA API key" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Auto-Deduct from Payroll</p>
+                  <p className="text-xs text-muted-foreground">Automatically compute SHA deductions</p>
+                </div>
+                <button type="button" onClick={() => setShaNssf({ ...shaNssf, shaAutoDeduct: !shaNssf.shaAutoDeduct })} className={`w-10 h-5 rounded-full transition-colors ${shaNssf.shaAutoDeduct ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${shaNssf.shaAutoDeduct ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* NSSF */}
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🛡️</span>
+                <h3 className="font-semibold">NSSF (National Social Security Fund)</h3>
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-bold ${shaNssf.nssfEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                {shaNssf.nssfEnabled ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Enable NSSF Integration</p>
+                  <p className="text-xs text-muted-foreground">Social security fund deductions</p>
+                </div>
+                <button type="button" onClick={() => setShaNssf({ ...shaNssf, nssfEnabled: !shaNssf.nssfEnabled })} className={`w-10 h-5 rounded-full transition-colors ${shaNssf.nssfEnabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${shaNssf.nssfEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Employer Code</label>
+                  <input type="text" value={shaNssf.nssfEmployerCode} onChange={e => setShaNssf({ ...shaNssf, nssfEmployerCode: e.target.value })} className={inputCls} placeholder="NSSF employer code" />
+                </div>
+                <div>
+                  <label className={labelCls}>API Key</label>
+                  <input type="password" value={shaNssf.nssfApiKey} onChange={e => setShaNssf({ ...shaNssf, nssfApiKey: e.target.value })} className={inputCls} placeholder="NSSF API key" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Auto-Deduct from Payroll</p>
+                  <p className="text-xs text-muted-foreground">Tier I: KES 360, Tier II: KES 360 (per 2025 rates)</p>
+                </div>
+                <button type="button" onClick={() => setShaNssf({ ...shaNssf, nssfAutoDeduct: !shaNssf.nssfAutoDeduct })} className={`w-10 h-5 rounded-full transition-colors ${shaNssf.nssfAutoDeduct ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${shaNssf.nssfAutoDeduct ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* NHIF (Legacy) */}
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🏨</span>
+                <h3 className="font-semibold">NHIF (National Hospital Insurance Fund)</h3>
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-bold ${shaNssf.nhifEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                {shaNssf.nhifEnabled ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                <strong>Note:</strong> NHIF is transitioning to SHA (Social Health Authority). Configure SHA above for the latest compliance requirements.
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Enable NHIF (Legacy)</p>
+                  <p className="text-xs text-muted-foreground">For historical records and transition period</p>
+                </div>
+                <button type="button" onClick={() => setShaNssf({ ...shaNssf, nhifEnabled: !shaNssf.nhifEnabled })} className={`w-10 h-5 rounded-full transition-colors ${shaNssf.nhifEnabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${shaNssf.nhifEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Employer Code</label>
+                  <input type="text" value={shaNssf.nhifEmployerCode} onChange={e => setShaNssf({ ...shaNssf, nhifEmployerCode: e.target.value })} className={inputCls} placeholder="NHIF employer code" />
+                </div>
+                <div>
+                  <label className={labelCls}>API Key</label>
+                  <input type="password" value={shaNssf.nhifApiKey} onChange={e => setShaNssf({ ...shaNssf, nhifApiKey: e.target.value })} className={inputCls} placeholder="NHIF API key" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-4 md:p-6 bg-card">
+            <h3 className="font-semibold mb-3">Deduction Rates Reference</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs font-semibold text-muted-foreground">Statutory Body</th>
+                    <th className="text-left py-2 text-xs font-semibold text-muted-foreground">Employee</th>
+                    <th className="text-left py-2 text-xs font-semibold text-muted-foreground">Employer</th>
+                    <th className="text-left py-2 text-xs font-semibold text-muted-foreground">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-border">
+                    <td className="py-2 font-medium">SHA</td>
+                    <td className="py-2">2.75% of gross</td>
+                    <td className="py-2">2.75% of gross</td>
+                    <td className="py-2 text-muted-foreground">Replaces NHIF</td>
+                  </tr>
+                  <tr className="border-b border-border">
+                    <td className="py-2 font-medium">NSSF Tier I</td>
+                    <td className="py-2">KES 360</td>
+                    <td className="py-2">KES 360</td>
+                    <td className="py-2 text-muted-foreground">On first KES 7,000</td>
+                  </tr>
+                  <tr className="border-b border-border">
+                    <td className="py-2 font-medium">NSSF Tier II</td>
+                    <td className="py-2">KES 360</td>
+                    <td className="py-2">KES 360</td>
+                    <td className="py-2 text-muted-foreground">On next KES 29,000</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 font-medium">Housing Levy</td>
+                    <td className="py-2">1.5% of gross</td>
+                    <td className="py-2">1.5% of gross</td>
+                    <td className="py-2 text-muted-foreground">Affordable Housing</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

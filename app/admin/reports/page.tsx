@@ -472,19 +472,59 @@ export default function ReportsPage() {
 
   // ─── Tab Renderers ────────────────────────────────────────────────────────
 
+  // M-Pesa vs Cash breakdown
+  const posCashSales = posSales.filter(s => s.paymentMethod === 'Cash').reduce((sum, s) => sum + s.total, 0);
+  const posMpesaSales = posSales.filter(s => s.paymentMethod === 'Mpesa' || s.paymentMethod === 'M-Pesa').reduce((sum, s) => sum + s.total, 0);
+  const posCardSales = posSales.filter(s => s.paymentMethod === 'Card').reduce((sum, s) => sum + s.total, 0);
+  const posCreditSales = posSales.filter(s => s.paymentMethod === 'Credit').reduce((sum, s) => sum + s.total, 0);
+  const posCashCount = posSales.filter(s => s.paymentMethod === 'Cash').length;
+  const posMpesaCount = posSales.filter(s => s.paymentMethod === 'Mpesa' || s.paymentMethod === 'M-Pesa').length;
+
   const renderOverview = () => {
     const paidOrders = orders.filter(o => o.paymentStatus === 'Paid').length;
     const unpaidOrders = orders.filter(o => o.paymentStatus === 'Unpaid').length;
 
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Sales by Payment Method - KEY SEPARATION */}
+        <div className="border-2 border-primary/20 rounded-xl p-4 md:p-5 bg-primary/5">
+          <h3 className="text-sm md:text-base font-bold mb-3">Sales by Payment Method</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3">
+            <div className="p-3 bg-white/80 rounded-lg text-center border border-border">
+              <p className="text-[10px] md:text-xs text-muted-foreground font-medium">Total POS Sales</p>
+              <p className="text-sm md:text-xl font-bold text-foreground">{formatKES(totalPosRevenue)}</p>
+              <p className="text-[10px] text-muted-foreground">{posSales.length} transactions</p>
+            </div>
+            <div className="p-3 bg-white/80 rounded-lg text-center border border-green-200">
+              <p className="text-[10px] md:text-xs text-green-700 font-medium">Cash Sales</p>
+              <p className="text-sm md:text-xl font-bold text-green-700">{formatKES(posCashSales)}</p>
+              <p className="text-[10px] text-green-600">{posCashCount} txns &bull; {totalPosRevenue > 0 ? ((posCashSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+            </div>
+            <div className="p-3 bg-white/80 rounded-lg text-center border border-blue-200">
+              <p className="text-[10px] md:text-xs text-blue-700 font-medium">M-Pesa Sales</p>
+              <p className="text-sm md:text-xl font-bold text-blue-700">{formatKES(posMpesaSales)}</p>
+              <p className="text-[10px] text-blue-600">{posMpesaCount} txns &bull; {totalPosRevenue > 0 ? ((posMpesaSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+            </div>
+            <div className="p-3 bg-white/80 rounded-lg text-center border border-purple-200">
+              <p className="text-[10px] md:text-xs text-purple-700 font-medium">Card Sales</p>
+              <p className="text-sm md:text-xl font-bold text-purple-700">{formatKES(posCardSales)}</p>
+              <p className="text-[10px] text-purple-600">{totalPosRevenue > 0 ? ((posCardSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+            </div>
+            <div className="p-3 bg-white/80 rounded-lg text-center border border-amber-200">
+              <p className="text-[10px] md:text-xs text-amber-700 font-medium">Credit Sales</p>
+              <p className="text-sm md:text-xl font-bold text-amber-700">{formatKES(posCreditSales)}</p>
+              <p className="text-[10px] text-amber-600">{totalPosRevenue > 0 ? ((posCreditSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <SummaryCard title="Total Revenue (P&L)" value={formatKES(totalRevenue)} subtitle="From P&L reports" color="green" />
           <SummaryCard title="POS Revenue" value={formatKES(totalPosRevenue)} subtitle={`${posSales.length} POS transactions`} color="green" />
           <SummaryCard title="Net Profit" value={formatKES(totalProfit)} subtitle={totalRevenue > 0 ? `Margin: ${((totalProfit / totalRevenue) * 100).toFixed(1)}%` : 'No data'} color={totalProfit >= 0 ? 'green' : 'red'} />
           <SummaryCard title="Outstanding Debts" value={formatKES(totalDebt)} subtitle={`${debtors.length} debtors`} color="amber" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <SummaryCard title="Order Revenue" value={formatKES(totalOrderRevenue)} subtitle={`${orders.length} orders`} color="blue" />
           <SummaryCard title="Outstanding Credits" value={formatKES(totalCredit)} subtitle={`${creditors.filter(c => c.status !== 'Paid').length} creditors`} color="red" />
           <SummaryCard title="Inventory Value" value={formatKES(inventoryValuation)} subtitle={`${inventoryItems.length} items | ${lowStockItems.length} low stock`} color="purple" />

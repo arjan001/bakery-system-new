@@ -50,6 +50,7 @@ const permRouteMap: Record<string, string[]> = {
     '/admin/distributors',
     '/admin/distribution',
     '/admin/assets',
+    '/admin/stock-take',
   ],
   'Manage Purchases': ['/admin/purchasing', '/admin/distributors'],
   'Manage Recipes': [
@@ -61,9 +62,9 @@ const permRouteMap: Record<string, string[]> = {
     '/admin/waste-control',
     '/admin/store-requisitions',
   ],
-  'Manage Employees': ['/admin/employees', '/admin/employee-productivity'],
-  'View Reports': ['/admin/reports', '/admin/employee-productivity'],
-  'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors', '/admin/credit-invoices'],
+  'Manage Employees': ['/admin/employees', '/admin/employee-productivity', '/admin/shifts'],
+  'View Reports': ['/admin/reports', '/admin/employee-productivity', '/admin/shifts'],
+  'Manage Finance': ['/admin/expenses', '/admin/debtors', '/admin/creditors', '/admin/credit-invoices', '/admin/insurance'],
   'Manage Outlets': [
     '/admin/outlets',
     '/admin/outlet-inventory',
