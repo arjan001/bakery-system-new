@@ -4,22 +4,21 @@ import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/lib/cart-context';
-import { getProduct, products, getRelated, fetchMainBakeryProducts } from '@/lib/products';
+import { fetchMainBakeryProducts } from '@/lib/products';
 import type { Product } from '@/lib/products';
 import { ShoppingBag, Minus, Plus, ChevronRight, Star, Truck, RotateCcw, Shield } from 'lucide-react';
 
 export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const staticProduct = getProduct(id);
   const { addItem } = useCart();
   const router = useRouter();
   const [qty, setQty] = useState(1);
   const [activeTab, setActiveTab] = useState<'description' | 'details'>('description');
   const [added, setAdded] = useState(false);
-  const [product, setProduct] = useState<Product | undefined>(staticProduct);
-  const [relatedProducts, setRelatedProducts] = useState<Product[]>(staticProduct ? getRelated(staticProduct) : []);
+  const [product, setProduct] = useState<Product | undefined>(undefined);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
 
-  // Try to load from main bakery inventory
+  // Load from main bakery inventory only — no dummy product fallback
   useEffect(() => {
     async function loadProduct() {
       try {
@@ -32,7 +31,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
             return;
           }
         }
-      } catch { /* use static fallback */ }
+      } catch { /* product not found */ }
     }
     loadProduct();
   }, [id]);

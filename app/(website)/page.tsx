@@ -4,13 +4,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/lib/cart-context';
-import { products, getBestSellers, CIRCLE_CATEGORIES, fetchMainBakeryProducts } from '@/lib/products';
+import { CIRCLE_CATEGORIES, fetchMainBakeryProducts } from '@/lib/products';
 import type { Product, Offer } from '@/lib/products';
 import { ShoppingBag, Star, ChevronRight, ChevronLeft, Truck, Clock, Shield, Users, Store, Megaphone, Tag, ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 // ─── Product Card (mini, for home page) ───────────────────────────────────
-function HomeProductCard({ product }: { product: (typeof products)[0] }) {
+function HomeProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
   const router = useRouter();
 
@@ -302,7 +302,7 @@ export default function HomePage() {
   const [dynamicProducts, setDynamicProducts] = useState<Product[]>([]);
   const [freshProducts, setFreshProducts] = useState<Product[]>([]);
 
-  // Fetch products from main bakery inventory (food_info table) with fallback
+  // Fetch products from main bakery inventory (food_info table) — only real products, no dummy fallback
   useEffect(() => {
     async function loadProducts() {
       try {
@@ -312,17 +312,15 @@ export default function HomePage() {
           setFreshProducts(bakeryProducts.filter(p => p.inStock).slice(0, 8));
           return;
         }
-      } catch { /* fallback below */ }
-      // Fallback to hardcoded products
-      setDynamicProducts(products);
-      setFreshProducts(products.filter(p => p.inStock).slice(0, 8));
+      } catch { /* no products available */ }
+      // No fallback to hardcoded dummy products — show empty until real products are added
+      setDynamicProducts([]);
+      setFreshProducts([]);
     }
     loadProducts();
   }, []);
 
-  const bestSellers = dynamicProducts.length > 0
-    ? dynamicProducts.filter(p => p.isBestSeller || p.stock > 10).slice(0, 8)
-    : getBestSellers();
+  const bestSellers = dynamicProducts.filter(p => p.isBestSeller || p.stock > 10).slice(0, 8);
 
   return (
     <div className="bg-white">

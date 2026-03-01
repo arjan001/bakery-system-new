@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
-import { products as staticProducts, CATEGORY_LIST, CIRCLE_CATEGORIES, fetchMainBakeryProducts } from '@/lib/products';
+import { CATEGORY_LIST, CIRCLE_CATEGORIES, fetchMainBakeryProducts } from '@/lib/products';
 import type { Product } from '@/lib/products';
 import { ShoppingBag, SlidersHorizontal, X, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -80,9 +80,9 @@ function ShopContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [products, setProducts] = useState<Product[]>(staticProducts);
+  const [products, setProducts] = useState<Product[]>([]);
 
-  // Load products from main bakery inventory with fallback to static
+  // Load products from main bakery inventory — only real products, no dummy fallback
   useEffect(() => {
     async function loadProducts() {
       try {
@@ -91,8 +91,8 @@ function ShopContent() {
           setProducts(bakeryProducts);
           return;
         }
-      } catch { /* fallback to static */ }
-      setProducts(staticProducts);
+      } catch { /* no products available */ }
+      setProducts([]);
     }
     loadProducts();
   }, []);
