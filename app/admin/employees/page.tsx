@@ -32,6 +32,7 @@ interface Employee {
   nextOfKinPhone: string;
   address: string;
   idNumber: string;
+  idDocumentUrl: string;
   profilePhotoUrl: string;
   driverLicenseId: string;
   driverLicenseExpiry: string;
@@ -91,6 +92,7 @@ function dbToEmployee(row: Record<string, unknown>): Employee {
     nextOfKinPhone: (row.next_of_kin_phone as string) || '',
     address: (row.address as string) || '',
     idNumber: (row.id_number as string) || '',
+    idDocumentUrl: (row.id_document_url as string) || '',
     profilePhotoUrl: (row.profile_photo_url as string) || '',
     driverLicenseId: (row.driver_license_id as string) || '',
     driverLicenseExpiry: (row.driver_license_expiry as string) || '',
@@ -225,7 +227,7 @@ export default function EmployeesPage() {
           id: '', employeeIdNumber: '', firstName: '', lastName: '', designation: 'Mr',
           email: '', phone: '', department: 'Administration', role: '', category: 'Admin',
           hireDate: '', status: 'Active', nextOfKin: '', nextOfKinPhone: '', address: '',
-          idNumber: '', profilePhotoUrl: '', driverLicenseId: '', driverLicenseExpiry: '',
+          idNumber: '', idDocumentUrl: '', profilePhotoUrl: '', driverLicenseId: '', driverLicenseExpiry: '',
           hygieneCertNo: '', hygieneCertExpiry: '', certificates: [], bankName: '',
           bankAccountNo: '', nhifNo: '', nssfNo: '', kraPin: '', emergencyContact: '',
           emergencyPhone: '', notes: '', systemAccess: true, loginEmail: '', loginRole: 'Admin',
@@ -398,6 +400,7 @@ export default function EmployeesPage() {
     nextOfKinPhone: '',
     address: '',
     idNumber: '',
+    idDocumentUrl: '',
     profilePhotoUrl: '',
     driverLicenseId: '',
     driverLicenseExpiry: '',
@@ -918,6 +921,52 @@ export default function EmployeesPage() {
                     <input type="text" value={formData.idNumber} onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
                   </div>
                 </div>
+
+                {/* ID Document Upload */}
+                <div className="border border-border rounded-lg p-4 bg-secondary/20">
+                  <p className="text-sm font-medium mb-2">ID Document Upload</p>
+                  <p className="text-xs text-muted-foreground mb-3">Upload a scanned copy or photo of the employee&apos;s national ID card (front and/or back).</p>
+                  <div className="flex items-start gap-4">
+                    {formData.idDocumentUrl && (
+                      <div className="w-28 h-20 rounded-lg border border-border overflow-hidden bg-secondary flex-shrink-0">
+                        <img src={formData.idDocumentUrl} alt="ID Document" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="flex-1 space-y-2">
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:opacity-90 file:cursor-pointer"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setSaveError(null);
+                          setSaveSuccess('Uploading ID document...');
+                          try {
+                            const ext = file.name.split('.').pop() || 'jpg';
+                            const fileName = `id-doc-${formData.firstName || 'emp'}-${formData.lastName || ''}-${Date.now()}.${ext}`;
+                            const { error: uploadError } = await supabase.storage.from('employee-documents').upload(fileName, file, { upsert: true });
+                            if (uploadError) throw uploadError;
+                            const { data: urlData } = supabase.storage.from('employee-documents').getPublicUrl(fileName);
+                            if (urlData?.publicUrl) {
+                              setFormData(prev => ({ ...prev, idDocumentUrl: urlData.publicUrl }));
+                              setSaveSuccess('ID document uploaded successfully.');
+                            }
+                          } catch (err) {
+                            console.error('ID document upload error:', err);
+                            setSaveError('ID document upload failed. You can paste a URL instead.');
+                          }
+                          setTimeout(() => { setSaveSuccess(null); }, 3000);
+                        }}
+                      />
+                      <input type="url" value={formData.idDocumentUrl} onChange={(e) => setFormData({ ...formData, idDocumentUrl: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm" placeholder="Or paste document URL..." />
+                      {formData.idDocumentUrl && (
+                        <button type="button" onClick={() => setFormData({ ...formData, idDocumentUrl: '' })} className="text-xs text-red-600 hover:underline">Remove document</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Address</label>
                   <input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
@@ -1353,6 +1402,15 @@ export default function EmployeesPage() {
                 <div><span className="text-muted-foreground">Phone:</span> <span className="font-medium ml-2">{showDetail.phone || '---'}</span></div>
                 <div><span className="text-muted-foreground">National ID:</span> <span className="font-medium ml-2">{showDetail.idNumber || '---'}</span></div>
                 <div className="col-span-3"><span className="text-muted-foreground">Address:</span> <span className="font-medium ml-2">{showDetail.address || '---'}</span></div>
+                {showDetail.idDocumentUrl && (
+                  <div className="col-span-3 mt-2">
+                    <span className="text-muted-foreground">ID Document:</span>
+                    <a href={showDetail.idDocumentUrl} target="_blank" rel="noopener noreferrer" className="ml-2 text-primary hover:underline text-sm font-medium">View ID Document</a>
+                    <div className="mt-2 w-48 h-32 rounded-lg border border-border overflow-hidden bg-secondary">
+                      <img src={showDetail.idDocumentUrl} alt="ID Document" className="w-full h-full object-cover" />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

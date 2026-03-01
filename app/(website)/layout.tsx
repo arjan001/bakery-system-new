@@ -84,6 +84,7 @@ function Navbar() {
   const [logoUrl, setLogoUrl] = useState('');
   const [businessName, setBusinessName] = useState('SNACKOH');
   const [logoHeight, setLogoHeight] = useState(40);
+  const [logoPosition, setLogoPosition] = useState<'left' | 'center'>('left');
   const router = useRouter();
 
   useEffect(() => {
@@ -102,6 +103,7 @@ function Navbar() {
           if (g.logoUrl) setLogoUrl(g.logoUrl);
           if (g.businessName) setBusinessName(g.businessName);
           if (g.logoHeight) setLogoHeight(parseInt(g.logoHeight as string) || 40);
+          if (g.logoPosition) setLogoPosition(g.logoPosition as 'left' | 'center');
           return;
         }
       } catch { /* table may not exist */ }
@@ -112,6 +114,7 @@ function Navbar() {
           if (parsed.general?.logoUrl) setLogoUrl(parsed.general.logoUrl);
           if (parsed.general?.businessName) setBusinessName(parsed.general.businessName);
           if (parsed.general?.logoHeight) setLogoHeight(parseInt(parsed.general.logoHeight) || 40);
+          if (parsed.general?.logoPosition) setLogoPosition(parsed.general.logoPosition);
         }
       } catch { /* ignore */ }
     }
@@ -134,60 +137,131 @@ function Navbar() {
     { label: 'CONTACT', href: '/contact' },
   ];
 
+  const LogoElement = (
+    <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+      {logoUrl ? (
+        <img src={logoUrl} alt={businessName} style={{ height: `${logoHeight}px` }} className="w-auto object-contain" />
+      ) : (
+        <span className="text-2xl font-black tracking-tight text-gray-900 hover:text-orange-600 transition-colors">
+          {businessName}
+        </span>
+      )}
+    </Link>
+  );
+
+  // Split nav links into two halves for centered logo layout
+  const midIndex = Math.ceil(navLinks.length / 2);
+  const leftLinks = navLinks.slice(0, midIndex);
+  const rightLinks = navLinks.slice(midIndex);
+
   return (
     <>
       <header className={`sticky top-0 z-40 bg-white transition-shadow ${scrolled ? 'shadow-md' : 'border-b border-gray-100'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            {logoUrl ? (
-              <img src={logoUrl} alt={businessName} style={{ height: `${logoHeight}px` }} className="w-auto object-contain" />
-            ) : (
-              <span className="text-2xl font-black tracking-tight text-gray-900 hover:text-orange-600 transition-colors">
-                {businessName}
-              </span>
-            )}
-          </Link>
-
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-8">
-            {navLinks.map(l => (
-              <Link key={l.href} href={l.href}
-                className="text-xs font-bold tracking-widest text-gray-700 hover:text-orange-600 transition-colors">
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-
-          {/* Icons */}
-          <div className="flex items-center gap-1">
-            <button onClick={() => setSearchOpen(true)}
-              className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
-              <Search size={18} />
-            </button>
-            <Link href="/admin"
-              className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700"
-              title="Staff Admin">
-              <User size={18} />
-            </Link>
-            <button
-              className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
-              <Heart size={18} />
-            </button>
-            <button onClick={openCart}
-              className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
-              <ShoppingBag size={18} />
-              {itemCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-orange-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {itemCount > 9 ? '9+' : itemCount}
-                </span>
-              )}
-            </button>
-            <button className="md:hidden ml-1 w-9 h-9 flex items-center justify-center" onClick={() => setMenuOpen(true)}>
+        {logoPosition === 'center' ? (
+          /* ── Centered Logo Layout ── */
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
+            {/* Mobile menu button (left on mobile) */}
+            <button className="md:hidden w-9 h-9 flex items-center justify-center" onClick={() => setMenuOpen(true)}>
               <Menu size={20} />
             </button>
+
+            {/* Desktop: Left nav links */}
+            <nav className="hidden md:flex items-center gap-6 flex-1 justify-end">
+              {leftLinks.map(l => (
+                <Link key={l.href} href={l.href}
+                  className="text-xs font-bold tracking-widest text-gray-700 hover:text-orange-600 transition-colors">
+                  {l.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* Center Logo */}
+            <div className="mx-6 flex-shrink-0">
+              {LogoElement}
+            </div>
+
+            {/* Desktop: Right nav links */}
+            <nav className="hidden md:flex items-center gap-6 flex-1">
+              {rightLinks.map(l => (
+                <Link key={l.href} href={l.href}
+                  className="text-xs font-bold tracking-widest text-gray-700 hover:text-orange-600 transition-colors">
+                  {l.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* Icons */}
+            <div className="flex items-center gap-1">
+              <button onClick={() => setSearchOpen(true)}
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
+                <Search size={18} />
+              </button>
+              <Link href="/admin"
+                className="hidden sm:flex w-9 h-9 items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700"
+                title="Staff Admin">
+                <User size={18} />
+              </Link>
+              <button
+                className="hidden sm:flex w-9 h-9 items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
+                <Heart size={18} />
+              </button>
+              <button onClick={openCart}
+                className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
+                <ShoppingBag size={18} />
+                {itemCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-orange-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {itemCount > 9 ? '9+' : itemCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* ── Default Left Logo Layout ── */
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
+            {/* Logo */}
+            {LogoElement}
+
+            {/* Desktop Nav */}
+            <nav className="hidden md:flex items-center gap-8">
+              {navLinks.map(l => (
+                <Link key={l.href} href={l.href}
+                  className="text-xs font-bold tracking-widest text-gray-700 hover:text-orange-600 transition-colors">
+                  {l.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* Icons */}
+            <div className="flex items-center gap-1">
+              <button onClick={() => setSearchOpen(true)}
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
+                <Search size={18} />
+              </button>
+              <Link href="/admin"
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700"
+                title="Staff Admin">
+                <User size={18} />
+              </Link>
+              <button
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
+                <Heart size={18} />
+              </button>
+              <button onClick={openCart}
+                className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-700">
+                <ShoppingBag size={18} />
+                {itemCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-orange-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {itemCount > 9 ? '9+' : itemCount}
+                  </span>
+                )}
+              </button>
+              <button className="md:hidden ml-1 w-9 h-9 flex items-center justify-center" onClick={() => setMenuOpen(true)}>
+                <Menu size={20} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Search overlay */}
         {searchOpen && (
