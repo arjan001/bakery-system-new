@@ -1155,84 +1155,207 @@ export default function POSPage() {
 
       {/* ── Closing Balance Modal ── */}
       <Modal isOpen={showClosingBalance} onClose={() => setShowClosingBalance(false)} title="End Shift — Closing Balance" size="md">
-        <div className="space-y-4">
-          <div className="text-center py-3 bg-red-50 rounded-xl border border-red-200">
-            <p className="text-xs text-red-600 uppercase tracking-wider font-medium">Shift Summary</p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="p-3 bg-secondary rounded-lg">
-              <p className="text-xs text-muted-foreground">Opening Balance</p>
-              <p className="text-lg font-bold">{cur} {openingBalance.toLocaleString()}</p>
-            </div>
-            <div className="p-3 bg-secondary rounded-lg">
-              <p className="text-xs text-muted-foreground">Total Sales</p>
-              <p className="text-lg font-bold text-green-600">{cur} {totalSalesAmount.toLocaleString()}</p>
-            </div>
-            <div className="p-3 bg-secondary rounded-lg">
-              <p className="text-xs text-muted-foreground">Sales Count</p>
-              <p className="text-lg font-bold">{totalSalesCount}</p>
-            </div>
-            <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
-              <p className="text-xs text-muted-foreground">Expected Closing</p>
-              <p className="text-lg font-bold text-primary">{cur} {(openingBalance + totalSalesAmount).toLocaleString()}</p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1">Notes (optional)</label>
-            <textarea
-              value={closingNotes}
-              onChange={(e) => setClosingNotes(e.target.value)}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-              rows={2}
-              placeholder="Any discrepancies or notes..."
-            />
-          </div>
-          <div className="flex gap-2 pt-2 border-t border-border">
-            <button onClick={() => setShowClosingBalance(false)} className="flex-1 px-3 py-2.5 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Cancel</button>
-            <button
-              onClick={async () => {
-                try {
-                  await supabase.from('pos_sales').insert({
-                    receipt_number: `SHIFT-${Date.now().toString(36).toUpperCase()}`,
-                    customer_name: 'SHIFT CLOSE',
-                    sale_type: 'Shift',
-                    payment_method: 'N/A',
-                    subtotal: 0,
-                    tax: 0,
-                    total: 0,
-                    amount_paid: 0,
-                    change_amount: 0,
-                    cashier_name: loggedCashier,
-                    status: 'Shift Close',
-                    outlet_id: outletId || null,
-                    mpesa_reference: JSON.stringify({
-                      openingBalance,
-                      totalSales: totalSalesAmount,
-                      salesCount: totalSalesCount,
-                      expectedClosing: openingBalance + totalSalesAmount,
-                      notes: closingNotes,
-                    }),
-                  });
-                } catch { /* continue */ }
-                setCartItems([]);
-                setTotalSalesCount(0);
-                setTotalSalesAmount(0);
-                setShowClosingBalance(false);
-                setShiftStarted(false);
-                setShowOpeningBalance(true);
-                setOpeningBalanceInput('');
-                setOpeningBalance(0);
-                setClosingNotes('');
-                setHeldOrders([]);
-                clearSession();
-              }}
-              className="flex-1 px-3 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 font-bold text-xs"
-            >
-              Confirm &amp; End Shift
-            </button>
-          </div>
-        </div>
+        <ShiftClosingModal
+          openingBalance={openingBalance}
+          totalSalesAmount={totalSalesAmount}
+          totalSalesCount={totalSalesCount}
+          cur={cur}
+          closingNotes={closingNotes}
+          setClosingNotes={setClosingNotes}
+          onCancel={() => setShowClosingBalance(false)}
+          onConfirm={async () => {
+            try {
+              // Fetch shift expenses and sales breakdown
+              const sessionStart = existingSession?.startedAt || new Date().toISOString();
+              const { data: shiftSales } = await supabase.from('pos_sales').select('total, payment_method').eq('cashier_name', loggedCashier).eq('status', 'Completed').gte('created_at', sessionStart);
+              const shiftSalesData = shiftSales || [];
+              const shiftCash = shiftSalesData.filter(s => s.payment_method === 'Cash').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0);
+              const shiftMpesa = shiftSalesData.filter(s => s.payment_method === 'Mpesa' || s.payment_method === 'M-Pesa').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0);
+              const shiftCard = shiftSalesData.filter(s => s.payment_method === 'Card').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0);
+              const shiftCredit = shiftSalesData.filter(s => s.payment_method === 'Credit').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0);
+
+              // Save shift record
+              try {
+                const shiftNum = `SH-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+                await supabase.from('shifts').insert({
+                  shift_number: shiftNum,
+                  employee_name: loggedCashier,
+                  employee_role: 'Cashier',
+                  outlet_id: outletId || null,
+                  start_time: sessionStart,
+                  end_time: new Date().toISOString(),
+                  opening_balance: openingBalance,
+                  closing_balance: openingBalance + shiftCash,
+                  total_sales: totalSalesAmount,
+                  cash_sales: shiftCash,
+                  mpesa_sales: shiftMpesa,
+                  card_sales: shiftCard,
+                  credit_sales: shiftCredit,
+                  total_transactions: totalSalesCount,
+                  net_cash: shiftCash,
+                  status: 'Ended',
+                  notes: closingNotes,
+                  closed_by: loggedCashier,
+                });
+              } catch { /* shifts table may not exist */ }
+
+              await supabase.from('pos_sales').insert({
+                receipt_number: `SHIFT-${Date.now().toString(36).toUpperCase()}`,
+                customer_name: 'SHIFT CLOSE',
+                sale_type: 'Shift',
+                payment_method: 'N/A',
+                subtotal: 0, tax: 0, total: 0, amount_paid: 0, change_amount: 0,
+                cashier_name: loggedCashier,
+                status: 'Shift Close',
+                outlet_id: outletId || null,
+                mpesa_reference: JSON.stringify({
+                  openingBalance, totalSales: totalSalesAmount, salesCount: totalSalesCount,
+                  cashSales: shiftCash, mpesaSales: shiftMpesa, cardSales: shiftCard, creditSales: shiftCredit,
+                  expectedClosing: openingBalance + shiftCash, notes: closingNotes,
+                }),
+              });
+            } catch { /* continue */ }
+            setCartItems([]);
+            setTotalSalesCount(0);
+            setTotalSalesAmount(0);
+            setShowClosingBalance(false);
+            setShiftStarted(false);
+            setShowOpeningBalance(true);
+            setOpeningBalanceInput('');
+            setOpeningBalance(0);
+            setClosingNotes('');
+            setHeldOrders([]);
+            clearSession();
+          }}
+          loggedCashier={loggedCashier}
+          outletId={outletId}
+          sessionStart={existingSession?.startedAt || new Date().toISOString()}
+        />
       </Modal>
+    </div>
+  );
+}
+
+// ── Shift Closing Modal Component ──
+function ShiftClosingModal({ openingBalance, totalSalesAmount, totalSalesCount, cur, closingNotes, setClosingNotes, onCancel, onConfirm, loggedCashier, outletId, sessionStart }: {
+  openingBalance: number; totalSalesAmount: number; totalSalesCount: number; cur: string;
+  closingNotes: string; setClosingNotes: (v: string) => void;
+  onCancel: () => void; onConfirm: () => void;
+  loggedCashier: string; outletId: string | null; sessionStart: string;
+}) {
+  const [shiftCash, setShiftCash] = useState(0);
+  const [shiftMpesa, setShiftMpesa] = useState(0);
+  const [shiftCard, setShiftCard] = useState(0);
+  const [shiftCredit, setShiftCredit] = useState(0);
+  const [shiftExpenses, setShiftExpenses] = useState(0);
+  const [loadingSales, setLoadingSales] = useState(true);
+
+  useEffect(() => {
+    async function loadShiftData() {
+      setLoadingSales(true);
+      try {
+        // Fetch sales for this shift
+        const { data: sales } = await supabase.from('pos_sales').select('total, payment_method').eq('cashier_name', loggedCashier).eq('status', 'Completed').gte('created_at', sessionStart);
+        if (sales) {
+          setShiftCash(sales.filter(s => s.payment_method === 'Cash').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0));
+          setShiftMpesa(sales.filter(s => s.payment_method === 'Mpesa' || s.payment_method === 'M-Pesa').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0));
+          setShiftCard(sales.filter(s => s.payment_method === 'Card').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0));
+          setShiftCredit(sales.filter(s => s.payment_method === 'Credit').reduce((sum: number, s: Record<string, unknown>) => sum + ((s.total || 0) as number), 0));
+        }
+        // Fetch today's expenses
+        const today = new Date().toISOString().split('T')[0];
+        const { data: expData } = await supabase.from('cost_entries').select('amount').eq('date', today);
+        if (expData) {
+          setShiftExpenses(expData.reduce((sum: number, e: Record<string, unknown>) => sum + ((e.amount || 0) as number), 0));
+        }
+      } catch { /* continue */ }
+      setLoadingSales(false);
+    }
+    loadShiftData();
+  }, [loggedCashier, sessionStart]);
+
+  const netCash = shiftCash - shiftExpenses;
+  const expectedCashInDrawer = openingBalance + netCash;
+
+  return (
+    <div className="space-y-4">
+      <div className="text-center py-3 bg-red-50 rounded-xl border border-red-200">
+        <p className="text-xs text-red-600 uppercase tracking-wider font-medium">Shift Summary</p>
+        <p className="text-[10px] text-red-500 mt-0.5">Cashier: {loggedCashier}</p>
+      </div>
+
+      {loadingSales ? (
+        <div className="text-center py-4"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto" /></div>
+      ) : (
+        <>
+          {/* Sales Breakdown */}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Sales Breakdown</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2.5 bg-secondary rounded-lg">
+                <p className="text-[10px] text-muted-foreground">Total Sales</p>
+                <p className="text-base font-bold text-foreground">{cur} {totalSalesAmount.toLocaleString()}</p>
+              </div>
+              <div className="p-2.5 bg-secondary rounded-lg">
+                <p className="text-[10px] text-muted-foreground">Transactions</p>
+                <p className="text-base font-bold">{totalSalesCount}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2.5 bg-green-50 rounded-lg border border-green-200">
+                <p className="text-[10px] text-green-700 font-medium">Cash Sales</p>
+                <p className="text-base font-bold text-green-700">{cur} {shiftCash.toLocaleString()}</p>
+              </div>
+              <div className="p-2.5 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-[10px] text-blue-700 font-medium">M-Pesa Sales</p>
+                <p className="text-base font-bold text-blue-700">{cur} {shiftMpesa.toLocaleString()}</p>
+              </div>
+              <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-200">
+                <p className="text-[10px] text-purple-700 font-medium">Card Sales</p>
+                <p className="text-base font-bold text-purple-700">{cur} {shiftCard.toLocaleString()}</p>
+              </div>
+              <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200">
+                <p className="text-[10px] text-amber-700 font-medium">Credit Sales</p>
+                <p className="text-base font-bold text-amber-700">{cur} {shiftCredit.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Cash Reconciliation */}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cash Reconciliation</p>
+            <div className="bg-secondary/50 rounded-lg p-3 space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Opening Balance</span>
+                <span className="font-medium">{cur} {openingBalance.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-green-700">
+                <span>+ Cash Sales</span>
+                <span className="font-medium">{cur} {shiftCash.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-red-600">
+                <span>- Expenses (deducted)</span>
+                <span className="font-medium">({cur} {shiftExpenses.toLocaleString()})</span>
+              </div>
+              <div className="border-t border-border pt-1.5 mt-1.5">
+                <div className="flex justify-between font-bold">
+                  <span>Net Cash in Drawer</span>
+                  <span className="text-primary">{cur} {expectedCashInDrawer.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div>
+        <label className="block text-xs text-muted-foreground mb-1">Notes (optional)</label>
+        <textarea value={closingNotes} onChange={(e) => setClosingNotes(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm" rows={2} placeholder="Any discrepancies or notes..." />
+      </div>
+      <div className="flex gap-2 pt-2 border-t border-border">
+        <button onClick={onCancel} className="flex-1 px-3 py-2.5 border border-border rounded-xl hover:bg-secondary text-xs font-medium">Cancel</button>
+        <button onClick={onConfirm} className="flex-1 px-3 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 font-bold text-xs">Confirm &amp; End Shift</button>
+      </div>
     </div>
   );
 }
