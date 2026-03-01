@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { CartProvider, useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
 import { ShoppingBag, Search, User, Heart, X, Plus, Minus, Menu, ChevronRight, ChevronLeft, Mail } from 'lucide-react';
+import CookieConsent from '@/components/cookie-consent';
 
 // ─── Marquee Announcement Bar ────────────────────────────────────────────────
 function AnnouncementBar() {
@@ -532,8 +533,15 @@ function Footer() {
           <div>
             <h4 className="text-white font-bold text-sm uppercase tracking-widest mb-4">About Us</h4>
             <ul className="space-y-2.5 text-sm text-gray-400">
-              {['Our Story', 'Privacy Policy', 'Terms & Conditions', 'Contact Us', 'Careers'].map(l => (
-                <li key={l}><Link href={l === 'Contact Us' ? '/contact' : l === 'Our Story' ? '/about' : '#'} className="hover:text-orange-400 transition-colors">{l}</Link></li>
+              {[
+                { label: 'Our Story', href: '/about' },
+                { label: 'Privacy Policy', href: '/privacy-policy' },
+                { label: 'Terms & Conditions', href: '/terms' },
+                { label: 'Cookie Policy', href: '/cookie-policy' },
+                { label: 'Contact Us', href: '/contact' },
+                { label: 'Careers', href: '#' },
+              ].map(l => (
+                <li key={l.label}><Link href={l.href} className="hover:text-orange-400 transition-colors">{l.label}</Link></li>
               ))}
             </ul>
           </div>
@@ -552,8 +560,14 @@ function Footer() {
           <div>
             <h4 className="text-white font-bold text-sm uppercase tracking-widest mb-4">Let Us Help You</h4>
             <ul className="space-y-2.5 text-sm text-gray-400">
-              {['Delivery Information', 'Order Tracking', 'FAQs', 'Refund Policy', 'Custom Cakes'].map(l => (
-                <li key={l}><Link href="#" className="hover:text-orange-400 transition-colors">{l}</Link></li>
+              {[
+                { label: 'Delivery Information', href: '#' },
+                { label: 'Order Tracking', href: '#' },
+                { label: 'FAQs', href: '#' },
+                { label: 'Refund Policy', href: '/refund-policy' },
+                { label: 'Custom Cakes', href: '#' },
+              ].map(l => (
+                <li key={l.label}><Link href={l.href} className="hover:text-orange-400 transition-colors">{l.label}</Link></li>
               ))}
             </ul>
           </div>
@@ -617,6 +631,7 @@ export default function WebsiteLayout({ children }: { children: React.ReactNode 
         <Footer />
         <CartDrawer />
         <NewsletterModal />
+        <CookieConsent />
       </div>
     </CartProvider>
   );
