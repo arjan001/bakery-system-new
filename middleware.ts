@@ -16,6 +16,17 @@ const RIDER_DRIVER_ALLOWED = new Set([
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Redirect all routes to the ODPC compliance page (except /odpc itself, static assets, and API routes)
+  if (
+    pathname !== '/odpc' &&
+    !pathname.startsWith('/odpc/') &&
+    !pathname.startsWith('/_next') &&
+    !pathname.startsWith('/api') &&
+    !pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|css|js|woff|woff2|ttf|eot|webp|pdf)$/)
+  ) {
+    return NextResponse.redirect(new URL('/odpc', request.url));
+  }
+
   // Only protect admin routes
   if (!pathname.startsWith('/admin')) {
     return NextResponse.next();
