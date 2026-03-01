@@ -138,9 +138,9 @@ function Navbar() {
   ];
 
   const LogoElement = (
-    <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+    <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity overflow-hidden">
       {logoUrl ? (
-        <img src={logoUrl} alt={businessName} style={{ height: `${logoHeight}px` }} className="w-auto object-contain" />
+        <img src={logoUrl} alt={businessName} style={{ height: `${logoHeight}px`, maxHeight: '3.25rem' }} className="w-auto object-contain rounded-lg" />
       ) : (
         <span className="text-2xl font-black tracking-tight text-gray-900 hover:text-orange-600 transition-colors">
           {businessName}

@@ -377,7 +377,7 @@ export function Sidebar() {
         {!collapsed && (
           <Link href="/admin" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             {logoUrl ? (
-              <img src={logoUrl} alt={businessName} className="h-8 w-auto object-contain" />
+              <img src={logoUrl} alt={businessName} className="h-8 w-auto object-contain rounded-lg" />
             ) : (
               <span className="text-lg font-black text-primary tracking-wide">{businessName}</span>
             )}
@@ -385,7 +385,7 @@ export function Sidebar() {
         )}
         {collapsed && logoUrl && (
           <Link href="/admin" className="mx-auto hover:opacity-80 transition-opacity">
-            <img src={logoUrl} alt={businessName} className="h-7 w-7 object-contain" />
+            <img src={logoUrl} alt={businessName} className="h-7 w-7 object-contain rounded-lg" />
           </Link>
         )}
         <button
