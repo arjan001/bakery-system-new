@@ -38,8 +38,17 @@ export default function RolesPermissionsPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [mainSuperAdminId, setMainSuperAdminId] = useState<string | null>(null);
 
   const fetchEmployees = useCallback(async () => {
+    // Identify the main super admin (first registered user) to hide from lists
+    try {
+      const { data: usersData } = await supabase.from('users').select('id').order('created_at', { ascending: true }).limit(1);
+      if (usersData && usersData.length > 0) {
+        setMainSuperAdminId(usersData[0].id as string);
+      }
+    } catch { /* users table may not exist */ }
+
     try {
       const { data } = await supabase
         .from('employees')
@@ -343,6 +352,8 @@ export default function RolesPermissionsPage() {
   // Filter employees for Users tab
   const allEmployeeRoles = [...new Set(employees.map(e => e.loginRole).filter(Boolean))];
   const filteredEmployees = employees.filter(emp => {
+    // Hide the main super admin (first registered user) from all views
+    if (mainSuperAdminId && emp.id === mainSuperAdminId) return false;
     const matchesSearch = !userSearch || emp.name.toLowerCase().includes(userSearch.toLowerCase()) || emp.email.toLowerCase().includes(userSearch.toLowerCase());
     const matchesRole = userRoleFilter === 'All' || emp.loginRole === userRoleFilter;
     return matchesSearch && matchesRole;

@@ -64,6 +64,12 @@ export default function SettingsPage() {
     timezone: 'Africa/Nairobi',
     language: 'en',
     logoUrl: '',
+    logoHeight: 60,
+    logoWidthAuto: true,
+    invoiceLogoHeight: 50,
+    reportLogoHeight: 45,
+    reportWatermarkEnabled: true,
+    reportWatermarkOpacity: 8,
   });
 
   // ── Gemini AI Settings ──
@@ -800,9 +806,9 @@ export default function SettingsPage() {
 
           <div className="border border-border rounded-lg p-6 bg-card">
             <h3 className="font-semibold mb-4">Logo</h3>
-            <p className="text-sm text-muted-foreground mb-4">Upload your company logo. It will be displayed on the admin panel, customer website, and receipts.</p>
+            <p className="text-sm text-muted-foreground mb-4">Upload your company logo. It will be displayed on the admin panel, customer website, receipts, invoices, and reports.</p>
             <div className="flex items-start gap-6">
-              <div className="w-24 h-24 bg-secondary rounded-lg flex items-center justify-center text-2xl font-black text-primary border-2 border-dashed border-border overflow-hidden flex-shrink-0">
+              <div className="bg-secondary rounded-lg flex items-center justify-center text-2xl font-black text-primary border-2 border-dashed border-border overflow-hidden flex-shrink-0" style={{ width: Math.max(96, general.logoHeight + 36), height: Math.max(96, general.logoHeight + 36) }}>
                 {general.logoUrl ? <img src={general.logoUrl} alt="Logo" className="w-full h-full object-contain rounded-lg" /> : 'S'}
               </div>
               <div className="flex-1 space-y-3">
@@ -842,6 +848,77 @@ export default function SettingsPage() {
                   <p className="text-xs text-muted-foreground mt-1">Recommended: PNG or SVG, at least 200x200px. The logo is stored in Supabase Storage and referenced across all pages.</p>
                 </div>
               </div>
+            </div>
+
+            {/* Logo Size Settings */}
+            <div className="mt-6 pt-5 border-t border-border">
+              <h4 className="text-sm font-semibold mb-3">Logo Size Settings</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Website / Landing Page Logo Height (px)</label>
+                  <input type="range" min="30" max="120" step="5" value={general.logoHeight} onChange={e => setGeneral({ ...general, logoHeight: parseInt(e.target.value) })} className="w-full accent-primary" />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>30px (small)</span>
+                    <span className="font-semibold text-primary">{general.logoHeight}px</span>
+                    <span>120px (large)</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Invoice Logo Height (px)</label>
+                  <input type="range" min="30" max="120" step="5" value={general.invoiceLogoHeight} onChange={e => setGeneral({ ...general, invoiceLogoHeight: parseInt(e.target.value) })} className="w-full accent-primary" />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>30px</span>
+                    <span className="font-semibold text-primary">{general.invoiceLogoHeight}px</span>
+                    <span>120px</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Report PDF Logo Height (px)</label>
+                  <input type="range" min="30" max="120" step="5" value={general.reportLogoHeight} onChange={e => setGeneral({ ...general, reportLogoHeight: parseInt(e.target.value) })} className="w-full accent-primary" />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>30px</span>
+                    <span className="font-semibold text-primary">{general.reportLogoHeight}px</span>
+                    <span>120px</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={general.logoWidthAuto} onChange={e => setGeneral({ ...general, logoWidthAuto: e.target.checked })} className="accent-primary w-4 h-4" />
+                    <span className="text-sm">Auto width (maintain aspect ratio)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Report Watermark Settings */}
+            <div className="mt-6 pt-5 border-t border-border">
+              <h4 className="text-sm font-semibold mb-3">PDF Report Watermark</h4>
+              <p className="text-xs text-muted-foreground mb-3">Display your logo as a semi-transparent watermark behind the content on PDF reports and invoices.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={general.reportWatermarkEnabled} onChange={e => setGeneral({ ...general, reportWatermarkEnabled: e.target.checked })} className="accent-primary w-4 h-4" />
+                    <span className="text-sm">Enable logo watermark on PDFs</span>
+                  </label>
+                </div>
+                <div>
+                  <label className={labelCls}>Watermark Opacity (%)</label>
+                  <input type="range" min="3" max="25" step="1" value={general.reportWatermarkOpacity} onChange={e => setGeneral({ ...general, reportWatermarkOpacity: parseInt(e.target.value) })} className="w-full accent-primary" disabled={!general.reportWatermarkEnabled} />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>3% (subtle)</span>
+                    <span className="font-semibold text-primary">{general.reportWatermarkOpacity}%</span>
+                    <span>25% (bold)</span>
+                  </div>
+                </div>
+              </div>
+              {general.logoUrl && general.reportWatermarkEnabled && (
+                <div className="mt-3 p-4 bg-secondary/30 rounded-lg border border-border relative overflow-hidden" style={{ minHeight: 80 }}>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <img src={general.logoUrl} alt="Watermark Preview" style={{ opacity: general.reportWatermarkOpacity / 100, maxWidth: '60%', maxHeight: '60px' }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground relative z-10 text-center">Watermark preview (sample text behind logo)</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

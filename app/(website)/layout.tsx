@@ -83,6 +83,7 @@ function Navbar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
   const [businessName, setBusinessName] = useState('SNACKOH');
+  const [logoHeight, setLogoHeight] = useState(40);
   const router = useRouter();
 
   useEffect(() => {
@@ -100,6 +101,7 @@ function Navbar() {
           const g = data.value as Record<string, string>;
           if (g.logoUrl) setLogoUrl(g.logoUrl);
           if (g.businessName) setBusinessName(g.businessName);
+          if (g.logoHeight) setLogoHeight(parseInt(g.logoHeight as string) || 40);
           return;
         }
       } catch { /* table may not exist */ }
@@ -109,6 +111,7 @@ function Navbar() {
           const parsed = JSON.parse(saved);
           if (parsed.general?.logoUrl) setLogoUrl(parsed.general.logoUrl);
           if (parsed.general?.businessName) setBusinessName(parsed.general.businessName);
+          if (parsed.general?.logoHeight) setLogoHeight(parseInt(parsed.general.logoHeight) || 40);
         }
       } catch { /* ignore */ }
     }
@@ -138,7 +141,7 @@ function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             {logoUrl ? (
-              <img src={logoUrl} alt={businessName} className="h-10 w-auto object-contain" />
+              <img src={logoUrl} alt={businessName} style={{ height: `${logoHeight}px` }} className="w-auto object-contain" />
             ) : (
               <span className="text-2xl font-black tracking-tight text-gray-900 hover:text-orange-600 transition-colors">
                 {businessName}
