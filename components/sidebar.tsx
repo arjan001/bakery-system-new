@@ -58,6 +58,8 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 interface NavItem {
   label: string;
@@ -232,7 +234,8 @@ interface SearchResult {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
+  const isMobile = useIsMobile();
+  const [collapsed, setCollapsed] = useState(true);
   const [logoUrl, setLogoUrl] = useState('');
   const [businessName, setBusinessName] = useState('SNACKOH');
   const { isAdmin, permissions, role, loading: permsLoading, isOutletAdmin } = useUserPermissions();
@@ -245,6 +248,18 @@ export function Sidebar() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchResultsRef = useRef<HTMLDivElement>(null);
+
+  // Auto-collapse on mobile, expand on desktop
+  useEffect(() => {
+    setCollapsed(isMobile);
+  }, [isMobile]);
+
+  // Auto-collapse sidebar on navigation when on mobile
+  useEffect(() => {
+    if (isMobile) {
+      setCollapsed(true);
+    }
+  }, [pathname, isMobile]);
 
   // Load logo from database/localStorage
   useEffect(() => {
@@ -388,12 +403,19 @@ export function Sidebar() {
             <img src={logoUrl} alt={businessName} className="h-7 w-7 object-contain rounded-lg" />
           </Link>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className={`rounded p-1.5 hover:bg-secondary text-muted-foreground text-xs ${collapsed ? 'mx-auto' : ''}`}
-        >
-          {collapsed ? '▶' : '◀'}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className={`rounded p-1.5 hover:bg-secondary text-muted-foreground text-xs ${collapsed ? 'mx-auto' : ''}`}
+            >
+              {collapsed ? '▶' : '◀'}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {collapsed ? 'Open Sidebar' : 'Close Sidebar'}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Search bar */}

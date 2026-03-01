@@ -5,6 +5,9 @@ import { supabase } from '@/lib/supabase';
 import { Search, ChevronLeft, ChevronRight, CheckSquare, Square, Trash2, Package, Clock, CheckCircle, Truck, XCircle, MapPin, Eye, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { Modal } from '@/components/modal';
 import { logAudit } from '@/lib/audit-logger';
+import dynamic from 'next/dynamic';
+
+const LiveTrackingMap = dynamic(() => import('@/components/live-tracking-map'), { ssr: false });
 
 interface OrderItem {
   productName: string;
@@ -35,6 +38,9 @@ interface TrackedOrder {
   complaintText?: string;
   complaintAt?: string;
   verificationCode?: string;
+  deliveryId?: string;
+  customerGpsLat?: number;
+  customerGpsLng?: number;
 }
 
 const STATUS_STEPS = ['Pending', 'Confirmed', 'Processing', 'Ready', 'Shipped', 'Delivered'];
@@ -66,6 +72,24 @@ export default function OrderTrackingPage() {
 
     const mapped = await Promise.all(data.map(async (r: Record<string, unknown>) => {
       const { data: items } = await supabase.from('order_items').select('*').eq('order_id', r.id);
+
+      // Try to find a linked delivery for this order (by customer name + recent date)
+      let deliveryId: string | undefined;
+      let customerGpsLat: number | undefined;
+      let customerGpsLng: number | undefined;
+      if (r.status === 'Shipped' || r.status === 'Delivered' || r.assigned_driver) {
+        const { data: deliveryData } = await supabase.from('deliveries')
+          .select('id, customer_gps_lat, customer_gps_lng')
+          .eq('customer_name', r.customer_name)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (deliveryData && deliveryData.length > 0) {
+          deliveryId = deliveryData[0].id;
+          customerGpsLat = deliveryData[0].customer_gps_lat;
+          customerGpsLng = deliveryData[0].customer_gps_lng;
+        }
+      }
+
       return {
         id: r.id as string,
         orderNumber: (r.order_number || '') as string,
@@ -93,6 +117,9 @@ export default function OrderTrackingPage() {
         complaintText: (r.complaint_text || '') as string,
         complaintAt: (r.complaint_at || '') as string,
         verificationCode: (r.verification_code || '') as string,
+        deliveryId,
+        customerGpsLat,
+        customerGpsLng,
       };
     }));
     setOrders(mapped);
@@ -350,10 +377,17 @@ export default function OrderTrackingPage() {
                         <td className="px-4 py-3">
                           {/* Progress bar */}
                           {stepIdx >= 0 ? (
-                            <div className="flex gap-0.5">
-                              {STATUS_STEPS.map((_, i) => (
-                                <div key={i} className={`h-1.5 w-4 rounded-full ${i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'}`} />
-                              ))}
+                            <div className="space-y-1">
+                              <div className="flex gap-0.5">
+                                {STATUS_STEPS.map((step, i) => (
+                                  <div
+                                    key={i}
+                                    className={`h-2 flex-1 rounded-full transition-colors ${i <= stepIdx ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                    title={step}
+                                  />
+                                ))}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">{stepIdx + 1}/{STATUS_STEPS.length} — {order.status}</p>
                             </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">&mdash;</span>
@@ -462,6 +496,20 @@ export default function OrderTrackingPage() {
                 </div>
               )}
             </div>
+
+            {/* Live Delivery Tracking Map */}
+            {detailOrder.deliveryId && detailOrder.customerGpsLat && detailOrder.customerGpsLng &&
+             detailOrder.fulfillment === 'Delivery' && (
+              <LiveTrackingMap
+                deliveryId={detailOrder.deliveryId}
+                customerLat={detailOrder.customerGpsLat}
+                customerLng={detailOrder.customerGpsLng}
+                customerName={detailOrder.customerName}
+                customerPhone={detailOrder.customerPhone}
+                riderName={detailOrder.assignedDriver}
+                status={detailOrder.status}
+              />
+            )}
 
             {/* Quick Actions */}
             <div className="flex flex-wrap gap-2">
