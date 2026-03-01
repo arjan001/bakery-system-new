@@ -86,24 +86,69 @@ function exportCSV(filename: string, headers: string[], rows: string[][]) {
 
 // ─── PDF Export Helper ────────────────────────────────────────────────────────
 
-function exportPDF(title: string, headers: string[], rows: string[][]) {
+interface ReportBusinessInfo {
+  businessName: string;
+  tagline: string;
+  phone: string;
+  email: string;
+  address: string;
+  logoUrl: string;
+}
+
+function exportPDF(title: string, headers: string[], rows: string[][], businessInfo?: ReportBusinessInfo) {
   const win = window.open('', '_blank');
   if (!win) return;
-  const tableRows = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">${cell}</td>`).join('')}</tr>`).join('');
-  const html = `<!DOCTYPE html><html><head><title>${title}</title><style>
-    body{font-family:Arial,sans-serif;padding:30px;color:#333}
-    h1{font-size:20px;margin-bottom:5px}
-    .subtitle{color:#666;font-size:12px;margin-bottom:20px}
-    table{width:100%;border-collapse:collapse;margin-top:15px}
-    th{background:#f8f9fa;padding:8px 10px;text-align:left;font-size:12px;font-weight:600;border-bottom:2px solid #dee2e6}
-    .footer{margin-top:30px;padding-top:15px;border-top:1px solid #eee;font-size:10px;color:#999;text-align:center}
-    @media print{body{padding:15px}.no-print{display:none}}
+  const b = businessInfo || { businessName: 'SNACKOH BITES', tagline: 'Quality Baked Goods', phone: '', email: '', address: 'Nairobi, Kenya', logoUrl: '' };
+  const tableRows = rows.map((row, i) => `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">${row.map(cell => `<td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:12px">${cell}</td>`).join('')}</tr>`).join('');
+  const html = `<!DOCTYPE html><html><head><title>${title} - ${b.businessName}</title><style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 40px; color: #1a1a1a; background: #fff; }
+    .report { max-width: 900px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #ea580c; }
+    .logo-section h1 { font-size: 24px; font-weight: 800; color: #ea580c; letter-spacing: -0.5px; }
+    .logo-section .tagline { font-size: 11px; color: #888; margin-top: 2px; }
+    .logo-section .contact { font-size: 11px; color: #666; margin-top: 8px; line-height: 1.6; }
+    .report-title { text-align: right; }
+    .report-title h2 { font-size: 22px; font-weight: 700; color: #333; }
+    .report-title .date { font-size: 11px; color: #888; margin-top: 4px; }
+    .report-title .period { font-size: 12px; color: #ea580c; font-weight: 600; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; border-radius: 8px; overflow: hidden; }
+    thead th { background: #1a1a1a; color: #fff; padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+    tbody tr.even { background: #fafafa; }
+    tbody tr.odd { background: #fff; }
+    tbody tr:hover { background: #fff7ed; }
+    .summary { margin-top: 25px; display: flex; gap: 15px; }
+    .summary-card { flex: 1; background: #f8f8f8; border-radius: 8px; padding: 14px 18px; border-left: 3px solid #ea580c; }
+    .summary-card .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #999; font-weight: 600; }
+    .summary-card .value { font-size: 18px; font-weight: 800; color: #1a1a1a; margin-top: 2px; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 2px solid #f0f0f0; text-align: center; }
+    .footer .company { font-size: 12px; font-weight: 700; color: #333; }
+    .footer .details { font-size: 10px; color: #999; margin-top: 4px; line-height: 1.6; }
+    .footer .powered { font-size: 9px; color: #ccc; margin-top: 8px; }
+    @media print { body { padding: 20px; } .no-print { display: none; } }
   </style></head><body>
-    <h1>${title}</h1>
-    <p class="subtitle">Generated on ${new Date().toLocaleString()} | SNACKOH BITES</p>
+  <div class="report">
+    <div class="header">
+      <div class="logo-section">
+        ${b.logoUrl ? `<img src="${b.logoUrl}" alt="${b.businessName}" style="height:45px;margin-bottom:6px" />` : ''}
+        <h1>${b.businessName}</h1>
+        <div class="tagline">${b.tagline}</div>
+        <div class="contact">${b.address}${b.phone ? `<br>${b.phone}` : ''}${b.email ? ` | ${b.email}` : ''}</div>
+      </div>
+      <div class="report-title">
+        <h2>${title}</h2>
+        <div class="date">Generated: ${new Date().toLocaleString()}</div>
+      </div>
+    </div>
     <table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table>
-    <p class="footer">SNACKOH BITES - Financial Report</p>
-    <script>window.onload=function(){window.print()}</script>
+    <div style="margin-top:8px;text-align:right;font-size:11px;color:#888">${rows.length} record${rows.length !== 1 ? 's' : ''}</div>
+    <div class="footer">
+      <div class="company">${b.businessName}</div>
+      <div class="details">${b.address}${b.phone ? ` | ${b.phone}` : ''}${b.email ? ` | ${b.email}` : ''}</div>
+      <div class="powered">Confidential - For internal use only</div>
+    </div>
+  </div>
+  <script>window.onload=function(){window.print()}</script>
   </body></html>`;
   win.document.write(html);
   win.document.close();
@@ -169,6 +214,11 @@ export default function ReportsPage() {
   const defaultRange = getDefaultDateRange();
   const [dateFrom, setDateFrom] = useState(defaultRange.start);
   const [dateTo, setDateTo] = useState(defaultRange.end);
+
+  // Business settings for report header
+  const [reportBizInfo, setReportBizInfo] = useState<ReportBusinessInfo>({
+    businessName: 'SNACKOH BITES', tagline: 'Quality Baked Goods', phone: '', email: '', address: 'Nairobi, Kenya', logoUrl: '',
+  });
 
   // Data states
   const [plReports, setPlReports] = useState<PlReport[]>([]);
@@ -287,6 +337,36 @@ export default function ReportsPage() {
     await Promise.all([fetchPlReports(), fetchOrders(), fetchInventory(), fetchDebtors(), fetchCreditors(), fetchLedger(), fetchSales(), fetchPosSales(), fetchCostEntries(), fetchAssets()]);
     setLoading(false);
   }, [fetchPlReports, fetchOrders, fetchInventory, fetchDebtors, fetchCreditors, fetchLedger, fetchSales, fetchPosSales, fetchCostEntries, fetchAssets]);
+
+  // Load business settings for report headers
+  useEffect(() => {
+    async function loadBizInfo() {
+      try {
+        const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'general').single();
+        if (!error && data?.value) {
+          const g = data.value as Record<string, unknown>;
+          setReportBizInfo(prev => ({
+            ...prev,
+            businessName: (g.businessName as string) || prev.businessName,
+            tagline: (g.tagline as string) || prev.tagline,
+            phone: (g.phone as string) || prev.phone,
+            email: (g.email as string) || prev.email,
+            address: (g.address as string) || prev.address,
+            logoUrl: (g.logoUrl as string) || prev.logoUrl,
+          }));
+          return;
+        }
+      } catch { /* ignore */ }
+      try {
+        const saved = localStorage.getItem('snackoh_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.general) setReportBizInfo(prev => ({ ...prev, ...parsed.general }));
+        }
+      } catch { /* ignore */ }
+    }
+    loadBizInfo();
+  }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPnlPage(1); setSalesPage(1); setInventoryPage(1); setDebtorsPage(1); setCreditorsPage(1); setItemsPage(1); setLedgerPage(1); }, [activeTab]);
@@ -604,7 +684,7 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{plReports.length} P&L report{plReports.length !== 1 ? 's' : ''}</p>
           <div className="flex gap-3">
-            <ExportButtons onCSV={() => { exportCSV('pnl_reports', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'pnl_reports', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Profit & Loss Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'pnl_reports', details: { format: 'PDF', rows: csvRows.length } }); }} />
+            <ExportButtons onCSV={() => { exportCSV('pnl_reports', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'pnl_reports', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Profit & Loss Report', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'pnl_reports', details: { format: 'PDF', rows: csvRows.length } }); }} />
             <button onClick={() => { setPnlEditingId(null); setPnlFormData({ period: '', revenue: 0, costs: 0 }); setShowPnlForm(true); }} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">+ Add Period</button>
           </div>
         </div>
@@ -690,7 +770,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Sales Transactions</h3>
-            <ExportButtons onCSV={() => { exportCSV('sales_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'sales_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Sales Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'sales_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
+            <ExportButtons onCSV={() => { exportCSV('sales_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'sales_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Sales Report', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'sales_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -756,7 +836,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Inventory Valuation Report</h3>
-            <ExportButtons onCSV={() => { exportCSV('inventory_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'inventory_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Inventory Valuation Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'inventory_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
+            <ExportButtons onCSV={() => { exportCSV('inventory_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'inventory_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Inventory Valuation Report', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'inventory_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -811,7 +891,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Debtor Accounts</h3>
-            <ExportButtons onCSV={() => { exportCSV('debtors_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'debtors_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Debtors Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'debtors_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
+            <ExportButtons onCSV={() => { exportCSV('debtors_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'debtors_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Debtors Report', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'debtors_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -848,7 +928,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Creditor Accounts</h3>
-            <ExportButtons onCSV={() => { exportCSV('creditors_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'creditors_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Creditors Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'creditors_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
+            <ExportButtons onCSV={() => { exportCSV('creditors_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'creditors_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Creditors Report', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'creditors_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -885,7 +965,7 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-border">
             <h3 className="text-lg font-semibold">Item-Level Performance</h3>
-            <ExportButtons onCSV={() => { exportCSV('items_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'items_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Item Performance Report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'items_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
+            <ExportButtons onCSV={() => { exportCSV('items_report', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'items_report', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Item Performance Report', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'items_report', details: { format: 'PDF', rows: csvRows.length } }); }} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -945,7 +1025,7 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{ledgerEntries.length} ledger entr{ledgerEntries.length !== 1 ? 'ies' : 'y'}</p>
           <div className="flex gap-3">
-            <ExportButtons onCSV={() => { exportCSV('ledger_entries', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'ledger_entries', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('General Ledger', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'ledger_entries', details: { format: 'PDF', rows: csvRows.length } }); }} />
+            <ExportButtons onCSV={() => { exportCSV('ledger_entries', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'ledger_entries', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('General Ledger', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'ledger_entries', details: { format: 'PDF', rows: csvRows.length } }); }} />
             <button onClick={() => { setLedgerEditingId(null); setLedgerFormData({ entryDate: new Date().toISOString().split('T')[0], description: '', account: '', debit: 0, credit: 0, reference: '', category: 'General' }); setShowLedgerForm(true); }} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">+ New Entry</button>
           </div>
         </div>
@@ -1039,7 +1119,7 @@ export default function ReportsPage() {
             <h3 className="text-lg font-semibold">Statement of Financial Position</h3>
             <p className="text-sm text-muted-foreground">As at {formatDate(bsDate)}</p>
           </div>
-          <ExportButtons onCSV={() => { exportCSV('balance_sheet', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'balance_sheet', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Balance Sheet', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'balance_sheet', details: { format: 'PDF', rows: csvRows.length } }); }} />
+          <ExportButtons onCSV={() => { exportCSV('balance_sheet', csvHeaders, csvRows); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'balance_sheet', details: { format: 'CSV', rows: csvRows.length } }); }} onPDF={() => { exportPDF('Balance Sheet', csvHeaders, csvRows, reportBizInfo); logAudit({ action: 'EXPORT', module: 'Reports', record_id: 'balance_sheet', details: { format: 'PDF', rows: csvRows.length } }); }} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
-import { FileText, Plus, Search, DollarSign, Clock, AlertTriangle, CheckCircle, CreditCard } from 'lucide-react';
+import { FileText, Plus, Search, DollarSign, Clock, AlertTriangle, CheckCircle, CreditCard, Download, Printer } from 'lucide-react';
 
 interface CreditInvoice {
   id: string;
@@ -55,6 +55,29 @@ interface Customer {
   creditLimit: number;
 }
 
+interface CreditOrder {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  totalAmount: number;
+  status: string;
+  paymentStatus: string;
+  items: { name: string; quantity: number; unitPrice: number; total: number }[];
+  createdAt: string;
+}
+
+interface BusinessSettings {
+  businessName: string;
+  tagline: string;
+  phone: string;
+  email: string;
+  address: string;
+  logoUrl: string;
+  currency: string;
+  taxRate: number;
+}
+
 const emptyItem: InvoiceItem = { name: '', quantity: 1, unitPrice: 0, total: 0 };
 
 function generateInvoiceNumber(): string {
@@ -67,6 +90,7 @@ function generateInvoiceNumber(): string {
 export default function CreditInvoicesPage() {
   const [invoices, setInvoices] = useState<CreditInvoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [creditOrders, setCreditOrders] = useState<CreditOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showDetail, setShowDetail] = useState<CreditInvoice | null>(null);
@@ -75,6 +99,10 @@ export default function CreditInvoicesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings>({
+    businessName: 'SNACKOH BITES', tagline: 'Quality Baked Goods', phone: '+254 700 000 000',
+    email: 'info@snackoh.com', address: 'Nairobi, Kenya', logoUrl: '', currency: 'KES', taxRate: 16,
+  });
   const perPage = 10;
 
   const [formData, setFormData] = useState({
@@ -82,6 +110,7 @@ export default function CreditInvoicesPage() {
     customerId: '',
     customerName: '',
     customerPhone: '',
+    selectedOrderId: '',
     items: [{ ...emptyItem }] as InvoiceItem[],
     subtotal: 0,
     tax: 0,
@@ -108,6 +137,37 @@ export default function CreditInvoicesPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Load business settings for report header
+  const loadBusinessSettings = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'general').single();
+      if (!error && data?.value) {
+        const g = data.value as Record<string, unknown>;
+        setBusinessSettings(prev => ({
+          ...prev,
+          businessName: (g.businessName as string) || prev.businessName,
+          tagline: (g.tagline as string) || prev.tagline,
+          phone: (g.phone as string) || prev.phone,
+          email: (g.email as string) || prev.email,
+          address: (g.address as string) || prev.address,
+          logoUrl: (g.logoUrl as string) || prev.logoUrl,
+          currency: (g.currency as string) || prev.currency,
+          taxRate: (g.taxRate as number) || prev.taxRate,
+        }));
+        return;
+      }
+    } catch { /* ignore */ }
+    try {
+      const saved = localStorage.getItem('snackoh_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.general) {
+          setBusinessSettings(prev => ({ ...prev, ...parsed.general }));
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
@@ -129,7 +189,6 @@ export default function CreditInvoicesPage() {
           const dueDate = (r.due_date || '') as string;
           let status = (r.status || 'Unpaid') as CreditInvoice['status'];
 
-          // Auto-determine status
           if (balance <= 0 && (r.amount_paid as number) > 0) {
             status = 'Paid';
           } else if (dueDate && new Date(dueDate) < now && balance > 0) {
@@ -181,6 +240,87 @@ export default function CreditInvoicesPage() {
     }
   }, []);
 
+  // Fetch credit orders (orders with payment_status = 'Unpaid' or payment_method = 'Credit')
+  const fetchCreditOrders = useCallback(async () => {
+    try {
+      // Fetch POS sales with credit
+      const { data: posSales } = await supabase
+        .from('pos_sales')
+        .select('id, receipt_number, customer_name, sale_type, total, status, created_at')
+        .or('sale_type.eq.Credit,payment_method.eq.Credit')
+        .order('created_at', { ascending: false });
+
+      // Fetch regular orders with credit payment
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('id, order_number, customer_name, customer_phone, total_amount, status, payment_status, payment_method, created_at')
+        .or('payment_status.eq.Unpaid,payment_method.eq.Credit')
+        .order('created_at', { ascending: false });
+
+      const creditOrdersList: CreditOrder[] = [];
+
+      // Map POS sales
+      if (posSales) {
+        for (const sale of posSales) {
+          // Fetch sale items
+          const { data: saleItems } = await supabase
+            .from('pos_sale_items')
+            .select('product_name, quantity, unit_price, total')
+            .eq('sale_id', sale.id);
+
+          creditOrdersList.push({
+            id: sale.id,
+            orderNumber: sale.receipt_number || sale.id,
+            customerName: sale.customer_name || 'Walk-in',
+            customerPhone: '',
+            totalAmount: sale.total || 0,
+            status: sale.status || 'Completed',
+            paymentStatus: 'Unpaid',
+            items: (saleItems || []).map((item: Record<string, unknown>) => ({
+              name: (item.product_name || '') as string,
+              quantity: (item.quantity || 1) as number,
+              unitPrice: (item.unit_price || 0) as number,
+              total: (item.total || 0) as number,
+            })),
+            createdAt: sale.created_at || '',
+          });
+        }
+      }
+
+      // Map regular orders
+      if (orders) {
+        for (const order of orders) {
+          // Fetch order items
+          const { data: orderItems } = await supabase
+            .from('order_items')
+            .select('product_name, quantity, unit_price, total')
+            .eq('order_id', order.id);
+
+          creditOrdersList.push({
+            id: order.id,
+            orderNumber: order.order_number || order.id,
+            customerName: order.customer_name || 'Unknown',
+            customerPhone: order.customer_phone || '',
+            totalAmount: order.total_amount || 0,
+            status: order.status || 'Pending',
+            paymentStatus: order.payment_status || 'Unpaid',
+            items: (orderItems || []).map((item: Record<string, unknown>) => ({
+              name: (item.product_name || '') as string,
+              quantity: (item.quantity || 1) as number,
+              unitPrice: (item.unit_price || 0) as number,
+              total: (item.total || 0) as number,
+            })),
+            createdAt: order.created_at || '',
+          });
+        }
+      }
+
+      setCreditOrders(creditOrdersList);
+    } catch {
+      setCreditOrders([]);
+    }
+  }, []);
+
   const fetchPaymentsForInvoice = async (invoiceId: string) => {
     const { data } = await supabase
       .from('credit_invoice_payments')
@@ -202,10 +342,9 @@ export default function CreditInvoicesPage() {
     }
   };
 
-  useEffect(() => { fetchInvoices(); fetchCustomers(); }, [fetchInvoices, fetchCustomers]);
+  useEffect(() => { fetchInvoices(); fetchCustomers(); fetchCreditOrders(); loadBusinessSettings(); }, [fetchInvoices, fetchCustomers, fetchCreditOrders, loadBusinessSettings]);
   useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus]);
 
-  // Calculate subtotal and total when items change
   const recalculate = (items: InvoiceItem[], tax: number) => {
     const subtotal = items.reduce((sum, item) => sum + item.total, 0);
     const totalAmount = subtotal + tax;
@@ -236,14 +375,63 @@ export default function CreditInvoicesPage() {
     setFormData({ ...formData, items: updated, subtotal, totalAmount });
   };
 
+  // Get credit orders for a specific customer
+  const getCustomerCreditOrders = (customerName: string) => {
+    return creditOrders.filter(o =>
+      o.customerName.toLowerCase() === customerName.toLowerCase()
+    );
+  };
+
   const handleCustomerSelect = (customerId: string) => {
     const customer = customers.find(c => c.id === customerId);
-    setFormData({
-      ...formData,
+    if (!customer) return;
+
+    // Find credit orders for this customer
+    const customerOrders = getCustomerCreditOrders(customer.name);
+
+    setFormData(prev => ({
+      ...prev,
       customerId,
-      customerName: customer?.name || '',
-      customerPhone: customer?.phone || '',
-    });
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      selectedOrderId: '',
+      items: customerOrders.length > 0 ? prev.items : [{ ...emptyItem }],
+    }));
+  };
+
+  // Handle order selection - auto-fill items
+  const handleOrderSelect = (orderId: string) => {
+    const order = creditOrders.find(o => o.id === orderId);
+    if (!order) {
+      setFormData(prev => ({
+        ...prev,
+        selectedOrderId: '',
+        items: [{ ...emptyItem }],
+        subtotal: 0,
+        totalAmount: 0,
+      }));
+      return;
+    }
+
+    const items: InvoiceItem[] = order.items.length > 0
+      ? order.items.map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          total: i.quantity * i.unitPrice,
+        }))
+      : [{ name: `Order ${order.orderNumber}`, quantity: 1, unitPrice: order.totalAmount, total: order.totalAmount }];
+
+    const { subtotal, totalAmount } = recalculate(items, formData.tax);
+
+    setFormData(prev => ({
+      ...prev,
+      selectedOrderId: orderId,
+      items,
+      subtotal,
+      totalAmount,
+      notes: prev.notes || `Credit order ${order.orderNumber}`,
+    }));
   };
 
   const handleSetDueDate = (terms: number) => {
@@ -304,7 +492,6 @@ export default function CreditInvoicesPage() {
             status: 'Current',
           }).eq('id', existingDebtor.id);
 
-          // Link invoice to debtor
           if (data) {
             await supabase.from('credit_invoices').update({ debtor_id: existingDebtor.id }).eq('id', (data as Record<string, unknown>).id);
           }
@@ -376,7 +563,6 @@ export default function CreditInvoicesPage() {
         updated_at: new Date().toISOString(),
       }).eq('id', showPaymentForm.id);
 
-      // Update debtor total if linked
       if (showPaymentForm.debtorId) {
         const { data: debtor } = await supabase
           .from('debtors')
@@ -393,7 +579,6 @@ export default function CreditInvoicesPage() {
           }).eq('id', showPaymentForm.debtorId);
         }
 
-        // Record debtor transaction
         await supabase.from('debtor_transactions').insert({
           debtor_id: showPaymentForm.debtorId,
           type: 'Payment',
@@ -428,6 +613,7 @@ export default function CreditInvoicesPage() {
       customerId: '',
       customerName: '',
       customerPhone: '',
+      selectedOrderId: '',
       items: [{ ...emptyItem }],
       subtotal: 0,
       tax: 0,
@@ -464,6 +650,135 @@ export default function CreditInvoicesPage() {
     showToast('Invoice deleted', 'success');
   };
 
+  // Print/Download modern invoice
+  const handlePrintInvoice = (inv: CreditInvoice) => {
+    const win = window.open('', '_blank');
+    if (!win) return;
+
+    const b = businessSettings;
+    const itemRows = inv.items.map((item, idx) =>
+      `<tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;color:#666;text-align:center">${idx + 1}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-weight:500">${item.name}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;text-align:center">${item.quantity}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;text-align:right">${b.currency} ${item.unitPrice.toLocaleString()}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:600">${b.currency} ${item.total.toLocaleString()}</td>
+      </tr>`
+    ).join('');
+
+    const paymentRows = payments.map(p =>
+      `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">${formatDate(p.createdAt)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;color:#059669;font-weight:600">${b.currency} ${p.amount.toLocaleString()}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">${p.paymentMethod}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#666">${p.reference || '—'}</td>
+      </tr>`
+    ).join('');
+
+    const statusColors: Record<string, string> = {
+      Unpaid: '#f59e0b', Partial: '#3b82f6', Paid: '#10b981', Overdue: '#ef4444',
+    };
+
+    const html = `<!DOCTYPE html><html><head><title>Invoice ${inv.invoiceNumber}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #1a1a1a; background: #fff; }
+  .invoice { max-width: 800px; margin: 0 auto; padding: 40px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; padding-bottom: 25px; border-bottom: 3px solid #ea580c; }
+  .logo-section h1 { font-size: 28px; font-weight: 800; color: #ea580c; letter-spacing: -0.5px; }
+  .logo-section p { font-size: 12px; color: #666; margin-top: 4px; }
+  .invoice-info { text-align: right; }
+  .invoice-info h2 { font-size: 24px; font-weight: 700; color: #333; text-transform: uppercase; letter-spacing: 2px; }
+  .invoice-info .inv-number { font-size: 14px; color: #ea580c; font-weight: 600; margin-top: 4px; }
+  .invoice-info .inv-date { font-size: 12px; color: #888; margin-top: 2px; }
+  .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 35px; }
+  .detail-box { background: #fafafa; border-radius: 8px; padding: 16px 20px; }
+  .detail-box h4 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; margin-bottom: 8px; font-weight: 600; }
+  .detail-box p { font-size: 14px; line-height: 1.6; color: #333; }
+  .detail-box .name { font-weight: 700; font-size: 16px; }
+  .status-badge { display: inline-block; padding: 4px 16px; border-radius: 20px; font-size: 12px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+  thead th { background: #f8f8f8; padding: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #666; font-weight: 600; border-bottom: 2px solid #eee; }
+  .totals { margin-left: auto; width: 280px; }
+  .totals .row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; }
+  .totals .row.total { border-top: 2px solid #333; padding-top: 12px; margin-top: 4px; font-size: 18px; font-weight: 800; }
+  .totals .row.balance { color: #ef4444; font-weight: 700; }
+  .totals .row.paid { color: #059669; }
+  .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; }
+  .footer p { font-size: 11px; color: #999; line-height: 1.8; }
+  .footer .contact { font-size: 12px; color: #666; font-weight: 500; }
+  .payment-section { margin-top: 25px; }
+  .payment-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+  @media print { body { padding: 0; } .invoice { padding: 20px; } .no-print { display: none; } }
+</style></head><body>
+<div class="invoice">
+  <div class="header">
+    <div class="logo-section">
+      ${b.logoUrl ? `<img src="${b.logoUrl}" alt="${b.businessName}" style="height:50px;margin-bottom:8px" />` : ''}
+      <h1>${b.businessName}</h1>
+      <p>${b.tagline}</p>
+    </div>
+    <div class="invoice-info">
+      <h2>Invoice</h2>
+      <div class="inv-number">${inv.invoiceNumber}</div>
+      <div class="inv-date">Issued: ${formatDate(inv.issueDate)}</div>
+      <div class="inv-date">Due: ${formatDate(inv.dueDate)}</div>
+      <div style="margin-top:8px"><span class="status-badge" style="background:${statusColors[inv.status] || '#888'}">${inv.status}</span></div>
+    </div>
+  </div>
+
+  <div class="details-grid">
+    <div class="detail-box">
+      <h4>Bill To</h4>
+      <p class="name">${inv.customerName}</p>
+      <p>${inv.customerPhone || ''}</p>
+    </div>
+    <div class="detail-box">
+      <h4>From</h4>
+      <p class="name">${b.businessName}</p>
+      <p>${b.address}</p>
+      <p>${b.phone}</p>
+      <p>${b.email}</p>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th style="text-align:center;width:40px">#</th><th style="text-align:left">Item</th><th style="text-align:center;width:60px">Qty</th><th style="text-align:right;width:100px">Price</th><th style="text-align:right;width:120px">Total</th></tr></thead>
+    <tbody>${itemRows}</tbody>
+  </table>
+
+  <div class="totals">
+    <div class="row"><span>Subtotal</span><span>${b.currency} ${inv.subtotal.toLocaleString()}</span></div>
+    ${inv.tax > 0 ? `<div class="row"><span>Tax</span><span>${b.currency} ${inv.tax.toLocaleString()}</span></div>` : ''}
+    <div class="row total"><span>Total</span><span>${b.currency} ${inv.totalAmount.toLocaleString()}</span></div>
+    <div class="row paid"><span>Paid</span><span>${b.currency} ${inv.amountPaid.toLocaleString()}</span></div>
+    <div class="row balance"><span>Balance Due</span><span>${b.currency} ${inv.balance.toLocaleString()}</span></div>
+  </div>
+
+  ${payments.length > 0 ? `
+  <div class="payment-section">
+    <h3>Payment History</h3>
+    <table>
+      <thead><tr><th style="text-align:left">Date</th><th style="text-align:right">Amount</th><th style="text-align:left">Method</th><th style="text-align:left">Reference</th></tr></thead>
+      <tbody>${paymentRows}</tbody>
+    </table>
+  </div>` : ''}
+
+  ${inv.notes ? `<div style="margin-top:20px;padding:12px 16px;background:#fffbeb;border-radius:8px;border-left:3px solid #f59e0b"><p style="font-size:12px;color:#92400e"><strong>Notes:</strong> ${inv.notes}</p></div>` : ''}
+
+  <div class="footer">
+    <p class="contact">${b.businessName} | ${b.phone} | ${b.email}</p>
+    <p>${b.address}</p>
+    <p style="margin-top:10px">Thank you for your business!</p>
+  </div>
+</div>
+<script>window.onload=function(){window.print()}</script>
+</body></html>`;
+
+    win.document.write(html);
+    win.document.close();
+  };
+
   // Filters
   const filtered = invoices.filter(inv => {
     const matchSearch = `${inv.invoiceNumber} ${inv.customerName} ${inv.customerPhone}`.toLowerCase().includes(searchTerm.toLowerCase());
@@ -493,6 +808,11 @@ export default function CreditInvoicesPage() {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
+
+  // Get customer-specific credit orders for the form
+  const selectedCustomerOrders = formData.customerName
+    ? getCustomerCreditOrders(formData.customerName)
+    : [];
 
   return (
     <div className="p-8">
@@ -615,6 +935,7 @@ export default function CreditInvoicesPage() {
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
                       <button onClick={() => openDetail(inv)} className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium">View</button>
+                      <button onClick={() => handlePrintInvoice(inv)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium" title="Print Invoice"><Printer className="w-3 h-3" /></button>
                       {inv.status !== 'Paid' && (
                         <button onClick={() => { setShowPaymentForm(inv); setPaymentData(prev => ({ ...prev, amount: inv.balance })); }} className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 font-medium">Pay</button>
                       )}
@@ -670,13 +991,40 @@ export default function CreditInvoicesPage() {
           </div>
 
           <div className="border border-border rounded-lg p-4 bg-secondary/30">
-            <p className="text-sm font-semibold mb-3">Customer</p>
+            <p className="text-sm font-semibold mb-3">Customer (Credit Buyers)</p>
             <select value={formData.customerId} onChange={(e) => handleCustomerSelect(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background" required>
-              <option value="">Select a customer</option>
-              {customers.map(c => (
-                <option key={c.id} value={c.id}>{c.name} — {c.phone} {c.creditLimit > 0 ? `(Limit: ${c.creditLimit.toLocaleString()})` : ''}</option>
-              ))}
+              <option value="">Select a credit customer</option>
+              {customers.map(c => {
+                const hasCreditOrders = creditOrders.some(o => o.customerName.toLowerCase() === c.name.toLowerCase());
+                return (
+                  <option key={c.id} value={c.id}>
+                    {c.name} — {c.phone} {c.creditLimit > 0 ? `(Limit: ${c.creditLimit.toLocaleString()})` : ''} {hasCreditOrders ? ' [Has Credit Orders]' : ''}
+                  </option>
+                );
+              })}
             </select>
+
+            {/* Credit orders for selected customer */}
+            {selectedCustomerOrders.length > 0 && (
+              <div className="mt-3">
+                <label className="block text-xs text-muted-foreground mb-1">Select Credit Order (auto-fills items)</label>
+                <select
+                  value={formData.selectedOrderId}
+                  onChange={(e) => handleOrderSelect(e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                >
+                  <option value="">— Select an order to auto-fill —</option>
+                  {selectedCustomerOrders.map(o => (
+                    <option key={o.id} value={o.id}>
+                      {o.orderNumber} — {businessSettings.currency} {o.totalAmount.toLocaleString()} — {new Date(o.createdAt).toLocaleDateString()}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedCustomerOrders.length} credit order(s) found for this customer
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="border border-border rounded-lg p-4 bg-secondary/30">
@@ -745,7 +1093,12 @@ export default function CreditInvoicesPage() {
           <div className="space-y-5 max-h-[75vh] overflow-y-auto pr-1">
             <div className="flex items-center justify-between">
               <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${getStatusBadge(showDetail.status)}`}>{showDetail.status}</span>
-              <span className="text-xs text-muted-foreground">Issued: {formatDate(showDetail.issueDate)} | Due: {formatDate(showDetail.dueDate)}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Issued: {formatDate(showDetail.issueDate)} | Due: {formatDate(showDetail.dueDate)}</span>
+                <button onClick={() => handlePrintInvoice(showDetail)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 font-medium" title="Print/Download Invoice">
+                  <Printer className="w-3 h-3" /> Print
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm border border-border rounded-lg p-4">
