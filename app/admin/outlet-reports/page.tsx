@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit-logger';
 import {
   BarChart3,
   Store,
@@ -902,6 +903,7 @@ export default function OutletReportsPage() {
       ['Requisitions Cost', formatKES(overviewMetrics.totalRequisitionsCost)],
     ];
     exportCSV(`outlet_overview_${selectedOutlet?.code || 'report'}`, headers, rows);
+    logAudit({ action: 'EXPORT', module: 'Outlet Reports', record_id: selectedOutletId, details: { type: 'overview', outlet: selectedOutlet?.name } });
   };
 
   const handleExportSales = () => {
@@ -914,6 +916,7 @@ export default function OutletReportsPage() {
       formatKES(s.total),
     ]);
     exportCSV(`outlet_sales_${selectedOutlet?.code || 'report'}`, headers, rows);
+    logAudit({ action: 'EXPORT', module: 'Outlet Reports', record_id: selectedOutletId, details: { type: 'sales', outlet: selectedOutlet?.name } });
   };
 
   const handleExportInventory = () => {
@@ -929,6 +932,7 @@ export default function OutletReportsPage() {
       i.status,
     ]);
     exportCSV(`outlet_inventory_${selectedOutlet?.code || 'report'}`, headers, rows);
+    logAudit({ action: 'EXPORT', module: 'Outlet Reports', record_id: selectedOutletId, details: { type: 'inventory', outlet: selectedOutlet?.name } });
   };
 
   const handleExportReturns = () => {
@@ -941,6 +945,7 @@ export default function OutletReportsPage() {
       formatKES(r.wholesale_value),
     ]);
     exportCSV(`outlet_returns_${selectedOutlet?.code || 'report'}`, headers, rows);
+    logAudit({ action: 'EXPORT', module: 'Outlet Reports', record_id: selectedOutletId, details: { type: 'returns', outlet: selectedOutlet?.name } });
   };
 
   const handleExportWaste = () => {
@@ -955,6 +960,7 @@ export default function OutletReportsPage() {
       w.approval_status,
     ]);
     exportCSV(`outlet_waste_${selectedOutlet?.code || 'report'}`, headers, rows);
+    logAudit({ action: 'EXPORT', module: 'Outlet Reports', record_id: selectedOutletId, details: { type: 'waste', outlet: selectedOutlet?.name } });
   };
 
   const handleExportExpenses = () => {
@@ -967,6 +973,7 @@ export default function OutletReportsPage() {
       formatKES(e.amount),
     ]);
     exportCSV(`outlet_expenses_${selectedOutlet?.code || 'report'}`, headers, rows);
+    logAudit({ action: 'EXPORT', module: 'Outlet Reports', record_id: selectedOutletId, details: { type: 'expenses', outlet: selectedOutlet?.name } });
   };
 
   const handleExportRequisitions = () => {

@@ -87,8 +87,9 @@ const permRouteMap: Record<string, string[]> = {
   'Manage Outlet Inventory': ['/admin/outlet-inventory'],
   'Manage Requisitions': ['/admin/outlet-requisitions'],
   'Approve Requisitions': ['/admin/outlet-requisitions'],
-  'System Settings': ['/admin/settings', '/admin/roles-permissions', '/admin/audit-logs'],
+  'System Settings': ['/admin/settings', '/admin/roles-permissions', '/admin/audit-logs', '/admin/cleanup-data'],
   'View Audit Logs': ['/admin/audit-logs'],
+  'Manage Data Cleanup': ['/admin/cleanup-data'],
 };
 
 // Role-specific default routes — these are granted automatically based on role,

@@ -2,7 +2,7 @@
 -- SNACKOH BAKERY - CLEAN SLATE: Remove All Dummy/Test Data
 -- Run this in your Supabase SQL Editor to start fresh
 -- WARNING: This will DELETE ALL existing data from report & transactional tables!
--- Schema, roles, permissions, and employee categories are preserved.
+-- Schema, roles, permissions, users, employees, audit logs, and system config are preserved.
 -- =============================================
 
 BEGIN;
@@ -26,8 +26,7 @@ DELETE FROM purchase_order_items;
 -- Recipe ingredients
 DELETE FROM recipe_ingredients;
 
--- Employee certificates
-DELETE FROM employee_certificates;
+-- NOTE: employee_certificates is PRESERVED (linked to employees)
 
 -- Inventory transactions
 DELETE FROM inventory_transactions;
@@ -107,8 +106,7 @@ DELETE FROM food_info;
 -- Customers (keep Walk-in Customer, delete the rest)
 DELETE FROM customers WHERE name != 'Walk-in Customer';
 
--- Employees (seed data)
-DELETE FROM employees;
+-- NOTE: employees are PRESERVED (not deleted)
 
 -- Outlet-specific tables
 DELETE FROM outlet_returns;
@@ -146,8 +144,7 @@ DELETE FROM pos_sessions;
 -- Expenses
 DELETE FROM expenses;
 
--- Audit log (clear history for clean slate)
-DELETE FROM audit_log;
+-- NOTE: audit_log is PRESERVED (history retained for compliance)
 
 -- Newsletter subscribers
 DELETE FROM newsletter_subscribers;
@@ -156,12 +153,15 @@ DELETE FROM newsletter_subscribers;
 DELETE FROM offers;
 
 -- ─── 3. Preserve system tables ───
--- The following are NOT deleted (system config):
+-- The following are NOT deleted (system config & user data):
 --   - roles (Administrator, Manager, Baker, Driver, Cashier)
 --   - permissions (system permissions)
 --   - role_permissions (role-permission mappings)
 --   - users (auth users)
+--   - employees (all employee records preserved)
 --   - employee_categories (Baker, Driver, Sales, etc.)
+--   - employee_certificates (linked to employees)
+--   - audit_log (full audit history retained)
 --   - business_settings (system configuration)
 --   - mpesa_settings (API configuration)
 --   - outlets (outlet definitions - kept for structure)
@@ -171,7 +171,7 @@ DELETE FROM offers;
 COMMIT;
 
 -- =============================================
--- VERIFICATION: Check all tables are empty
+-- VERIFICATION: Check tables are empty (transactional) or preserved
 -- =============================================
 SELECT 'pl_reports' AS table_name, COUNT(*) AS row_count FROM pl_reports
 UNION ALL SELECT 'orders', COUNT(*) FROM orders
@@ -180,11 +180,14 @@ UNION ALL SELECT 'inventory_items', COUNT(*) FROM inventory_items
 UNION ALL SELECT 'debtors', COUNT(*) FROM debtors
 UNION ALL SELECT 'creditors', COUNT(*) FROM creditors
 UNION ALL SELECT 'assets', COUNT(*) FROM assets
-UNION ALL SELECT 'employees', COUNT(*) FROM employees
+UNION ALL SELECT 'employees (preserved)', COUNT(*) FROM employees
 UNION ALL SELECT 'waste_records', COUNT(*) FROM waste_records
 UNION ALL SELECT 'ledger_entries', COUNT(*) FROM ledger_entries
 UNION ALL SELECT 'deliveries', COUNT(*) FROM deliveries
 UNION ALL SELECT 'recipes', COUNT(*) FROM recipes
 UNION ALL SELECT 'pricing_tiers', COUNT(*) FROM pricing_tiers
 UNION ALL SELECT 'customers', COUNT(*) FROM customers
+UNION ALL SELECT 'audit_log (preserved)', COUNT(*) FROM audit_log
+UNION ALL SELECT 'roles (preserved)', COUNT(*) FROM roles
+UNION ALL SELECT 'permissions (preserved)', COUNT(*) FROM permissions
 ORDER BY table_name;
