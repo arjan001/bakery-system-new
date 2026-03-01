@@ -363,7 +363,7 @@ export function Header() {
       {/* Left */}
       <div className="flex items-center gap-2">
         {adminLogoUrl ? (
-          <img src={adminLogoUrl} alt={adminBusinessName} className="h-8 w-auto object-contain" />
+          <img src={adminLogoUrl} alt={adminBusinessName} className="h-8 w-auto object-contain rounded-lg" />
         ) : (
           <span className="text-xs text-muted-foreground font-semibold tracking-wide">{adminBusinessName}</span>
         )}
