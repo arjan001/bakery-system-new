@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
+import { FileDown, Search, Pencil } from 'lucide-react';
 
 interface ContactPerson {
   name: string;
@@ -70,6 +71,9 @@ export default function DistributorsPage() {
   const [categories, setCategories] = useState<DistributorCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'distributors' | 'categories'>('distributors');
+  const [catSearchTerm, setCatSearchTerm] = useState('');
+  const distributorTableRef = useRef<HTMLDivElement>(null);
+  const categoryTableRef = useRef<HTMLDivElement>(null);
 
   // Distributor form state
   const [showForm, setShowForm] = useState(false);
@@ -334,6 +338,27 @@ export default function DistributorsPage() {
   const categoriesCount = categories.length;
   const withLocationCount = distributors.filter(d => d.gpsLat !== 0).length;
 
+  // Filtered categories
+  const filteredCategories = categories.filter(cat => {
+    if (!catSearchTerm) return true;
+    return cat.name.toLowerCase().includes(catSearchTerm.toLowerCase()) || cat.description.toLowerCase().includes(catSearchTerm.toLowerCase());
+  });
+
+  const exportPdf = async (title: string, ref: React.RefObject<HTMLDivElement | null>) => {
+    if (!ref.current) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `${title.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const },
+      };
+      await html2pdf().set(opt).from(ref.current).save();
+    } catch { /* */ }
+  };
+
   // Rating stars display
   const renderStars = (rating: number) => {
     return Array.from({ length: 5 }, (_, i) => (
@@ -430,6 +455,12 @@ export default function DistributorsPage() {
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
             >
               + Add Supplier
+            </button>
+            <button
+              onClick={() => exportPdf('Distributors', distributorTableRef)}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+            >
+              <FileDown size={14} /> Export PDF
             </button>
           </div>
 
@@ -700,6 +731,7 @@ export default function DistributorsPage() {
 
           {/* Table */}
           {loading && <p className="text-center py-4 text-muted-foreground text-sm">Loading...</p>}
+          <div ref={distributorTableRef}>
           <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
             <table className="w-full text-sm">
               <thead className="bg-secondary border-b border-border">
@@ -743,6 +775,7 @@ export default function DistributorsPage() {
                 )}
               </tbody>
             </table>
+          </div>
           </div>
 
           {/* Pagination */}
@@ -788,14 +821,33 @@ export default function DistributorsPage() {
       {/* ── CATEGORIES TAB ── */}
       {activeTab === 'categories' && (
         <div>
-          <div className="mb-6 flex justify-between items-center">
-            <p className="text-sm text-muted-foreground">{categories.length} categories configured</p>
-            <button
-              onClick={() => { setEditingCategoryId(null); setCategoryForm(emptyCategoryForm); setShowCategoryForm(true); }}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
-            >
-              + Add Category
-            </button>
+          <div className="mb-4 flex flex-wrap gap-3 items-center justify-between">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search categories..."
+                  value={catSearchTerm}
+                  onChange={e => setCatSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setEditingCategoryId(null); setCategoryForm(emptyCategoryForm); setShowCategoryForm(true); }}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+              >
+                + Add Category
+              </button>
+              <button
+                onClick={() => exportPdf('Supplier-Categories', categoryTableRef)}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+              >
+                <FileDown size={14} /> Export PDF
+              </button>
+            </div>
           </div>
 
           <Modal isOpen={showCategoryForm} onClose={() => { setShowCategoryForm(false); setEditingCategoryId(null); }} title={editingCategoryId ? 'Edit Category' : 'Add Supplier Category'} size="md">
@@ -828,32 +880,54 @@ export default function DistributorsPage() {
             </form>
           </Modal>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {categories.length === 0 ? (
-              <div className="col-span-full text-center py-8 text-muted-foreground border border-border rounded-lg">
-                No categories yet. Add one to get started.
-              </div>
-            ) : (
-              categories.map(cat => {
-                const count = distributors.filter(d => d.category === cat.name).length;
-                return (
-                  <div key={cat.id} className="p-4 border border-border rounded-lg bg-card hover:shadow-sm transition-shadow">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-bold">{cat.name}</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">{cat.description || 'No description'}</p>
-                      </div>
-                      <span className="px-2 py-1 rounded text-xs font-semibold bg-secondary">{count} supplier{count !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div className="flex gap-2 mt-3">
-                      <button onClick={() => handleEditCategory(cat)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button>
-                      <button onClick={() => handleDeleteCategory(cat.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+          <div ref={categoryTableRef}>
+          {filteredCategories.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground border border-dashed border-border rounded-lg">
+              {catSearchTerm ? 'No categories match your search.' : 'No categories yet. Add one to get started.'}
+            </div>
+          ) : (
+            <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary border-b border-border">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Category Name</th>
+                    <th className="px-4 py-3 text-left font-semibold">Description</th>
+                    <th className="px-4 py-3 text-center font-semibold">Suppliers</th>
+                    <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCategories.map(cat => {
+                    const count = distributors.filter(d => d.category === cat.name).length;
+                    return (
+                      <tr key={cat.id} className="border-b border-border hover:bg-secondary/50">
+                        <td className="px-4 py-3 font-medium">{cat.name}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{cat.description || '—'}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="px-2 py-1 rounded text-xs font-semibold bg-secondary">{count}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1">
+                            <button onClick={() => handleEditCategory(cat)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium flex items-center gap-1">
+                              <Pencil size={11} /> Edit
+                            </button>
+                            <button onClick={() => handleDeleteCategory(cat.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           </div>
+
+          {filteredCategories.length > 0 && (
+            <div className="mt-4">
+              <p className="text-sm text-muted-foreground">Showing {filteredCategories.length} of {categories.length} categories</p>
+            </div>
+          )}
         </div>
       )}
     </div>

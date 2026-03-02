@@ -374,11 +374,15 @@ CREATE TABLE IF NOT EXISTS waste_records (
   quantity DECIMAL DEFAULT 0,
   unit TEXT DEFAULT 'units',
   reason TEXT,
+  category TEXT DEFAULT 'Raw Materials',
   cost DECIMAL DEFAULT 0,
   batch_number TEXT,
   notes TEXT,
-  status TEXT DEFAULT 'Pending',
+  reported_by TEXT,
+  approval_status TEXT DEFAULT 'Pending',
   approved_by TEXT,
+  approval_date DATE,
+  approval_notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

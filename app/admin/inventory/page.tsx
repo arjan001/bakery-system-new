@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, FileDown, Pencil } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 
 interface Distributor {
@@ -108,8 +108,16 @@ export default function InventoryPage() {
   const [showForm, setShowForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'inventory' | 'categories'>('inventory');
   const [filterType, setFilterType] = useState<'All' | 'Consumable' | 'Non-Consumable'>('All');
+  const [catSearchTerm, setCatSearchTerm] = useState('');
+  const [catFilterType, setCatFilterType] = useState<'All' | 'Consumable' | 'Non-Consumable'>('All');
+  const [catCurrentPage, setCatCurrentPage] = useState(1);
+  const [catSelectedIds, setCatSelectedIds] = useState<Set<string>>(new Set());
+  const catItemsPerPage = 10;
+  const inventoryTableRef = useRef<HTMLDivElement>(null);
+  const categoryTableRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState<InventoryItem>({
     id: '',
@@ -210,20 +218,36 @@ export default function InventoryPage() {
       return;
     }
     try {
-      const { error } = await supabase.from('inventory_categories').insert({
-        name: categoryForm.name.trim(),
-        type: categoryForm.type,
-      });
-      if (error) throw error;
-      logAudit({
-        action: 'CREATE',
-        module: 'Inventory Categories',
-        record_id: categoryForm.name,
-        details: { name: categoryForm.name, type: categoryForm.type },
-      });
-      showToast('Category added successfully', 'success');
+      if (editingCategoryId) {
+        const { error } = await supabase.from('inventory_categories').update({
+          name: categoryForm.name.trim(),
+          type: categoryForm.type,
+        }).eq('id', editingCategoryId);
+        if (error) throw error;
+        logAudit({
+          action: 'UPDATE',
+          module: 'Inventory Categories',
+          record_id: editingCategoryId,
+          details: { name: categoryForm.name, type: categoryForm.type },
+        });
+        showToast('Category updated successfully', 'success');
+      } else {
+        const { error } = await supabase.from('inventory_categories').insert({
+          name: categoryForm.name.trim(),
+          type: categoryForm.type,
+        });
+        if (error) throw error;
+        logAudit({
+          action: 'CREATE',
+          module: 'Inventory Categories',
+          record_id: categoryForm.name,
+          details: { name: categoryForm.name, type: categoryForm.type },
+        });
+        showToast('Category added successfully', 'success');
+      }
       await fetchCategories();
       setCategoryForm({ id: '', name: '', type: 'Consumable' });
+      setEditingCategoryId(null);
       setShowCategoryForm(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : (err && typeof err === 'object' && 'message' in err) ? String((err as Record<string, unknown>).message) : 'Unknown error';
@@ -313,7 +337,50 @@ export default function InventoryPage() {
       details: { name: deletedCategory?.name, type: deletedCategory?.type },
     });
     setCategories(prev => prev.filter(c => c.id !== id));
+    setCatSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     showToast('Category deleted', 'success');
+  };
+
+  const handleEditCategory = (cat: InventoryCategory) => {
+    setCategoryForm({ id: cat.id, name: cat.name, type: cat.type });
+    setEditingCategoryId(cat.id);
+    setShowCategoryForm(true);
+  };
+
+  const handleBulkDeleteCategories = async () => {
+    if (catSelectedIds.size === 0) return;
+    if (!confirm(`Delete ${catSelectedIds.size} selected categor${catSelectedIds.size === 1 ? 'y' : 'ies'}?`)) return;
+    const ids = Array.from(catSelectedIds);
+    const { error } = await supabase.from('inventory_categories').delete().in('id', ids);
+    if (error) {
+      showToast('Failed to delete: ' + error.message, 'error');
+      return;
+    }
+    ids.forEach(id => {
+      const deletedCat = categories.find(c => c.id === id);
+      logAudit({ action: 'DELETE', module: 'Inventory Categories', record_id: id, details: { name: deletedCat?.name } });
+    });
+    setCategories(prev => prev.filter(c => !catSelectedIds.has(c.id)));
+    setCatSelectedIds(new Set());
+    showToast(`${ids.length} categor${ids.length === 1 ? 'y' : 'ies'} deleted`, 'success');
+  };
+
+  const exportPdf = async (title: string, ref: React.RefObject<HTMLDivElement | null>) => {
+    if (!ref.current) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `${title.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const },
+      };
+      await html2pdf().set(opt).from(ref.current).save();
+      showToast('PDF exported successfully', 'success');
+    } catch {
+      showToast('Failed to export PDF', 'error');
+    }
   };
 
   const handleStockTransaction = async (e: React.FormEvent) => {
@@ -376,6 +443,7 @@ export default function InventoryPage() {
 
   // Reset to page 1 on search/filter change
   useEffect(() => { setCurrentPage(1); }, [searchTerm, filterType]);
+  useEffect(() => { setCatCurrentPage(1); }, [catSearchTerm, catFilterType]);
 
   const lowStockConsumables = inventory.filter(i => i.type === 'Consumable' && i.reorderLevel > 0 && i.quantity <= i.reorderLevel);
   const lowStockCount = inventory.filter(i => i.quantity <= i.reorderLevel && i.reorderLevel > 0).length;
@@ -383,6 +451,30 @@ export default function InventoryPage() {
   const totalPages = Math.ceil(filteredInventory.length / itemsPerPage);
   const paginatedInventory = filteredInventory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const getDistributorName = (id: string) => distributors.find(d => d.id === id)?.name || '';
+
+  // Category filter/search/pagination
+  const filteredCategories = categories.filter(cat => {
+    const matchType = catFilterType === 'All' || cat.type === catFilterType;
+    if (!matchType) return false;
+    if (!catSearchTerm) return true;
+    return cat.name.toLowerCase().includes(catSearchTerm.toLowerCase());
+  });
+  const catTotalPages = Math.max(1, Math.ceil(filteredCategories.length / catItemsPerPage));
+  const paginatedCategories = filteredCategories.slice((catCurrentPage - 1) * catItemsPerPage, catCurrentPage * catItemsPerPage);
+  const catItemCount = (type: string) => inventory.filter(i => i.category === type).length;
+
+  // Category select all logic
+  const allCatPageSelected = paginatedCategories.length > 0 && paginatedCategories.every(c => catSelectedIds.has(c.id));
+  const toggleCatSelectAll = () => {
+    if (allCatPageSelected) {
+      setCatSelectedIds(prev => { const n = new Set(prev); paginatedCategories.forEach(c => n.delete(c.id)); return n; });
+    } else {
+      setCatSelectedIds(prev => { const n = new Set(prev); paginatedCategories.forEach(c => n.add(c.id)); return n; });
+    }
+  };
+  const toggleCatSelect = (id: string) => {
+    setCatSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
 
   // Select all logic
   const allPageSelected = paginatedInventory.length > 0 && paginatedInventory.every(item => selectedIds.has(item.id));
@@ -565,6 +657,12 @@ export default function InventoryPage() {
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
             >
               + Add Item
+            </button>
+            <button
+              onClick={() => exportPdf('Inventory-Items', inventoryTableRef)}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+            >
+              <FileDown size={14} /> Export PDF
             </button>
           </div>
 
@@ -772,6 +870,7 @@ export default function InventoryPage() {
             </form>
           </Modal>
 
+          <div ref={inventoryTableRef}>
           <div className="border border-border rounded-lg overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-secondary border-b border-border">
@@ -917,72 +1016,185 @@ export default function InventoryPage() {
               </div>
             </div>
           )}
+          </div>
         </div>
       )}
 
       {activeTab === 'categories' && (
         <div>
-          <div className="mb-6 flex justify-end">
-            <button
-              onClick={() => setShowCategoryForm(true)}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
-            >
-              + Add Category
-            </button>
-          </div>
-
-          <Modal isOpen={showCategoryForm} onClose={() => setShowCategoryForm(false)} title="Add Inventory Category" size="sm">
-            <form onSubmit={handleCategorySubmit} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Category Name"
-                value={categoryForm.name}
-                onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-              />
+          {/* Category Search / Filter / Actions Bar */}
+          <div className="mb-4 flex flex-wrap gap-3 items-center justify-between">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search categories..."
+                  value={catSearchTerm}
+                  onChange={e => setCatSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                />
+              </div>
               <select
-                value={categoryForm.type}
-                onChange={(e) => setCategoryForm({ ...categoryForm, type: e.target.value as 'Consumable' | 'Non-Consumable' })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                value={catFilterType}
+                onChange={(e) => setCatFilterType(e.target.value as 'All' | 'Consumable' | 'Non-Consumable')}
+                className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none font-medium text-sm"
               >
+                <option>All</option>
                 <option>Consumable</option>
                 <option>Non-Consumable</option>
               </select>
+              {catSelectedIds.size > 0 && (
+                <button
+                  onClick={handleBulkDeleteCategories}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                >
+                  <Trash2 size={14} /> Delete {catSelectedIds.size} selected
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setEditingCategoryId(null); setCategoryForm({ id: '', name: '', type: 'Consumable' }); setShowCategoryForm(true); }}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+              >
+                + Add Category
+              </button>
+              <button
+                onClick={() => exportPdf('Inventory-Categories', categoryTableRef)}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+              >
+                <FileDown size={14} /> Export PDF
+              </button>
+            </div>
+          </div>
+
+          <Modal isOpen={showCategoryForm} onClose={() => { setShowCategoryForm(false); setEditingCategoryId(null); }} title={editingCategoryId ? 'Edit Category' : 'Add Inventory Category'} size="sm">
+            <form onSubmit={handleCategorySubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Category Name *</label>
+                <input
+                  type="text"
+                  placeholder="Category Name"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Type</label>
+                <select
+                  value={categoryForm.type}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, type: e.target.value as 'Consumable' | 'Non-Consumable' })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                >
+                  <option>Consumable</option>
+                  <option>Non-Consumable</option>
+                </select>
+              </div>
               <div className="flex gap-2 justify-end pt-4 border-t border-border">
-                <button type="button" onClick={() => setShowCategoryForm(false)} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">
+                <button type="button" onClick={() => { setShowCategoryForm(false); setEditingCategoryId(null); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">
                   Cancel
                 </button>
                 <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90">
-                  Add Category
+                  {editingCategoryId ? 'Update' : 'Add'} Category
                 </button>
               </div>
             </form>
           </Modal>
 
-          {categories.length === 0 ? (
+          <div ref={categoryTableRef}>
+          {filteredCategories.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground border border-dashed border-border rounded-lg">
-              No categories found. Add your first category to organize inventory items.
+              {catSearchTerm || catFilterType !== 'All' ? 'No categories match your filters.' : 'No categories found. Add your first category to organize inventory items.'}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {categories.map(cat => (
-                <div key={cat.id} className="p-4 border border-border rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-bold">{cat.name}</h3>
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                      cat.type === 'Consumable' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
-                    }`}>
-                      {cat.type}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteCategory(cat.id)}
-                    className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded hover:bg-red-200"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ))}
+            <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary border-b border-border">
+                  <tr>
+                    <th className="px-3 py-3 text-center w-10">
+                      <button type="button" onClick={toggleCatSelectAll} className="text-muted-foreground hover:text-foreground">
+                        {allCatPageSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold">Category Name</th>
+                    <th className="px-4 py-3 text-left font-semibold">Type</th>
+                    <th className="px-4 py-3 text-center font-semibold">Items Using</th>
+                    <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedCategories.map(cat => (
+                    <tr key={cat.id} className={`border-b border-border hover:bg-secondary/50 ${catSelectedIds.has(cat.id) ? 'bg-primary/5' : ''}`}>
+                      <td className="px-3 py-3 text-center">
+                        <button type="button" onClick={() => toggleCatSelect(cat.id)} className="text-muted-foreground hover:text-foreground">
+                          {catSelectedIds.has(cat.id) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 font-medium">{cat.name}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                          cat.type === 'Consumable' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                        }`}>
+                          {cat.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-muted-foreground">{catItemCount(cat.name)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <button onClick={() => handleEditCategory(cat)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium flex items-center gap-1">
+                            <Pencil size={11} /> Edit
+                          </button>
+                          <button onClick={() => handleDeleteCategory(cat.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </div>
+
+          {/* Category Pagination */}
+          {catTotalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-muted-foreground">
+                Showing {((catCurrentPage - 1) * catItemsPerPage) + 1}&ndash;{Math.min(catCurrentPage * catItemsPerPage, filteredCategories.length)} of {filteredCategories.length} categories
+              </p>
+              <div className="flex gap-1 items-center">
+                <button onClick={() => setCatCurrentPage(p => Math.max(1, p - 1))} disabled={catCurrentPage === 1}
+                  className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: Math.min(catTotalPages, 7) }, (_, i) => {
+                  let page: number;
+                  if (catTotalPages <= 7) page = i + 1;
+                  else if (catCurrentPage <= 4) page = i + 1;
+                  else if (catCurrentPage >= catTotalPages - 3) page = catTotalPages - 6 + i;
+                  else page = catCurrentPage - 3 + i;
+                  return (
+                    <button key={page} onClick={() => setCatCurrentPage(page)}
+                      className={`px-3 py-1.5 text-sm rounded-lg ${catCurrentPage === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-secondary'}`}>
+                      {page}
+                    </button>
+                  );
+                })}
+                <button onClick={() => setCatCurrentPage(p => Math.min(catTotalPages, p + 1))} disabled={catCurrentPage === catTotalPages}
+                  className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {filteredCategories.length > 0 && catTotalPages <= 1 && (
+            <div className="mt-4">
+              <p className="text-sm text-muted-foreground">Showing {filteredCategories.length} of {categories.length} categories</p>
             </div>
           )}
         </div>
