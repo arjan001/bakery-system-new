@@ -179,7 +179,10 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   unit TEXT DEFAULT 'kg',
   unit_cost DECIMAL DEFAULT 0,
   reorder_level DECIMAL DEFAULT 0,
+  reorder_qty DECIMAL DEFAULT 0,
+  auto_reorder BOOLEAN DEFAULT false,
   supplier TEXT,
+  distributor_id UUID,
   last_restocked DATE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
