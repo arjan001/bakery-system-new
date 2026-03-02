@@ -28,22 +28,23 @@ The platform is designed around role-based access control, ensuring each employe
 ## Table of Contents
 
 1. [Getting Started](#1-getting-started)
-2. [Employee Roles](#2-employee-roles)
-3. [Dashboard](#3-dashboard)
-4. [POS System (Point of Sale)](#4-pos-system)
-5. [Production Modules](#5-production-modules)
-6. [Sales & Orders Modules](#6-sales--orders-modules)
-7. [Inventory Modules](#7-inventory-modules)
-8. [Outlet (Branch) Modules](#8-outlet-branch-modules)
-9. [Finance Modules](#9-finance-modules)
-10. [People Management Modules](#10-people-management-modules)
-11. [System & Settings Modules](#11-system--settings-modules)
-12. [E-Commerce Website](#12-e-commerce-website)
-13. [Roles & Permissions Guide (Admin)](#13-roles--permissions-guide)
-14. [Security Best Practices](#14-security-best-practices)
-15. [Tips & Tricks](#15-tips--tricks)
-16. [Troubleshooting](#16-troubleshooting)
-17. [Glossary](#glossary)
+2. [System Setup Guide (First-Time Setup)](#2-system-setup-guide-first-time-setup)
+3. [Employee Roles](#3-employee-roles)
+4. [Dashboard](#4-dashboard)
+5. [POS System (Point of Sale)](#5-pos-system)
+6. [Production Modules](#6-production-modules)
+7. [Sales & Orders Modules](#7-sales--orders-modules)
+8. [Inventory Modules](#8-inventory-modules)
+9. [Outlet (Branch) Modules](#9-outlet-branch-modules)
+10. [Finance Modules](#10-finance-modules)
+11. [People Management Modules](#11-people-management-modules)
+12. [System & Settings Modules](#12-system--settings-modules)
+13. [E-Commerce Website](#13-e-commerce-website)
+14. [Roles & Permissions Guide (Admin)](#14-roles--permissions-guide)
+15. [Security Best Practices](#15-security-best-practices)
+16. [Tips & Tricks](#16-tips--tricks)
+17. [Troubleshooting](#17-troubleshooting)
+18. [Glossary](#glossary)
 
 ---
 
@@ -90,7 +91,272 @@ The system can be installed as an app on your phone or computer:
 
 ---
 
-## 2. Employee Roles
+## 2. System Setup Guide (First-Time Setup)
+
+This section is the step-by-step process guide for setting up the Snackoh Bakers system from scratch. Follow these phases in order. Each phase builds on the previous one, so do not skip ahead. By the end, your products will appear on the public-facing website and the bakery will be ready for daily operations.
+
+> **Important:** You do not need to wait for production batches to display products on the website. As long as a product is registered in the Product Catalogue (Food Info), it will appear on the shop -- even with zero stock. Products with zero inventory show as "Sold Out" and customers can still view them, they just cannot add them to the cart until stock is available.
+
+---
+
+### Phase 1: Administrator Account and System Access
+
+**What you need:** A working system deployment with the database schema applied.
+
+**Why this comes first:** Nothing else in the system can be configured without an administrator account. The administrator role has full access to every module and is required to set up everything that follows.
+
+**Steps:**
+
+1. Navigate to the system URL and go to **Login** (\`/auth/login\`).
+2. If this is a brand-new deployment, use the signup flow or the admin create-user API to create the first **Administrator** account.
+3. Log in with the administrator credentials.
+4. Go to **Account Settings** and verify your profile details are correct.
+
+**Result:** You now have full admin access to the system and can proceed with configuration.
+
+---
+
+### Phase 2: Roles, Permissions, and Employee Setup
+
+**What you need:** Phase 1 complete (admin account active).
+
+**Why this comes second:** Employees need accounts to operate different parts of the system. Setting up roles and permissions before adding employees ensures each person gets the correct access from day one.
+
+**Steps:**
+
+1. Go to **Admin > Roles & Permissions**.
+2. Review the default roles (Administrator, Manager, Baker, Cashier, Sales, Rider, Viewer). These are pre-configured with appropriate permissions for each job function.
+3. If you need custom roles (e.g., Branch Manager, Inventory Clerk), create them here and assign the relevant permissions.
+4. Go to **Admin > Employees**.
+5. Add each employee with their personal details, role assignment, and contact information.
+6. For employees who need to log in to the system, ensure **System Access** is enabled and they have login credentials (email and password).
+7. Assign each employee to the appropriate role (Baker, Cashier, etc.).
+
+**Key roles to fill at minimum:**
+- At least one **Administrator** (already done in Phase 1)
+- **Bakers** for production management
+- **Cashiers** for POS operations
+- **Sales** staff for order management (if applicable)
+- **Riders/Drivers** for delivery (if applicable)
+
+**Result:** Your team can now log in with appropriate access levels. Each employee sees only the modules relevant to their role.
+
+---
+
+### Phase 3: Main Bakery Outlet Setup
+
+**What you need:** Phase 2 complete.
+
+**Why this comes third:** The outlet (branch) is the physical location where production, sales, and inventory happen. Many other modules reference the outlet, so it must exist before you proceed.
+
+**Steps:**
+
+1. Go to **Admin > Branch Management** (under Outlets).
+2. Create the **main bakery** as your primary outlet. Set the type to "Bakery" and mark it as the primary location.
+3. Add the bakery's address, phone number, and operating hours.
+4. If you have additional branches (coffee shops, retail outlets, satellite kitchens), add those as secondary outlets.
+5. Go to **Branch Employees** and assign employees to their respective outlets.
+
+**Result:** Your physical locations are registered in the system and employees are linked to specific branches.
+
+---
+
+### Phase 4: Suppliers and Inventory (Raw Materials)
+
+**What you need:** Phase 3 complete.
+
+**Why this comes fourth:** Recipes need ingredients, and ingredients come from inventory. You must set up your raw material inventory before you can create recipes with accurate costing.
+
+**Steps:**
+
+1. **Add Suppliers** -- Go to **Admin > Suppliers** (under Inventory) and add your ingredient and packaging suppliers with contact details and payment terms.
+2. **Set Up Inventory Categories** -- Go to **Admin > Inventory** and create categories for your raw materials (e.g., Flour & Grains, Dairy, Sugars & Sweeteners, Fats & Oils, Packaging, Flavourings, Fruits & Fillings).
+3. **Add Inventory Items** -- For each raw material and packaging item you use:
+   - Enter the item name, SKU/code, category, and unit of measurement (kg, litres, pieces, etc.).
+   - Set the current stock quantity (enter 0 if you have not purchased yet).
+   - Set the **reorder level** (the minimum stock that triggers a reorder alert).
+   - Set the **cost per unit** -- this is critical because recipe costing depends on it.
+   - Link the item to its supplier.
+
+**Common inventory items to add first:**
+- Wheat flour, sugar, salt, yeast, baking powder
+- Butter, margarine, cooking oil, eggs, milk, cream
+- Chocolate, vanilla extract, food colouring
+- Packaging: bread bags, cake boxes, pastry trays, labels
+
+**Result:** Your raw material inventory is set up with costs. The system can now calculate recipe costs accurately and alert you when stock is low.
+
+---
+
+### Phase 5: Recipes (Product Definitions with Costing)
+
+**What you need:** Phase 4 complete (inventory items with costs).
+
+**Why this comes fifth:** Recipes define *what* you make and *how much it costs* to make it. Each recipe links to inventory items (ingredients) and calculates the cost per batch. This cost data flows into pricing and ultimately determines your profit margins.
+
+**Steps:**
+
+1. Go to **Admin > Recipes & Products** (under Production).
+2. Click **Add New Recipe**.
+3. For each recipe, fill in:
+   - **Recipe name** (e.g., "White Bread Loaf", "Butter Croissant", "Chocolate Cake")
+   - **Recipe code** (a short identifier, e.g., "WBL-001")
+   - **Category** (Bread, Pastry, Cake, Cookies, Donuts, etc.)
+   - **Batch size** (how many units one batch produces, e.g., 20 loaves)
+   - **Preparation time** and **Bake time** (in minutes)
+   - **Bake temperature** (in degrees Celsius)
+4. **Add Ingredients** to the recipe:
+   - Select each ingredient from your inventory items (added in Phase 4).
+   - Enter the quantity needed per batch and the unit.
+   - The system auto-calculates the cost per ingredient based on your inventory cost-per-unit.
+   - The total batch cost and cost-per-unit are calculated automatically.
+5. Repeat for every product you make.
+
+**Tip:** Use the **AI Recipe Generation** tool to speed things up -- it can auto-generate ingredient lists and costing estimates for common bakery products. You can then refine the generated recipe to match your exact formulations.
+
+**Result:** All your product recipes are defined with accurate ingredient costs. The system knows exactly what goes into each product and what it costs to produce.
+
+---
+
+### Phase 6: Pricing Tiers
+
+**What you need:** Phase 5 complete (recipes with calculated costs).
+
+**Why this comes sixth:** Pricing determines what you charge for each product across different sales channels. Without pricing, products on the website will display a default placeholder price. Pricing tiers allow different rates for retail customers, wholesale buyers, and internal costing.
+
+**Steps:**
+
+1. Go to **Admin > Pricing** (under Sales & Orders).
+2. For each recipe/product, set up a pricing tier:
+   - **Cost price** (auto-populated from recipe ingredient costs).
+   - **Base price** (your standard markup over cost).
+   - **Wholesale price** (discounted rate for bulk/trade buyers).
+   - **Retail price** (the price customers see on the website and POS).
+3. Mark the pricing tier as **Active**.
+
+**Pricing guidance:**
+- The **retail price** is what appears on the public website shop page.
+- The **wholesale price** is used for B2B orders and outlet transfers.
+- If no pricing tier exists for a product, the website will show a default placeholder price -- so always set pricing before going live.
+
+**Result:** Every product now has defined pricing for all sales channels. The retail price is what customers will see on the website.
+
+---
+
+### Phase 7: Product Catalogue (Food Info) -- Products Go Live on the Website
+
+**What you need:** Phase 5 and Phase 6 complete (recipes and pricing set up).
+
+**Why this is the critical step:** The **Product Catalogue (Food Info)** is the master product registry that powers the public website. When you add a product here, it becomes visible on the \`/shop\` page immediately. This is the module that makes products appear for customers.
+
+**Steps:**
+
+1. Go to **Admin > Product Catalogue** (under Production).
+2. Click **Add Product**.
+3. For each product, fill in:
+   - **Product Name** (required -- this is the only strictly mandatory field).
+   - **Product Code** (auto-generated if left blank).
+   - **Link to Recipe** (select the recipe from Phase 5 -- recommended for traceability).
+   - **Image** (upload a product photo or the system uses a category-appropriate placeholder).
+   - **Description** (what customers see on the shop page).
+   - **Current Stock** (set to 0 if you have not produced yet -- the product will show as "Sold Out" on the website, which is fine for initial setup).
+   - **Stock Unit** (pieces, kg, boxes, etc.).
+   - **Shelf Life** (in days -- shown to customers in product details).
+   - **Allergen Information** (gluten, dairy, eggs, nuts, soy, etc. -- important for food safety).
+   - **Nutritional Information** (calories, protein, fat, carbs -- optional but recommended).
+   - **Dietary Labels** (halal, vegan, gluten-free, organic, etc.).
+   - **Reorder Level** (when stock drops below this, you get an alert).
+4. Save the product.
+
+**What happens on the website:**
+- The product immediately appears on the \`/shop\` page.
+- If \`current_stock > 0\`: The product shows as available with an "Add to Cart" button.
+- If \`current_stock = 0\`: The product shows as **"Sold Out"** -- customers can see it and view details, but cannot purchase until stock is added.
+- The product image, name, price (from pricing tiers), and category are all displayed.
+- Products are automatically categorized by name (Bread, Pastry, Cake, Cookies, Donuts) for filtering.
+
+**Result:** Your products are now visible on the public website. Customers can browse your full product range even before you start production -- products with zero stock simply show as "Sold Out".
+
+---
+
+### Phase 8: Business Settings and Delivery Configuration
+
+**What you need:** Phase 7 complete.
+
+**Why this comes eighth:** Before customers can complete purchases, the system needs delivery fees, operating hours, and payment configuration in place.
+
+**Steps:**
+
+1. Go to **Admin > Settings** (under System).
+2. Configure **Business Settings:**
+   - Business name, logo, and contact information.
+   - Operating hours and days.
+   - Receipt format and branding.
+   - Currency settings (KES).
+3. Configure **Delivery Settings:**
+   - Delivery fee (flat rate or distance-based).
+   - Minimum order amount for delivery.
+   - Free delivery threshold (e.g., orders over KES 2,000 get free delivery).
+   - Delivery areas/zones.
+4. Verify **M-Pesa Settings** are configured (environment variables or database settings) for customer payments.
+
+**Result:** The checkout flow is fully functional. Customers can place orders, select delivery or pickup, and pay via M-Pesa.
+
+---
+
+### Phase 9: Start Production (Products Become Available for Purchase)
+
+**What you need:** All previous phases complete.
+
+**Why this comes last for operations:** Now that everything is configured, you can begin actual production. Completed production runs update product stock, which changes "Sold Out" products to "Available" on the website.
+
+**Steps:**
+
+1. Go to **Admin > Production Runs** (under Production).
+2. Click **Add Production Run** and create a batch:
+   - Select the product/recipe to produce.
+   - Enter the planned quantity.
+   - Set the scheduled date and time.
+   - Status starts as **Planned**.
+3. When bakers begin the batch, update the status to **In Progress**.
+4. When the batch is complete, update the status to **Completed** and record the actual output.
+5. The system generates a **Picking List** (ingredient requirements) automatically.
+6. Go to **Lot Tracking** and record the lot number, production date, and expiry date for the finished batch.
+7. Update the product's **current stock** in the Product Catalogue to reflect the produced quantity.
+
+**What happens on the website:**
+- Once \`current_stock\` is updated to a value greater than 0, the product changes from "Sold Out" to **available for purchase**.
+- Customers can now add it to their cart and complete checkout.
+
+**Result:** Products are in stock and available for sale on the website and through POS.
+
+---
+
+### Quick Reference: Setup Order at a Glance
+
+| Phase | Module | What to Do | Depends On |
+|-------|--------|-----------|------------|
+| 1 | Login / Auth | Create administrator account | Database deployed |
+| 2 | Roles & Permissions, Employees | Set up roles, add employees with system access | Phase 1 |
+| 3 | Branch Management | Create main bakery outlet, assign employees | Phase 2 |
+| 4 | Suppliers, Inventory | Add suppliers, raw materials with costs | Phase 3 |
+| 5 | Recipes & Products | Create recipes with ingredients from inventory | Phase 4 |
+| 6 | Pricing | Set retail, wholesale, and cost prices per product | Phase 5 |
+| 7 | Product Catalogue (Food Info) | Register products -- they appear on website immediately | Phase 5 & 6 |
+| 8 | Settings | Configure delivery fees, business hours, M-Pesa | Phase 7 |
+| 9 | Production Runs | Produce batches, update stock -- products become purchasable | All above |
+
+### What If I Want to Skip Ahead?
+
+- **Can I add products without recipes?** Yes. The Product Catalogue (Food Info) does not strictly require a linked recipe. You can add a product with just a name, image, and price. However, you will lose recipe costing, ingredient tracking, and production run integration.
+- **Can I display products with zero stock?** Yes. Products with \`current_stock = 0\` appear on the website as "Sold Out". This is useful for showing customers your full range while you are still setting up production.
+- **Can I skip inventory setup?** You can, but recipe costing will not work without ingredient costs from inventory. You can always go back and add inventory items later.
+- **Do I need all employees set up before adding products?** No. Only an administrator account is needed to set up the system. Other employees can be added at any time.
+- **Can I add outlets later?** Yes. Multi-branch management is optional and can be configured whenever you expand to additional locations.
+
+---
+
+## 3. Employee Roles
 
 The Snackoh Bakers Management System uses a role-based access control (RBAC) model to ensure that every employee sees only the modules and data relevant to their responsibilities. Each employee is assigned a single login role that determines their default module access, and administrators can further fine-tune access using granular permissions. This approach maximizes security while keeping the interface clean and focused for each user.
 
@@ -137,7 +403,7 @@ Administrators can create custom roles (e.g., Branch Manager, Inventory Clerk) w
 
 ---
 
-## 3. Dashboard
+## 4. Dashboard
 
 **Who can see this:** All roles (with "View Dashboard" permission)
 
@@ -154,7 +420,7 @@ The Dashboard is the first screen employees see after logging in and serves as t
 
 ---
 
-## 4. POS System
+## 5. POS System
 
 **Who can see this:** Cashier, POS Attendant, Admin (or anyone with "Access POS" permission)
 
@@ -180,7 +446,7 @@ The Point of Sale (POS) module is the system's in-store sales processing hub, de
 
 ---
 
-## 5. Production Modules
+## 6. Production Modules
 
 **Who can see this:** Baker, Admin (or anyone with "Manage Recipes" permission)
 
@@ -281,7 +547,7 @@ Waste Control is a critical module for monitoring and reducing production losses
 
 ---
 
-## 6. Sales & Orders Modules
+## 7. Sales & Orders Modules
 
 The Sales & Orders module group handles every aspect of customer-facing transactions beyond the POS counter. From managing customer relationships and processing orders from multiple channels (in-store, phone, online) to coordinating delivery logistics and managing product pricing, these modules work together to ensure smooth order fulfillment from placement to delivery.
 
@@ -402,7 +668,7 @@ The Pricing module provides centralized control over all product pricing across 
 
 ---
 
-## 7. Inventory Modules
+## 8. Inventory Modules
 
 **Who can see this:** Admin (or anyone with "Manage Inventory" permission)
 
@@ -502,7 +768,7 @@ The Asset Management module tracks all physical business assets including produc
 
 ---
 
-## 8. Outlet (Branch) Modules
+## 9. Outlet (Branch) Modules
 
 **Who can see this:** Admin (or anyone with "Manage Outlets" or "View Outlets" permission)
 
@@ -634,7 +900,7 @@ Branch Settings allows each outlet to be configured independently with its own r
 
 ---
 
-## 9. Finance Modules
+## 10. Finance Modules
 
 **Who can see this:** Admin (or anyone with "Manage Finance" permission)
 
@@ -697,7 +963,7 @@ The Credit Invoices module handles invoice generation and management for credit-
 
 ---
 
-## 10. People Management Modules
+## 11. People Management Modules
 
 The People Management module group handles all aspects of human resource management within the bakery. From onboarding new employees and managing their profiles to tracking productivity, managing roles and permissions, and controlling system access, these modules ensure the right people have the right access and that employee performance is visible and measurable.
 
@@ -761,7 +1027,7 @@ The Roles & Permissions module is where administrators define and manage the acc
 
 ---
 
-## 11. System & Settings Modules
+## 12. System & Settings Modules
 
 The System & Settings modules provide the administrative backbone of the platform. They include financial reporting and ledger management, comprehensive audit logging for compliance, and system-wide configuration options that control everything from branding and receipt templates to security settings and website content.
 
@@ -814,7 +1080,7 @@ The Settings module is the system-wide configuration center where administrators
 
 ---
 
-## 12. E-Commerce Website
+## 13. E-Commerce Website
 
 The public-facing e-commerce website is an integral part of the Snackoh Bakers platform, allowing customers to browse the full product catalog, place orders online, and pay seamlessly via M-Pesa -- all without needing to visit a physical bakery location. The website is fully responsive (works on mobile, tablet, and desktop) and can be installed as a Progressive Web App (PWA) for a native app-like experience.
 
@@ -843,7 +1109,7 @@ The public-facing e-commerce website is an integral part of the Snackoh Bakers p
 
 ---
 
-## 13. Roles & Permissions Guide
+## 14. Roles & Permissions Guide
 
 This section is a detailed guide for Administrators who manage employee access. Understanding the permission system is essential for maintaining security while ensuring every employee can do their job effectively.
 
@@ -926,7 +1192,7 @@ Custom Roles
 
 ---
 
-## 14. Security Best Practices
+## 15. Security Best Practices
 
 The Snackoh Bakers Management System handles sensitive business data, financial information, and customer personal details. Following these security practices is essential for protecting the business, its customers, and your own account. Every employee shares responsibility for maintaining system security.
 
@@ -961,7 +1227,7 @@ If you notice any of the following, report it to your administrator right away:
 
 ---
 
-## 15. Tips & Tricks
+## 16. Tips & Tricks
 
 ### Keyboard Shortcuts
 - **Ctrl+R / Cmd+R:** Refresh the page to see the latest data.
@@ -992,7 +1258,7 @@ If you notice any of the following, report it to your administrator right away:
 
 ---
 
-## 16. Troubleshooting
+## 17. Troubleshooting
 
 ### I can't see a module in the sidebar
 - Your role may not have permission to access that module.
