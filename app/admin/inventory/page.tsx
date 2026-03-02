@@ -196,7 +196,7 @@ export default function InventoryPage() {
       resetForm();
       setShowForm(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const msg = err instanceof Error ? err.message : (err && typeof err === 'object' && 'message' in err) ? String((err as Record<string, unknown>).message) : 'Unknown error';
       showToast(`Failed to save item: ${msg}`, 'error');
     } finally {
       setSaving(false);
@@ -226,7 +226,7 @@ export default function InventoryPage() {
       setCategoryForm({ id: '', name: '', type: 'Consumable' });
       setShowCategoryForm(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const msg = err instanceof Error ? err.message : (err && typeof err === 'object' && 'message' in err) ? String((err as Record<string, unknown>).message) : 'Unknown error';
       showToast(`Failed to save category: ${msg}`, 'error');
     }
   };
@@ -351,7 +351,7 @@ export default function InventoryPage() {
       await fetchTransactions();
       showToast(txnType === 'intake' ? 'Stock added successfully' : 'Usage recorded', 'success');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const msg = err instanceof Error ? err.message : (err && typeof err === 'object' && 'message' in err) ? String((err as Record<string, unknown>).message) : 'Unknown error';
       showToast(`Transaction failed: ${msg}`, 'error');
     }
 
@@ -688,7 +688,7 @@ export default function InventoryPage() {
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
+                <div>
                   <input
                     type="number"
                     placeholder="Reorder Level"
@@ -696,31 +696,8 @@ export default function InventoryPage() {
                     onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
                     className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                   />
-                  <input
-                    type="date"
-                    value={formData.lastRestocked}
-                    onChange={(e) => setFormData({ ...formData, lastRestocked: e.target.value })}
-                    className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                  />
                 </div>
               )}
-
-              {formData.type === 'Consumable' && (
-                <input
-                  type="date"
-                  value={formData.lastRestocked}
-                  onChange={(e) => setFormData({ ...formData, lastRestocked: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                />
-              )}
-
-              <input
-                type="text"
-                placeholder="Supplier"
-                value={formData.supplier}
-                onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-              />
 
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Received From Distributor</label>
