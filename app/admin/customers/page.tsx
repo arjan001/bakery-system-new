@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { MapPin, Search, Loader2 } from 'lucide-react';
+import { MapPin, Search, Loader2, FileDown } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 
 interface Customer {
@@ -63,6 +63,7 @@ export default function CustomersPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -260,6 +261,21 @@ export default function CustomersPage() {
   const retailCount = customers.filter(c => c.type === 'Retail').length;
   const individualCount = customers.filter(c => c.type === 'Individual').length;
 
+  const exportPdf = async () => {
+    if (!tableRef.current) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `Customers-${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const },
+      };
+      await html2pdf().set(opt).from(tableRef.current).save();
+    } catch { /* */ }
+  };
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -304,12 +320,20 @@ export default function CustomersPage() {
             <option>Individual</option>
           </select>
         </div>
-        <button
-          onClick={() => { setEditingId(null); setFormData(emptyForm); setLocationSearch(''); setLocationResults([]); setShowDropdown(false); setFormError(null); setShowForm(true); }}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
-        >
-          + Add Customer
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setEditingId(null); setFormData(emptyForm); setLocationSearch(''); setLocationResults([]); setShowDropdown(false); setFormError(null); setShowForm(true); }}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+          >
+            + Add Customer
+          </button>
+          <button
+            onClick={exportPdf}
+            className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+          >
+            <FileDown size={14} /> Export PDF
+          </button>
+        </div>
       </div>
 
       {/* ── Add / Edit Form Modal ── */}
@@ -668,6 +692,7 @@ export default function CustomersPage() {
 
       {/* Table */}
       {loading && <p className="text-center py-4 text-muted-foreground text-sm">Loading...</p>}
+      <div ref={tableRef}>
       <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-secondary border-b border-border">
@@ -741,8 +766,7 @@ export default function CustomersPage() {
           </tbody>
         </table>
       </div>
-
-      {/* Pagination */}
+      </div>
       {filtered.length > PAGE_SIZE && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">

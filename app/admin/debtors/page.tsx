@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Search, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Debtor {
   id: string;
@@ -36,6 +36,11 @@ export default function DebtorsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'All' | 'Current' | 'Overdue' | 'Defaulted'>('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const tableRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -184,6 +189,35 @@ export default function DebtorsPage() {
     return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
+  // Filter / search / pagination
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus]);
+
+  const filtered = debtors.filter(d => {
+    const matchStatus = filterStatus === 'All' || d.status === filterStatus;
+    if (!matchStatus) return false;
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return d.name.toLowerCase().includes(term) || d.phone.toLowerCase().includes(term);
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const exportPdf = async () => {
+    if (!tableRef.current) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `Debtors-${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const },
+      };
+      await html2pdf().set(opt).from(tableRef.current).save();
+    } catch { /* */ }
+  };
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -230,13 +264,43 @@ export default function DebtorsPage() {
         </div>
       )}
 
-      <div className="mb-6 flex justify-end">
-        <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
-        >
-          + Add Debtor
-        </button>
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex gap-2 flex-wrap flex-1">
+          <div className="relative flex-1 max-w-sm">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search debtors..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+            />
+          </div>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value as typeof filterStatus)}
+            className="px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
+          >
+            <option value="All">All Status</option>
+            <option value="Current">Current</option>
+            <option value="Overdue">Overdue</option>
+            <option value="Defaulted">Defaulted</option>
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { resetForm(); setShowForm(true); }}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+          >
+            + Add Debtor
+          </button>
+          <button
+            onClick={exportPdf}
+            className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+          >
+            <FileDown size={14} /> Export PDF
+          </button>
+        </div>
       </div>
 
       <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditingId(null); }} title={editingId ? 'Edit Debtor' : 'Add Debtor'} size="md">
@@ -286,6 +350,7 @@ export default function DebtorsPage() {
       </Modal>
 
       {loading && <p className="text-center py-4 text-muted-foreground text-sm">Loading...</p>}
+      <div ref={tableRef}>
       <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-secondary border-b border-border">
@@ -301,9 +366,9 @@ export default function DebtorsPage() {
             </tr>
           </thead>
           <tbody>
-            {debtors.length === 0 && !loading ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No debtors</td></tr>
-            ) : debtors.map(d => (
+            {paginated.length === 0 && !loading ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">{searchTerm || filterStatus !== 'All' ? 'No debtors match your filters' : 'No debtors'}</td></tr>
+            ) : paginated.map(d => (
               <tr key={d.id} className={`border-b border-border hover:bg-secondary/50 transition-colors ${d.flagged && d.totalDebt > 0 ? 'bg-red-50/50' : ''}`}>
                 <td className="px-4 py-3 font-medium">
                   <div className="flex items-center gap-2">
@@ -340,6 +405,44 @@ export default function DebtorsPage() {
           </tbody>
         </table>
       </div>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {((currentPage - 1) * PAGE_SIZE) + 1}&ndash;{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} debtors
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+              className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50">
+              <ChevronLeft size={16} />
+            </button>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let page: number;
+              if (totalPages <= 7) page = i + 1;
+              else if (currentPage <= 4) page = i + 1;
+              else if (currentPage >= totalPages - 3) page = totalPages - 6 + i;
+              else page = currentPage - 3 + i;
+              return (
+                <button key={page} onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-1.5 text-sm rounded-lg font-medium ${currentPage === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-secondary'}`}>
+                  {page}
+                </button>
+              );
+            })}
+            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+              className="p-1.5 border border-border rounded-lg hover:bg-secondary disabled:opacity-50">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+      {filtered.length > 0 && totalPages <= 1 && (
+        <div className="mt-4">
+          <p className="text-sm text-muted-foreground">Showing {filtered.length} of {debtors.length} debtors</p>
+        </div>
+      )}
     </div>
   );
 }

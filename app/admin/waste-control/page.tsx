@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
+import { FileDown } from 'lucide-react';
 
 interface WasteRecord {
   id: string;
@@ -114,7 +115,7 @@ export default function WasteControlPage() {
           batchNumber: (r.batch_number || '') as string,
           notes: (r.notes || '') as string,
           reportedBy: (r.reported_by || '') as string,
-          approvalStatus: (r.approval_status || 'Pending') as WasteRecord['approvalStatus'],
+          approvalStatus: (r.approval_status || r.status || 'Pending') as WasteRecord['approvalStatus'],
           approvedBy: (r.approved_by || '') as string,
           approvalDate: (r.approval_date || '') as string,
           approvalNotes: (r.approval_notes || '') as string,
@@ -374,6 +375,23 @@ export default function WasteControlPage() {
   const hasActiveFilters =
     searchQuery || filterStatus !== 'All' || filterCategory !== 'All' || filterReason !== 'All' || dateFrom || dateTo;
 
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const exportPdf = async () => {
+    if (!tableRef.current) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `Waste-Control-${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const },
+      };
+      await html2pdf().set(opt).from(tableRef.current).save();
+    } catch { /* */ }
+  };
+
   return (
     <div className="p-8">
       {/* Header */}
@@ -483,6 +501,12 @@ export default function WasteControlPage() {
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-semibold"
           >
             + Record Waste
+          </button>
+          <button
+            onClick={exportPdf}
+            className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+          >
+            <FileDown size={14} /> Export PDF
           </button>
         </div>
 
@@ -999,6 +1023,7 @@ export default function WasteControlPage() {
       </Modal>
 
       {/* Records Table */}
+      <div ref={tableRef}>
       <div className="border border-border rounded-lg overflow-x-auto shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-secondary border-b border-border">
@@ -1106,6 +1131,7 @@ export default function WasteControlPage() {
             )}
           </tbody>
         </table>
+      </div>
       </div>
 
       {/* Pagination */}
