@@ -58,7 +58,7 @@ const emptyForm = {
   status: 'Active' as Distributor['status'],
   notes: '',
   website: '',
-  contacts: [{ ...emptyContact }] as ContactPerson[],
+  contacts: [] as ContactPerson[],
 };
 
 const emptyCategoryForm = { name: '', description: '' };
@@ -169,6 +169,13 @@ export default function DistributorsPage() {
     setFormData({ ...formData, contacts: updated });
   };
 
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   // Distributor CRUD
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,27 +200,34 @@ export default function DistributorsPage() {
     };
     try {
       if (editingId) {
-        await supabase.from('distributors').update(row).eq('id', editingId);
+        const { error } = await supabase.from('distributors').update(row).eq('id', editingId);
+        if (error) throw error;
         logAudit({
           action: 'UPDATE',
           module: 'Suppliers',
           record_id: editingId,
           details: { name: row.name, company_name: row.company_name, category: row.category, status: row.status },
         });
+        showToast('Supplier updated successfully', 'success');
       } else {
-        const { data: inserted } = await supabase.from('distributors').insert(row).select('id').single();
+        const { data: inserted, error } = await supabase.from('distributors').insert(row).select('id').single();
+        if (error) throw error;
         logAudit({
           action: 'CREATE',
           module: 'Suppliers',
           record_id: inserted?.id ?? '',
           details: { name: row.name, company_name: row.company_name, category: row.category, status: row.status },
         });
+        showToast('Supplier added successfully', 'success');
       }
       await fetchDistributors();
-    } catch { /* fallback */ }
-    setEditingId(null);
-    setFormData({ ...emptyForm, contacts: [{ ...emptyContact }] });
-    setShowForm(false);
+      setEditingId(null);
+      setFormData({ ...emptyForm, contacts: [] });
+      setShowForm(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : (err && typeof err === 'object' && 'message' in err) ? String((err as Record<string, unknown>).message) : 'Unknown error';
+      showToast(`Failed to save supplier: ${msg}`, 'error');
+    }
   };
 
   const handleEdit = (d: Distributor) => {
@@ -234,7 +248,7 @@ export default function DistributorsPage() {
       status: d.status,
       notes: d.notes,
       website: d.website,
-      contacts: d.contacts.length > 0 ? d.contacts : [{ ...emptyContact }],
+      contacts: d.contacts.length > 0 ? d.contacts : [],
     });
     setEditingId(d.id);
     setShowForm(true);
@@ -329,6 +343,15 @@ export default function DistributorsPage() {
 
   return (
     <div className="p-8">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[60] px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="mb-8">
         <h1 className="mb-2">Supplier Management</h1>
         <p className="text-muted-foreground">Manage inventory suppliers, their categories, and procurement pricing</p>
@@ -403,7 +426,7 @@ export default function DistributorsPage() {
               </select>
             </div>
             <button
-              onClick={() => { setEditingId(null); setFormData({ ...emptyForm, contacts: [{ ...emptyContact }] }); setShowForm(true); }}
+              onClick={() => { setEditingId(null); setFormData({ ...emptyForm, contacts: [] }); setShowForm(true); }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
             >
               + Add Supplier
@@ -443,7 +466,7 @@ export default function DistributorsPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Website</label>
-                  <input type="url" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" placeholder="https://" />
+                  <input type="text" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" placeholder="e.g. www.example.com (optional)" />
                 </div>
               </div>
 
@@ -542,11 +565,14 @@ export default function DistributorsPage() {
               {/* Contacts Section */}
               <div className="border border-border rounded-lg p-4 bg-secondary/30">
                 <div className="flex items-center justify-between mb-3">
-                  <label className="text-sm font-medium">Additional Contact Persons</label>
+                  <label className="text-sm font-medium">Additional Contact Persons <span className="text-xs text-muted-foreground font-normal">(optional)</span></label>
                   <button type="button" onClick={addContact} className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">
                     + Add Contact
                   </button>
                 </div>
+                {formData.contacts.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-2">No additional contacts added. Click &quot;+ Add Contact&quot; to add one.</p>
+                ) : (
                 <div className="space-y-3">
                   {formData.contacts.map((contact, idx) => (
                     <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 items-end">
@@ -566,14 +592,13 @@ export default function DistributorsPage() {
                         <label className="block text-xs text-muted-foreground mb-1">Email</label>
                         <input type="email" value={contact.email} onChange={(e) => updateContact(idx, 'email', e.target.value)} className="w-full px-2 py-1.5 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/50 outline-none bg-background" placeholder="Email" />
                       </div>
-                      {formData.contacts.length > 1 && (
-                        <button type="button" onClick={() => removeContact(idx)} className="px-2 py-1.5 text-xs bg-red-100 text-red-800 rounded-lg hover:bg-red-200 font-medium">
-                          X
-                        </button>
-                      )}
+                      <button type="button" onClick={() => removeContact(idx)} className="px-2 py-1.5 text-xs bg-red-100 text-red-800 rounded-lg hover:bg-red-200 font-medium">
+                        X
+                      </button>
                     </div>
                   ))}
                 </div>
+                )}
               </div>
 
               <div>
