@@ -154,6 +154,14 @@ export default function SettingsPage() {
     lastBackup: 'Never',
     backupLocation: 'supabase',
   });
+  const [backupList, setBackupList] = useState<Array<{
+    backup_id: string; filename: string; size_bytes: number;
+    table_count: number; total_rows: number; trigger: string;
+    status: string; errors: string[] | null; created_at: string;
+  }>>([]);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupMessage, setBackupMessage] = useState('');
 
   // ── Delivery Settings ──
   const [delivery, setDelivery] = useState({
@@ -684,6 +692,9 @@ export default function SettingsPage() {
     loadFromDb();
   }, []);
 
+  // Load backup list on mount
+  useEffect(() => { loadBackups(); }, []);
+
   const testGeminiConnection = async () => {
     if (!geminiSettings.apiKey) {
       setGeminiTestResult({ success: false, message: 'Please enter an API key first' });
@@ -707,6 +718,106 @@ export default function SettingsPage() {
       setGeminiTestResult({ success: false, message: `Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}` });
     }
     setGeminiTesting(false);
+  };
+
+  // ── Backup Functions ──
+  const getAuthToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || '';
+  };
+
+  const loadBackups = async () => {
+    setBackupLoading(true);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/backup/list', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBackupList(data.backups);
+        if (data.backups.length > 0) {
+          setBackup(prev => ({ ...prev, lastBackup: new Date(data.backups[0].created_at).toLocaleString() }));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load backups:', err);
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const runManualBackup = async () => {
+    setBackupRunning(true);
+    setBackupMessage('');
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/backup/run', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBackupMessage(`Backup completed! ${data.backup.tableCount} tables, ${data.backup.totalRows.toLocaleString()} rows (${formatBytes(data.backup.sizeBytes)})`);
+        logAudit({ action: 'EXPORT', module: 'Backup', details: { trigger: 'manual', tables: data.backup.tableCount, rows: data.backup.totalRows } });
+        loadBackups();
+      } else {
+        setBackupMessage(`Backup failed: ${data.message}`);
+      }
+    } catch (err) {
+      setBackupMessage(`Backup error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setBackupRunning(false);
+    }
+  };
+
+  const downloadBackup = async (backupId: string, filename: string) => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`/api/backup/download?id=${encodeURIComponent(backupId)}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setBackupMessage(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const deleteBackup = async (backupId: string) => {
+    if (!confirm('Are you sure you want to delete this backup?')) return;
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`/api/backup/download?id=${encodeURIComponent(backupId)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBackupMessage('Backup deleted');
+        loadBackups();
+      } else {
+        setBackupMessage(`Delete failed: ${data.message}`);
+      }
+    } catch (err) {
+      setBackupMessage(`Delete error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   const saveSettings = async () => {
@@ -2169,28 +2280,144 @@ export default function SettingsPage() {
 
       {/* ── BACKUP ── */}
       {activeTab === 'backup' && (
-        <div className="max-w-2xl space-y-6">
+        <div className="max-w-4xl space-y-6">
+          {/* Backup Settings */}
           <div className="border border-border rounded-lg p-6 bg-card">
             <h3 className="font-semibold mb-4">Automatic Backup</h3>
+            <p className="text-xs text-muted-foreground mb-4">A scheduled function runs daily at midnight (UTC) to automatically back up all database tables. Configure retention and other preferences below.</p>
             <div className="space-y-3">
               <label className="flex items-center justify-between">
                 <div><p className="text-sm font-medium">Enable Auto-Backup</p><p className="text-xs text-muted-foreground">Automatically backup data on schedule</p></div>
                 <button type="button" onClick={() => setBackup({ ...backup, autoBackup: !backup.autoBackup })} className={`w-10 h-5 rounded-full transition-colors ${backup.autoBackup ? 'bg-primary' : 'bg-gray-300'}`}><div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${backup.autoBackup ? 'translate-x-5' : 'translate-x-0.5'}`} /></button>
               </label>
               <div className="grid grid-cols-3 gap-4">
-                <div><label className={labelCls}>Frequency</label><select value={backup.backupFrequency} onChange={e => setBackup({ ...backup, backupFrequency: e.target.value })} className={inputCls}><option>hourly</option><option>daily</option><option>weekly</option><option>monthly</option></select></div>
+                <div><label className={labelCls}>Frequency</label><select value={backup.backupFrequency} onChange={e => setBackup({ ...backup, backupFrequency: e.target.value })} className={inputCls}><option>daily</option><option>weekly</option><option>monthly</option></select></div>
                 <div><label className={labelCls}>Time</label><input type="time" value={backup.backupTime} onChange={e => setBackup({ ...backup, backupTime: e.target.value })} className={inputCls} /></div>
                 <div><label className={labelCls}>Retention (days)</label><input type="number" value={backup.retentionDays} onChange={e => setBackup({ ...backup, retentionDays: parseInt(e.target.value) || 30 })} className={inputCls} /></div>
               </div>
             </div>
           </div>
+
+          {/* Manual Backup & Status */}
           <div className="border border-border rounded-lg p-6 bg-card">
             <h3 className="font-semibold mb-4">Backup Status</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Last Backup</p><p className="font-bold">{backup.lastBackup}</p></div>
-              <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Storage</p><p className="font-bold capitalize">{backup.backupLocation}</p></div>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Last Backup</p><p className="font-bold text-sm">{backup.lastBackup}</p></div>
+              <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Total Backups</p><p className="font-bold text-sm">{backupList.length}</p></div>
+              <div className="p-4 bg-secondary rounded-lg"><p className="text-xs text-muted-foreground">Storage</p><p className="font-bold text-sm capitalize">Supabase (JSON)</p></div>
             </div>
-            <button className="mt-4 px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm font-medium">Run Manual Backup Now</button>
+            {backupMessage && (
+              <div className={`mb-4 p-3 rounded-lg text-sm ${backupMessage.includes('failed') || backupMessage.includes('error') ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                {backupMessage}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={runManualBackup}
+                disabled={backupRunning}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm font-medium disabled:opacity-50"
+              >
+                {backupRunning ? '⏳ Running Backup...' : '💾 Run Manual Backup Now'}
+              </button>
+              <button
+                onClick={loadBackups}
+                disabled={backupLoading}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary text-sm font-medium disabled:opacity-50"
+              >
+                {backupLoading ? 'Loading...' : '🔄 Refresh List'}
+              </button>
+            </div>
+          </div>
+
+          {/* Backup History */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-4">Backup History</h3>
+            <p className="text-xs text-muted-foreground mb-4">Download backups to your local machine for safekeeping. Each backup contains all database tables as JSON.</p>
+            {backupLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading backups...</div>
+            ) : backupList.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-lg mb-2">No backups yet</p>
+                <p className="text-sm">Click &quot;Run Manual Backup Now&quot; to create your first backup</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left">
+                      <th className="pb-2 font-medium">Date</th>
+                      <th className="pb-2 font-medium">Trigger</th>
+                      <th className="pb-2 font-medium">Tables</th>
+                      <th className="pb-2 font-medium">Rows</th>
+                      <th className="pb-2 font-medium">Size</th>
+                      <th className="pb-2 font-medium">Status</th>
+                      <th className="pb-2 font-medium text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backupList.map((b) => (
+                      <tr key={b.backup_id} className="border-b border-border/50 hover:bg-secondary/50">
+                        <td className="py-3">{new Date(b.created_at).toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${b.trigger === 'scheduled' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
+                            {b.trigger}
+                          </span>
+                        </td>
+                        <td className="py-3">{b.table_count}</td>
+                        <td className="py-3">{b.total_rows?.toLocaleString()}</td>
+                        <td className="py-3">{formatBytes(b.size_bytes)}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${b.status === 'success' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : b.status === 'partial' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
+                            {b.status}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => downloadBackup(b.backup_id, b.filename)}
+                              className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                              title="Download to your local machine"
+                            >
+                              ⬇ Download
+                            </button>
+                            <button
+                              onClick={() => deleteBackup(b.backup_id)}
+                              className="px-3 py-1 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30"
+                              title="Delete this backup"
+                            >
+                              🗑
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Setup Instructions */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-3">Setup Instructions</h3>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <div>
+                <p className="font-medium text-foreground mb-1">1. Create the backups table</p>
+                <p>Go to your Supabase Dashboard → SQL Editor and run the migration from <code className="bg-secondary px-1 py-0.5 rounded text-xs">supabase/migrations/create_backups_table.sql</code></p>
+              </div>
+              <div>
+                <p className="font-medium text-foreground mb-1">2. Set the BACKUP_SECRET environment variable</p>
+                <p>In your Netlify dashboard, add a <code className="bg-secondary px-1 py-0.5 rounded text-xs">BACKUP_SECRET</code> environment variable with a secure random string. This authenticates the scheduled backup function.</p>
+              </div>
+              <div>
+                <p className="font-medium text-foreground mb-1">3. Automated daily backups</p>
+                <p>A Netlify Scheduled Function runs every day at midnight UTC automatically. No extra setup needed after deployment.</p>
+              </div>
+              <div>
+                <p className="font-medium text-foreground mb-1">4. Download backups</p>
+                <p>Use the download buttons above to save backup files to your local machine for safekeeping.</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
