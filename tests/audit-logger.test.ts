@@ -6,12 +6,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockInsert = vi.fn();
 const mockGetUser = vi.fn();
+const mockSingle = vi.fn();
 
 vi.mock('@supabase/ssr', () => ({
   createBrowserClient: () => ({
-    from: () => ({
-      insert: mockInsert,
-    }),
+    from: (table: string) => {
+      if (table === 'audit_log') {
+        return { insert: mockInsert };
+      }
+      // users table — used by isMainSuperAdmin
+      return {
+        select: () => ({
+          order: () => ({
+            limit: () => ({
+              single: mockSingle,
+            }),
+          }),
+        }),
+      };
+    },
     auth: {
       getUser: mockGetUser,
     },
@@ -21,6 +34,8 @@ vi.mock('@supabase/ssr', () => ({
 describe('Audit Logger', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no super admin match (first user is someone else)
+    mockSingle.mockResolvedValue({ data: { id: 'first-user-not-current' } });
   });
 
   it('should log an audit entry with user info', async () => {
@@ -53,6 +68,31 @@ describe('Audit Logger', () => {
         details: { name: 'New Recipe' },
       })
     );
+  });
+
+  it('should skip audit logging for the main super admin', async () => {
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'super-admin-001',
+          email: 'owner@test.com',
+          user_metadata: { full_name: 'Owner' },
+        },
+      },
+    });
+    // The first registered user IS the current user
+    mockSingle.mockResolvedValue({ data: { id: 'super-admin-001' } });
+    mockInsert.mockResolvedValue({ error: null });
+
+    const { logAudit } = await import('@/lib/audit-logger');
+    await logAudit({
+      action: 'CREATE',
+      module: 'Recipes',
+      record_id: 'recipe-789',
+    });
+
+    // Insert should NOT be called — main super admin is excluded
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it('should log with "System" when no user is authenticated', async () => {

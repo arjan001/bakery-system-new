@@ -149,6 +149,9 @@ export default function AuditLogsPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<Stats>({ totalLogs: 0, todayActivity: 0, uniqueUsers: 0, mostActiveModule: '-' });
 
+  // Main super admin ID — hidden from all audit log views
+  const [mainSuperAdminId, setMainSuperAdminId] = useState<string | null>(null);
+
   // Filter options (populated from DB)
   const [distinctUsers, setDistinctUsers] = useState<string[]>([]);
   const [distinctModules, setDistinctModules] = useState<string[]>([]);
@@ -182,6 +185,19 @@ export default function AuditLogsPage() {
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
+      // Identify the main super admin (first registered user) to exclude from audit logs
+      let superAdminId: string | null = null;
+      const { data: firstUser } = await supabase
+        .from('users')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .single();
+      if (firstUser?.id) {
+        superAdminId = firstUser.id;
+        setMainSuperAdminId(superAdminId);
+      }
+
       const { data, error } = await supabase
         .from('audit_log')
         .select('*')
@@ -205,7 +221,9 @@ export default function AuditLogsPage() {
         details: (r.details as Record<string, unknown>) || null,
         ip_address: (r.ip_address as string) || null,
         created_at: (r.created_at as string) || '',
-      }));
+      }))
+      // Filter out the main super admin from audit logs
+      .filter(row => !superAdminId || row.user_id !== superAdminId);
 
       setLogs(rows);
 
@@ -266,6 +284,9 @@ export default function AuditLogsPage() {
             created_at: (r.created_at as string) || '',
           };
 
+          // Skip real-time entries from the main super admin
+          if (mainSuperAdminId && newLog.user_id === mainSuperAdminId) return;
+
           setLogs(prev => [newLog, ...prev]);
 
           // Update stats incrementally
@@ -303,7 +324,7 @@ export default function AuditLogsPage() {
       supabase.removeChannel(channel);
       if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
     };
-  }, []);
+  }, [mainSuperAdminId]);
 
   // ─── Filtering ───────────────────────────────────────────────────────────
 
