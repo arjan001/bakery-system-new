@@ -894,7 +894,7 @@ function AdminDeliveryView() {
     setAssignmentMode(mode);
     await supabase
       .from('business_settings')
-      .upsert({ key: 'delivery_assignment_mode', value: JSON.stringify(mode), category: 'delivery', label: 'Delivery Assignment Mode' });
+      .upsert({ key: 'delivery_assignment_mode', value: JSON.stringify(mode) });
     logAudit({ action: 'UPDATE', module: 'Delivery Settings', record_id: 'delivery_assignment_mode', details: { mode } });
   };
 
