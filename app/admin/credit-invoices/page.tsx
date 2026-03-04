@@ -353,8 +353,9 @@ export default function CreditInvoicesPage() {
   useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus]);
 
   const recalculate = (items: InvoiceItem[], tax: number) => {
-    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-    const totalAmount = subtotal + tax;
+    const safeN = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    const subtotal = items.reduce((sum, item) => sum + safeN(item.total), 0);
+    const totalAmount = subtotal + safeN(tax);
     return { subtotal, totalAmount };
   };
 
@@ -806,7 +807,7 @@ export default function CreditInvoicesPage() {
   const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   // Stats
-  const totalOutstanding = invoices.reduce((s, i) => s + i.balance, 0);
+  const totalOutstanding = invoices.reduce((s, i) => { const n = Number(i.balance); return s + (Number.isFinite(n) ? n : 0); }, 0);
   const overdueCount = invoices.filter(i => i.status === 'Overdue').length;
   const unpaidCount = invoices.filter(i => i.status === 'Unpaid').length;
   const paidCount = invoices.filter(i => i.status === 'Paid').length;

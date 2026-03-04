@@ -306,11 +306,12 @@ export default function POSPage() {
     }
   }, [shiftStarted, openingBalance, totalSalesCount, totalSalesAmount, heldOrders, loggedCashier]);
 
-  // Totals
-  const taxRate = generalSettings.taxRate / 100;
-  const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const tax = subtotal * taxRate;
-  const total = subtotal + tax;
+  // Totals - use safe number operations to prevent NaN
+  const safeN = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const taxRate = safeN(generalSettings.taxRate) / 100;
+  const subtotal = cartItems.reduce((sum, item) => sum + safeN(item.price) * safeN(item.quantity), 0);
+  const tax = Math.round((subtotal * taxRate + Number.EPSILON) * 100) / 100;
+  const total = Math.round((subtotal + tax + Number.EPSILON) * 100) / 100;
   const categories = [...new Set(products.map(p => p.category))];
   const filteredProducts = products.filter(p => {
     const match = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());

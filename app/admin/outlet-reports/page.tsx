@@ -164,8 +164,26 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Safe number: guards against NaN, undefined, null, Infinity
+function safeNum(val: unknown): number {
+  if (val === null || val === undefined) return 0;
+  const n = typeof val === 'number' ? val : Number(val);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Safe division: prevents division by zero and NaN results
+function safeDiv(numerator: number, denominator: number, fallback: number = 0): number {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) return fallback;
+  return numerator / denominator;
+}
+
+// Round to 2 decimal places for currency precision
+function round2(val: number): number {
+  return Math.round((safeNum(val) + Number.EPSILON) * 100) / 100;
+}
+
 function formatKES(amount: number): string {
-  return `KES ${amount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `KES ${safeNum(amount).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -538,16 +556,16 @@ export default function OutletReportsPage() {
   // ─── Computed: Overview Metrics ─────────────────────────────────────────────
 
   const overviewMetrics = useMemo(() => {
-    const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
+    const totalSales = round2(sales.reduce((sum, s) => sum + safeNum(s.total), 0));
     const totalOrders = sales.length;
-    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
+    const avgOrderValue = round2(safeDiv(totalSales, totalOrders, 0));
     const totalReturnsCount = returns.length;
-    const totalReturnsValue = returns.reduce((sum, r) => sum + r.total_value, 0);
-    const totalWasteCost = wasteRecords.reduce((sum, w) => sum + w.cost, 0);
+    const totalReturnsValue = round2(returns.reduce((sum, r) => sum + safeNum(r.total_value), 0));
+    const totalWasteCost = round2(wasteRecords.reduce((sum, w) => sum + safeNum(w.cost), 0));
     const activeEmployees = employees.filter(e => e.status === 'Active').length;
-    const inventoryValue = inventory.reduce((sum, i) => sum + (i.quantity * i.unit_cost), 0);
+    const inventoryValue = round2(inventory.reduce((sum, i) => sum + round2(safeNum(i.quantity) * safeNum(i.unit_cost)), 0));
     const totalRequisitions = requisitions.length;
-    const totalRequisitionsCost = requisitions.reduce((sum, r) => sum + r.total_cost, 0);
+    const totalRequisitionsCost = round2(requisitions.reduce((sum, r) => sum + safeNum(r.total_cost), 0));
 
     return {
       totalSales,
@@ -716,10 +734,9 @@ export default function OutletReportsPage() {
   }, [returnItems]);
 
   const recoveryRate = useMemo(() => {
-    const totalValue = returns.reduce((sum, r) => sum + r.total_value, 0);
-    const wholesaleValue = returns.reduce((sum, r) => sum + r.wholesale_value, 0);
-    if (totalValue === 0) return 0;
-    return (wholesaleValue / totalValue) * 100;
+    const totalValue = round2(returns.reduce((sum, r) => sum + safeNum(r.total_value), 0));
+    const wholesaleValue = round2(returns.reduce((sum, r) => sum + safeNum(r.wholesale_value), 0));
+    return round2(safeDiv(wholesaleValue, totalValue, 0) * 100);
   }, [returns]);
 
   // ─── Computed: Waste Breakdown ──────────────────────────────────────────────
@@ -765,7 +782,7 @@ export default function OutletReportsPage() {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [wasteRecords]);
 
-  const totalWasteCost = useMemo(() => wasteRecords.reduce((sum, w) => sum + w.cost, 0), [wasteRecords]);
+  const totalWasteCost = useMemo(() => round2(wasteRecords.reduce((sum, w) => sum + safeNum(w.cost), 0)), [wasteRecords]);
 
   // ─── Computed: Expenses Breakdown ──────────────────────────────────────────
 
@@ -795,7 +812,7 @@ export default function OutletReportsPage() {
       .sort((a, b) => b.totalAmount - a.totalAmount);
   }, [expenses]);
 
-  const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + e.amount, 0), [expenses]);
+  const totalExpenses = useMemo(() => round2(expenses.reduce((sum, e) => sum + safeNum(e.amount), 0)), [expenses]);
 
   // ─── Computed: Requisitions Breakdown ──────────────────────────────────────
 
@@ -826,49 +843,50 @@ export default function OutletReportsPage() {
       .slice(0, 15);
   }, [requisitionItems]);
 
-  const totalRequisitionsCost = useMemo(() => requisitions.reduce((sum, r) => sum + r.total_cost, 0), [requisitions]);
+  const totalRequisitionsCost = useMemo(() => round2(requisitions.reduce((sum, r) => sum + safeNum(r.total_cost), 0)), [requisitions]);
 
   // ─── Computed: P&L Metrics ─────────────────────────────────────────────────
 
   const pnlMetrics = useMemo(() => {
-    const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
+    const totalSales = round2(sales.reduce((sum, s) => sum + safeNum(s.total), 0));
 
-    // Direct costs = raw materials + production costs from cost_entries
-    const directCosts = expenses
-      .filter(e => e.cost_type === 'direct_cost' || e.cost_type === 'raw_materials' ||
-        e.category?.toLowerCase().includes('raw') || e.category?.toLowerCase().includes('ingredient') ||
-        e.category?.toLowerCase().includes('production') || e.category?.toLowerCase().includes('labor') ||
-        e.category?.toLowerCase().includes('packaging'))
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Classify expenses into mutually exclusive buckets using cost_type first, then category fallback
+    const classifyExpense = (e: OutletExpense): 'direct' | 'indirect' | 'general' => {
+      const ct = e.cost_type || '';
+      const cat = (e.category || '').toLowerCase();
+      // Direct costs by cost_type
+      if (ct === 'direct_cost' || ct === 'raw_materials') return 'direct';
+      // Direct costs by category (only if cost_type doesn't already classify it)
+      if (cat.includes('raw') || cat.includes('ingredient') || cat.includes('production') || cat.includes('labor') || cat.includes('packaging')) return 'direct';
+      // Indirect costs
+      if (ct === 'indirect_cost') return 'indirect';
+      if (cat.includes('utility') || cat.includes('rent') || cat.includes('maintenance')) return 'indirect';
+      // Everything else is general
+      return 'general';
+    };
+
+    // Direct costs from cost_entries
+    const directCosts = round2(expenses.filter(e => classifyExpense(e) === 'direct').reduce((sum, e) => sum + safeNum(e.amount), 0));
 
     // Also count requisitions cost as direct costs (purchases from main bakery)
-    const requisitionsCost = requisitions
+    const requisitionsCost = round2(requisitions
       .filter(r => r.status !== 'Cancelled' && r.status !== 'Rejected')
-      .reduce((sum, r) => sum + r.total_cost, 0);
+      .reduce((sum, r) => sum + safeNum(r.total_cost), 0));
 
-    const totalDirectCosts = directCosts + requisitionsCost;
-    const grossProfit = totalSales - totalDirectCosts;
+    const totalDirectCosts = round2(directCosts + requisitionsCost);
+    const grossProfit = round2(totalSales - totalDirectCosts);
 
-    // Indirect costs + general expenses
-    const indirectCosts = expenses
-      .filter(e => e.cost_type === 'indirect_cost' ||
-        e.category?.toLowerCase().includes('utility') || e.category?.toLowerCase().includes('rent') ||
-        e.category?.toLowerCase().includes('maintenance'))
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Indirect costs
+    const indirectCosts = round2(expenses.filter(e => classifyExpense(e) === 'indirect').reduce((sum, e) => sum + safeNum(e.amount), 0));
 
-    const generalExpenses = expenses
-      .filter(e => !['direct_cost', 'raw_materials', 'indirect_cost'].includes(e.cost_type) &&
-        !e.category?.toLowerCase().includes('raw') && !e.category?.toLowerCase().includes('ingredient') &&
-        !e.category?.toLowerCase().includes('production') && !e.category?.toLowerCase().includes('labor') &&
-        !e.category?.toLowerCase().includes('packaging') && !e.category?.toLowerCase().includes('utility') &&
-        !e.category?.toLowerCase().includes('rent') && !e.category?.toLowerCase().includes('maintenance'))
-      .reduce((sum, e) => sum + e.amount, 0);
+    // General expenses
+    const generalExpenses = round2(expenses.filter(e => classifyExpense(e) === 'general').reduce((sum, e) => sum + safeNum(e.amount), 0));
 
-    const wasteCost = wasteRecords.reduce((sum, w) => sum + w.cost, 0);
-    const totalIndirectAndGeneral = indirectCosts + generalExpenses + wasteCost;
-    const netProfit = grossProfit - totalIndirectAndGeneral;
-    const grossMargin = totalSales > 0 ? (grossProfit / totalSales) * 100 : 0;
-    const netMargin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0;
+    const wasteCost = round2(wasteRecords.reduce((sum, w) => sum + safeNum(w.cost), 0));
+    const totalIndirectAndGeneral = round2(indirectCosts + generalExpenses + wasteCost);
+    const netProfit = round2(grossProfit - totalIndirectAndGeneral);
+    const grossMargin = round2(safeDiv(grossProfit, totalSales, 0) * 100);
+    const netMargin = round2(safeDiv(netProfit, totalSales, 0) * 100);
 
     return {
       totalSales,
@@ -1183,7 +1201,7 @@ export default function OutletReportsPage() {
                     <td className="px-5 py-3 text-right text-foreground">{item.count}</td>
                     <td className="px-5 py-3 text-right font-semibold text-foreground">{formatKES(item.total)}</td>
                     <td className="px-5 py-3 text-right text-muted-foreground">
-                      {overviewMetrics.totalSales > 0 ? ((item.total / overviewMetrics.totalSales) * 100).toFixed(1) : '0.0'}%
+                      {(safeDiv(item.total, overviewMetrics.totalSales) * 100).toFixed(1)}%
                     </td>
                   </tr>
                 ))
@@ -1218,7 +1236,7 @@ export default function OutletReportsPage() {
                     <td className="px-5 py-3 text-right text-foreground">{item.count}</td>
                     <td className="px-5 py-3 text-right font-semibold text-foreground">{formatKES(item.total)}</td>
                     <td className="px-5 py-3 text-right text-muted-foreground">
-                      {overviewMetrics.totalSales > 0 ? ((item.total / overviewMetrics.totalSales) * 100).toFixed(1) : '0.0'}%
+                      {(safeDiv(item.total, overviewMetrics.totalSales) * 100).toFixed(1)}%
                     </td>
                   </tr>
                 ))
@@ -1285,7 +1303,7 @@ export default function OutletReportsPage() {
                     <td className="px-5 py-3 font-medium text-foreground">{formatDate(day.date)}</td>
                     <td className="px-5 py-3 text-right text-foreground">{day.count}</td>
                     <td className="px-5 py-3 text-right font-semibold text-foreground">{formatKES(day.total)}</td>
-                    <td className="px-5 py-3 text-right text-muted-foreground">{formatKES(day.count > 0 ? day.total / day.count : 0)}</td>
+                    <td className="px-5 py-3 text-right text-muted-foreground">{formatKES(safeDiv(day.total, day.count, 0))}</td>
                   </tr>
                 ))
               )}
@@ -1326,7 +1344,7 @@ export default function OutletReportsPage() {
         />
         <StatCard
           title="Total Inventory Value"
-          value={formatKES(inventory.reduce((s, i) => s + i.quantity * i.unit_cost, 0))}
+          value={formatKES(round2(inventory.reduce((s, i) => s + round2(safeNum(i.quantity) * safeNum(i.unit_cost)), 0)))}
           subtitle="Cost basis"
           icon={<DollarSign className="w-5 h-5" />}
           borderColor="border-l-emerald-500"
