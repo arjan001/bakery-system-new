@@ -696,23 +696,19 @@ export default function SettingsPage() {
   useEffect(() => { loadBackups(); }, []);
 
   const testGeminiConnection = async () => {
-    if (!geminiSettings.apiKey) {
-      setGeminiTestResult({ success: false, message: 'Please enter an API key first' });
-      return;
-    }
     setGeminiTesting(true);
     setGeminiTestResult(null);
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiSettings.model}:generateContent?key=${geminiSettings.apiKey}`, {
+      const res = await fetch('/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: 'Say "Connection successful" in one sentence.' }] }], generationConfig: { maxOutputTokens: 50 } }),
+        body: JSON.stringify({ action: 'test' }),
       });
-      if (res.ok) {
+      const result = await res.json();
+      if (result.success) {
         setGeminiTestResult({ success: true, message: 'Gemini AI connection successful! API key is valid.' });
       } else {
-        const err = await res.json();
-        setGeminiTestResult({ success: false, message: err?.error?.message || `API error: ${res.status}` });
+        setGeminiTestResult({ success: false, message: result.message || `API error: ${res.status}` });
       }
     } catch (e) {
       setGeminiTestResult({ success: false, message: `Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}` });

@@ -426,40 +426,6 @@ export default function RecipesPage() {
     setAiError('');
 
     try {
-      // Load gemini settings
-      let geminiKey = '';
-      let geminiModel = 'gemini-2.0-flash';
-      try {
-        const { data } = await supabase.from('business_settings').select('value').eq('key', 'geminiAi').single();
-        if (data?.value) {
-          const settings = data.value as Record<string, unknown>;
-          geminiKey = (settings.apiKey || '') as string;
-          geminiModel = (settings.model || 'gemini-2.0-flash') as string;
-          if (!(settings.enabled as boolean)) {
-            setAiError('Gemini AI is disabled. Enable it in Settings > Gemini AI.');
-            setAiGenerating(false);
-            return;
-          }
-        }
-      } catch {
-        try {
-          const saved = localStorage.getItem('snackoh_settings');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed.geminiAi) {
-              geminiKey = parsed.geminiAi.apiKey || '';
-              geminiModel = parsed.geminiAi.model || 'gemini-2.0-flash';
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (!geminiKey) {
-        setAiError('Gemini API key not configured. Go to Settings > Gemini AI to set it up.');
-        setAiGenerating(false);
-        return;
-      }
-
       const inventoryList = inventoryItems.map(i => `${i.name} (${i.unit}, KES ${i.unitCost}/unit, stock: ${i.quantity})`).join('\n');
 
       const prompt = `You are a professional bakery recipe formulator. Generate a complete bakery recipe for: "${aiPrompt}"
@@ -492,22 +458,18 @@ For productType use one of: White Bread, Brown Bread, Sourdough, Croissant, Dani
 For units use: g, kg, ml, l, pieces, tbsp, tsp, cups
 Use realistic quantities and costs in KES.`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`, {
+      const res = await fetch('/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
-        }),
+        body: JSON.stringify({ prompt, maxOutputTokens: 2048, temperature: 0.7 }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err?.error?.message || `API error: ${res.status}`);
+      const result = await res.json();
+      if (!result.success) {
+        throw new Error(result.message || `API error: ${res.status}`);
       }
 
-      const result = await res.json();
-      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const text = result.text || '';
 
       // Extract JSON from response (handle possible markdown code blocks)
       let jsonStr = text;
@@ -582,39 +544,6 @@ Use realistic quantities and costs in KES.`;
     setShowRecipeWebView(true);
 
     try {
-      let geminiKey = '';
-      let geminiModel = 'gemini-2.0-flash';
-      try {
-        const { data } = await supabase.from('business_settings').select('value').eq('key', 'geminiAi').single();
-        if (data?.value) {
-          const settings = data.value as Record<string, unknown>;
-          geminiKey = (settings.apiKey || '') as string;
-          geminiModel = (settings.model || 'gemini-2.0-flash') as string;
-          if (!(settings.enabled as boolean)) {
-            setAiRecipeDetailError('Gemini AI is disabled. Enable it in Settings > Gemini AI.');
-            setAiRecipeDetailLoading(false);
-            return;
-          }
-        }
-      } catch {
-        try {
-          const saved = localStorage.getItem('snackoh_settings');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed.geminiAi) {
-              geminiKey = parsed.geminiAi.apiKey || '';
-              geminiModel = parsed.geminiAi.model || 'gemini-2.0-flash';
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (!geminiKey) {
-        setAiRecipeDetailError('Gemini API key not configured. Go to Settings > Gemini AI to set it up.');
-        setAiRecipeDetailLoading(false);
-        return;
-      }
-
       const ingredientList = recipe.ingredients.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
 
       const prompt = `You are a professional bakery chef. Generate a comprehensive, detailed recipe card for: "${recipe.name}"
@@ -659,22 +588,18 @@ Style the HTML with inline CSS for a clean, professional look. Use these colors:
 Use font-family: system-ui, -apple-system, sans-serif.
 Make it printer-friendly.`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`, {
+      const res = await fetch('/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
-        }),
+        body: JSON.stringify({ prompt, maxOutputTokens: 4096, temperature: 0.7 }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err?.error?.message || `API error: ${res.status}`);
+      const result = await res.json();
+      if (!result.success) {
+        throw new Error(result.message || `API error: ${res.status}`);
       }
 
-      const result = await res.json();
-      let html = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      let html = result.text || '';
 
       // Strip markdown code block wrappers if present
       html = html.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
