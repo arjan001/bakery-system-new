@@ -25,6 +25,8 @@ import {
   AlertCircle,
   ArrowRightLeft,
   Home,
+  Navigation,
+  Crosshair,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -542,8 +544,8 @@ export default function OutletsPage() {
       opening_hours: formData.opening_hours.trim(),
       status: formData.status,
       notes: formData.notes.trim(),
-      gps_lat: formData.gps_lat || 0,
-      gps_lng: formData.gps_lng || 0,
+      gps_lat: formData.gps_lat || null,
+      gps_lng: formData.gps_lng || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -1043,8 +1045,42 @@ export default function OutletsPage() {
                       <p className="text-sm font-medium">{selectedOutlet.opening_hours || '---'}</p>
                     </div>
                   </div>
+                  {selectedOutlet.gps_lat !== 0 && selectedOutlet.gps_lng !== 0 && (
+                    <div className="flex items-start gap-3">
+                      <Navigation className="w-4 h-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">GPS Location</p>
+                        <p className="text-sm font-medium font-mono">{selectedOutlet.gps_lat.toFixed(6)}, {selectedOutlet.gps_lng.toFixed(6)}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Map display in overview */}
+              {selectedOutlet.gps_lat !== 0 && selectedOutlet.gps_lng !== 0 && (
+                <div className="col-span-2 border border-border rounded-lg p-6 bg-card">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Outlet Location</h3>
+                    <a
+                      href={`https://www.google.com/maps?q=${selectedOutlet.gps_lat},${selectedOutlet.gps_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline font-medium flex items-center gap-1"
+                    >
+                      <Navigation className="w-3 h-3" /> Open in Google Maps
+                    </a>
+                  </div>
+                  <iframe
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedOutlet.gps_lng - 0.008},${selectedOutlet.gps_lat - 0.008},${selectedOutlet.gps_lng + 0.008},${selectedOutlet.gps_lat + 0.008}&layer=mapnik&marker=${selectedOutlet.gps_lat},${selectedOutlet.gps_lng}`}
+                    width="100%"
+                    height="250"
+                    className="rounded-lg border border-border"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                  />
+                </div>
+              )}
 
               {/* Contact & Manager */}
               <div className="border border-border rounded-lg p-6 bg-card">
@@ -1436,6 +1472,7 @@ export default function OutletsPage() {
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
                       <th className="px-4 py-3 text-left font-semibold">Manager</th>
                       <th className="px-4 py-3 text-left font-semibold">City</th>
+                      <th className="px-4 py-3 text-center font-semibold">Location</th>
                       <th className="px-4 py-3 text-left font-semibold">Phone</th>
                       <th className="px-4 py-3 text-center font-semibold">Staff</th>
                       <th className="px-4 py-3 text-left font-semibold">Actions</th>
@@ -1477,6 +1514,22 @@ export default function OutletsPage() {
                         </td>
                         <td className="px-4 py-3 text-sm">{outlet.manager_name || '---'}</td>
                         <td className="px-4 py-3 text-sm">{outlet.city || '---'}</td>
+                        <td className="px-4 py-3 text-center">
+                          {outlet.gps_lat !== 0 && outlet.gps_lng !== 0 ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${outlet.gps_lat},${outlet.gps_lng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                              title={`${outlet.gps_lat.toFixed(4)}, ${outlet.gps_lng.toFixed(4)}`}
+                            >
+                              <MapPin className="w-3 h-3" />
+                              Mapped
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not set</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-sm">{outlet.phone || '---'}</td>
                         <td className="px-4 py-3 text-center">
                           <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
@@ -1693,72 +1746,113 @@ export default function OutletsPage() {
             </div>
           </div>
 
-          {/* GPS Location */}
+          {/* GPS Location - Pin on Map */}
           <div className="border border-border rounded-lg p-4 bg-secondary/30">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold flex items-center gap-2">
-                <MapPin className="w-4 h-4" /> GPS Location
-              </p>
-              <button
-                type="button"
-                onClick={handleUseCurrentLocation}
-                className="text-xs px-3 py-1.5 bg-foreground text-background rounded-lg hover:opacity-80 transition-opacity font-medium"
-              >
-                Use Current Location
-              </button>
+              <div className="flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-muted-foreground" />
+                <p className="text-sm font-semibold">Outlet Location (Pin on Map)</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!navigator.geolocation) return;
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          gps_lat: parseFloat(pos.coords.latitude.toFixed(6)),
+                          gps_lng: parseFloat(pos.coords.longitude.toFixed(6)),
+                        }));
+                      },
+                      () => {},
+                      { enableHighAccuracy: true }
+                    );
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 font-medium transition-colors"
+                >
+                  <Crosshair className="w-3 h-3" />
+                  Use My Location
+                </button>
+                {formData.gps_lat !== 0 && formData.gps_lng !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, gps_lat: 0, gps_lng: 0 }))}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs bg-red-100 text-red-800 rounded-lg hover:bg-red-200 font-medium transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
+
             <div className="grid grid-cols-2 gap-4 mb-3">
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Latitude</label>
                 <input
                   type="number"
-                  step="any"
+                  step="0.000001"
                   value={formData.gps_lat || ''}
                   onChange={(e) => setFormData({ ...formData, gps_lat: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
-                  placeholder="e.g. -1.2864"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm font-mono"
+                  placeholder="e.g. -1.286389"
                 />
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Longitude</label>
                 <input
                   type="number"
-                  step="any"
+                  step="0.000001"
                   value={formData.gps_lng || ''}
                   onChange={(e) => setFormData({ ...formData, gps_lng: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
-                  placeholder="e.g. 36.8172"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm font-mono"
+                  placeholder="e.g. 36.817223"
                 />
               </div>
             </div>
-            {formData.gps_lat !== 0 && formData.gps_lng !== 0 && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-muted-foreground">
-                    GPS: {formData.gps_lat.toFixed(6)}, {formData.gps_lng.toFixed(6)}
-                  </p>
-                  <a
-                    href={`https://www.google.com/maps?q=${formData.gps_lat},${formData.gps_lng}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary hover:underline font-medium"
-                  >
-                    View on Google Maps
-                  </a>
+
+            {/* Interactive Map for pinning location */}
+            <div className="relative">
+              {formData.gps_lat !== 0 && formData.gps_lng !== 0 ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-muted-foreground">
+                      GPS: {formData.gps_lat.toFixed(6)}, {formData.gps_lng.toFixed(6)}
+                    </p>
+                    <a
+                      href={`https://www.google.com/maps?q=${formData.gps_lat},${formData.gps_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline font-medium flex items-center gap-1"
+                    >
+                      <Navigation className="w-3 h-3" /> Open in Google Maps
+                    </a>
+                  </div>
+                  <iframe
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${formData.gps_lng - 0.005},${formData.gps_lat - 0.005},${formData.gps_lng + 0.005},${formData.gps_lat + 0.005}&layer=mapnik&marker=${formData.gps_lat},${formData.gps_lng}`}
+                    width="100%"
+                    height="200"
+                    className="rounded-lg border border-border"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                  />
                 </div>
-                <iframe
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${formData.gps_lng - 0.005},${formData.gps_lat - 0.005},${formData.gps_lng + 0.005},${formData.gps_lat + 0.005}&layer=mapnik&marker=${formData.gps_lat},${formData.gps_lng}`}
-                  width="100%"
-                  height="200"
-                  className="rounded-lg border border-border"
-                  style={{ border: 0 }}
-                  loading="lazy"
-                />
-              </div>
-            )}
-            {formData.gps_lat === 0 && formData.gps_lng === 0 && (
-              <p className="text-xs text-muted-foreground">Type an address above to auto-fill GPS coordinates, or use &quot;Use Current Location&quot; button.</p>
-            )}
+              ) : (
+                <div className="border border-dashed border-border rounded-lg p-6 text-center bg-background">
+                  <MapPin className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-40" />
+                  <p className="text-sm text-muted-foreground font-medium">No location set</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter latitude/longitude coordinates above, or click &quot;Use My Location&quot; to auto-detect.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground mt-2">
+              Pin this outlet&apos;s location on the map for delivery route planning and rider assignment optimization.
+            </p>
           </div>
 
           {/* Phone and Email */}
