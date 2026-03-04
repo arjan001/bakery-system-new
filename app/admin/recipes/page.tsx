@@ -458,7 +458,7 @@ For productType use one of: White Bread, Brown Bread, Sourdough, Croissant, Dani
 For units use: g, kg, ml, l, pieces, tbsp, tsp, cups
 Use realistic quantities and costs in KES.`;
 
-      const res = await fetch('/api/gemini', {
+      const res = await fetch('/api/chatgpt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, maxOutputTokens: 2048, temperature: 0.7 }),
@@ -588,7 +588,7 @@ Style the HTML with inline CSS for a clean, professional look. Use these colors:
 Use font-family: system-ui, -apple-system, sans-serif.
 Make it printer-friendly.`;
 
-      const res = await fetch('/api/gemini', {
+      const res = await fetch('/api/chatgpt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, maxOutputTokens: 4096, temperature: 0.7 }),
@@ -1507,7 +1507,7 @@ Make it printer-friendly.`;
           <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-              <h3 className="font-semibold text-purple-900">Gemini AI Recipe Formulation</h3>
+              <h3 className="font-semibold text-purple-900">ChatGPT AI Recipe Formulation</h3>
             </div>
             <p className="text-sm text-purple-700">Describe what you want to bake and AI will generate a complete recipe with ingredients from your inventory.</p>
           </div>
