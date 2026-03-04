@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       const { ResultCode, ResultDesc, CallbackMetadata, CheckoutRequestID } = Body.stkCallback;
 
       if (ResultCode === 0) {
-        const metadata = CallbackMetadata?.Item || [];
+        const metadata = (CallbackMetadata as { Item?: Array<{ Name: string; Value: unknown }> })?.Item || [];
         const amount = metadata.find((item: { Name: string }) => item.Name === 'Amount')?.Value;
         const mpesaRef = metadata.find((item: { Name: string }) => item.Name === 'MpesaReceiptNumber')?.Value;
         const phone = metadata.find((item: { Name: string }) => item.Name === 'PhoneNumber')?.Value;

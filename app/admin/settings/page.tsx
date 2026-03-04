@@ -2026,38 +2026,181 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* B2C Settings (Optional) */}
+              {/* Family Bank Integration */}
+              <div className="border border-blue-200 rounded-lg p-6 bg-blue-50/30">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-xs font-bold">FB</div>
+                  <h3 className="font-semibold">Family Bank Paybill Integration</h3>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">Configure Family Bank Paybill for receiving M-Pesa payments directly to your Family Bank account. Customers pay via Paybill and funds settle in your bank account.</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Family Bank Paybill Number</label>
+                      <input type="text" value={mpesaApi.mpesa_shortcode}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_shortcode: e.target.value })}
+                        placeholder="e.g. 222111 (Family Bank Paybill)" className={inputCls} />
+                      <p className="text-[10px] text-muted-foreground mt-1">This is your Family Bank M-Pesa Paybill number from Daraja</p>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Transaction Type</label>
+                      <select value={mpesaApi.mpesa_env === 'production' ? 'CustomerPayBillOnline' : 'CustomerPayBillOnline'} className={inputCls} disabled>
+                        <option value="CustomerPayBillOnline">Paybill (CustomerPayBillOnline)</option>
+                        <option value="CustomerBuyGoodsOnline">Till (CustomerBuyGoodsOnline)</option>
+                      </select>
+                      <p className="text-[10px] text-muted-foreground mt-1">Family Bank uses Paybill transaction type</p>
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                    <p className="text-xs font-medium text-blue-800 mb-1">How Family Bank C2B Works:</p>
+                    <ul className="text-[11px] text-blue-700 space-y-0.5 list-disc list-inside">
+                      <li>Customer receives STK Push on their phone</li>
+                      <li>Payment goes to Family Bank Paybill number</li>
+                      <li>Funds settle directly in your Family Bank account</li>
+                      <li>M-Pesa callback confirms payment instantly</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* C2B Register URLs */}
               <div className="border border-border rounded-lg p-6 bg-card">
-                <h3 className="font-semibold mb-2">B2C Configuration (Optional)</h3>
-                <p className="text-xs text-muted-foreground mb-4">For business-to-customer payments (refunds, disbursements). Leave empty if not used.</p>
+                <h3 className="font-semibold mb-2">C2B URL Registration</h3>
+                <p className="text-xs text-muted-foreground mb-4">Register validation and confirmation URLs with M-Pesa to receive real-time payment notifications when customers pay via Paybill/Till directly (without STK Push).</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Confirmation URL</label>
+                      <input type="text" value={mpesaApi.mpesa_callback_url ? mpesaApi.mpesa_callback_url.replace('/callback', '/c2b-register/confirmation') : ''}
+                        className={inputCls} disabled placeholder="Auto-generated from site URL" />
+                      <p className="text-[10px] text-muted-foreground mt-1">Receives payment confirmation after successful transaction</p>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Validation URL</label>
+                      <input type="text" value={mpesaApi.mpesa_callback_url ? mpesaApi.mpesa_callback_url.replace('/callback', '/c2b-register/validation') : ''}
+                        className={inputCls} disabled placeholder="Auto-generated from site URL" />
+                      <p className="text-[10px] text-muted-foreground mt-1">Validates payment before processing (accepts all by default)</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/mpesa/c2b-register', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({}),
+                        });
+                        const data = await res.json();
+                        setSavedMsg(data.success ? 'C2B URLs registered successfully!' : (data.message || 'Registration failed'));
+                      } catch {
+                        setSavedMsg('Failed to register C2B URLs');
+                      }
+                      setTimeout(() => setSavedMsg(''), 4000);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm"
+                  >
+                    Register C2B URLs with M-Pesa
+                  </button>
+                </div>
+              </div>
+
+              {/* B2C Settings */}
+              <div className="border border-green-200 rounded-lg p-6 bg-green-50/30">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center text-white text-xs font-bold">B2C</div>
+                  <div>
+                    <h3 className="font-semibold">B2C Disbursement Configuration</h3>
+                    <p className="text-[10px] text-muted-foreground">Business-to-Customer payments via M-Pesa (refunds, salary, promotions)</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">Send money from your Family Bank business account to customer M-Pesa wallets. Used for refunds, salary payments, and promotional disbursements.</p>
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={labelCls}>B2C Shortcode</label>
                       <input type="text" value={mpesaApi.mpesa_b2c_shortcode}
                         onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_shortcode: e.target.value })}
-                        placeholder="Leave empty if not used" className={inputCls} />
+                        placeholder="Your B2C shortcode" className={inputCls} />
+                      <p className="text-[10px] text-muted-foreground mt-1">Shortcode registered for B2C on Daraja</p>
                     </div>
                     <div>
                       <label className={labelCls}>Initiator Name</label>
                       <input type="text" value={mpesaApi.mpesa_b2c_initiator_name}
                         onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_initiator_name: e.target.value })}
-                        placeholder="Leave empty if not used" className={inputCls} />
+                        placeholder="API initiator username" className={inputCls} />
+                      <p className="text-[10px] text-muted-foreground mt-1">Username set on M-Pesa portal for API access</p>
                     </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Security Credential</label>
+                    <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_security_credential}
+                      onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_security_credential: e.target.value })}
+                      placeholder="Encrypted credential from Daraja portal" className={inputCls} />
+                    <p className="text-[10px] text-muted-foreground mt-1">Generate this by encrypting your initiator password with the M-Pesa certificate</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={labelCls}>B2C Consumer Key</label>
                       <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_key}
                         onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_key: e.target.value })}
-                        placeholder="Leave empty if not used" className={inputCls} />
+                        placeholder="B2C app consumer key" className={inputCls} />
                     </div>
                     <div>
                       <label className={labelCls}>B2C Consumer Secret</label>
                       <input type={showMpesaSecrets ? 'text' : 'password'} value={mpesaApi.mpesa_b2c_consumer_secret}
                         onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_consumer_secret: e.target.value })}
-                        placeholder="Leave empty if not used" className={inputCls} />
+                        placeholder="B2C app consumer secret" className={inputCls} />
                     </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>B2C Result URL</label>
+                      <input type="text" value={mpesaApi.mpesa_b2c_result_url}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_result_url: e.target.value })}
+                        placeholder="Auto-detected from site URL" className={inputCls} />
+                      <p className="text-[10px] text-muted-foreground mt-1">Callback for B2C payment results</p>
+                    </div>
+                    <div>
+                      <label className={labelCls}>B2C Timeout URL</label>
+                      <input type="text" value={mpesaApi.mpesa_b2c_timeout_url}
+                        onChange={e => setMpesaApi({ ...mpesaApi, mpesa_b2c_timeout_url: e.target.value })}
+                        placeholder="Auto-detected from site URL" className={inputCls} />
+                      <p className="text-[10px] text-muted-foreground mt-1">Callback for B2C timeout notifications</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+                    <p className="text-xs font-medium text-green-800 mb-1">B2C Payment Types:</p>
+                    <ul className="text-[11px] text-green-700 space-y-0.5 list-disc list-inside">
+                      <li><strong>BusinessPayment</strong> - General payments to customers (refunds, rewards)</li>
+                      <li><strong>SalaryPayment</strong> - Employee salary disbursements</li>
+                      <li><strong>PromotionPayment</strong> - Promotional offers and cashback</li>
+                    </ul>
+                  </div>
+
+                  {/* Test B2C Disbursement */}
+                  <div className="border-t border-green-200 pt-3 mt-3">
+                    <p className="text-xs font-medium mb-2">Test B2C Disbursement</p>
+                    <p className="text-[10px] text-muted-foreground mb-2">Send a test B2C payment to verify your configuration is working.</p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/mpesa/b2c', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ phone: '254700000000', amount: 10, commandId: 'BusinessPayment', remarks: 'Test B2C' }),
+                          });
+                          const data = await res.json();
+                          setSavedMsg(data.success ? 'B2C test payment initiated!' : (data.message || 'B2C test failed'));
+                        } catch {
+                          setSavedMsg('Failed to test B2C disbursement');
+                        }
+                        setTimeout(() => setSavedMsg(''), 4000);
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm"
+                    >
+                      Test B2C Payment (KES 10)
+                    </button>
                   </div>
                 </div>
               </div>
