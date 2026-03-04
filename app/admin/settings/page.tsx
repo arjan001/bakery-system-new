@@ -6,7 +6,7 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'mpesa-api' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
+type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
 
 interface NewsletterSubscriber {
   id: string;
@@ -463,7 +463,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    if (activeTab === 'mpesa-api') loadMpesaApiSettings();
+    if (activeTab === 'family-bank') loadMpesaApiSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -483,7 +483,7 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setSavedMsg('M-Pesa API settings saved to database backup!');
+        setSavedMsg('Family Bank settings saved to database backup!');
         // Clear the form fields (since they are now saved)
         setMpesaApi({
           mpesa_consumer_key: '',
@@ -869,7 +869,7 @@ export default function SettingsPage() {
     { key: 'social-media', label: 'Social Media', icon: '📲', tip: 'Social media links for Instagram, TikTok, Facebook & more' },
     { key: 'receipt', label: 'Receipt', icon: '🧾', tip: 'Receipt layout, header, footer & printing' },
     { key: 'payment', label: 'Payment', icon: '💳', tip: 'M-Pesa paybill/till & bank details for receipts' },
-    { key: 'mpesa-api', label: 'M-Pesa API', icon: '📱', tip: 'M-Pesa Daraja API credentials & integration settings' },
+    { key: 'family-bank', label: 'Family Bank', icon: '🏦', tip: 'Family Bank Paybill integration, C2B & B2C settings' },
     { key: 'posCard', label: 'POS Card', icon: '💳', tip: 'Card reader setup & POS card payment settings' },
     { key: 'kra-etims', label: 'KRA eTIMS', icon: '🏛️', tip: 'KRA eTIMS integration for auto tax submission per sale' },
     { key: 'sha-nssf', label: 'SHA/NSSF', icon: '🏥', tip: 'SHA, NSSF, NHIF government deductions & compliance' },
@@ -1887,17 +1887,20 @@ export default function SettingsPage() {
       )}
 
       {/* ── M-PESA API SETTINGS ── */}
-      {activeTab === 'mpesa-api' && (
+      {activeTab === 'family-bank' && (
         <div className="max-w-2xl space-y-6">
           <div className="border border-blue-200 rounded-lg p-6 bg-blue-50/50">
-            <h3 className="font-semibold mb-2 text-blue-800">M-Pesa Daraja API Integration</h3>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-xs font-bold">FB</div>
+              <h3 className="font-semibold text-blue-800">Family Bank Integration</h3>
+            </div>
             <p className="text-sm text-blue-700">
-              These credentials are used for STK Push (Lipa Na M-Pesa Online) payments. The primary source is your <strong>environment variables</strong> (set on Netlify or in <code>.env.local</code>). You can also save a backup copy to the database below.
+              Configure Family Bank Paybill integration for receiving M-Pesa payments directly to your Family Bank account. Manage STK Push credentials, C2B registration, and B2C disbursements. The primary source is your <strong>environment variables</strong> (set on Netlify or in <code>.env.local</code>). You can also save a backup copy to the database below.
             </p>
           </div>
 
           {mpesaApiLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Loading M-Pesa settings...</div>
+            <div className="text-center py-8 text-muted-foreground">Loading Family Bank settings...</div>
           ) : (
             <>
               {/* Current Configuration Status */}
