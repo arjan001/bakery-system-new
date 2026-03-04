@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search, Loader2, Radio } from 'lucide-react';
+import { ClipboardList, Truck, MapPin, Phone, User, Package, Clock, CheckCircle, Navigation, AlertTriangle, ChevronRight, Plus, Eye, Search, Loader2, Radio, Zap, Settings2 } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 import { useUserPermissions } from '@/lib/user-permissions';
 import { useRiderLocationBroadcast } from '@/lib/use-delivery-tracking';
@@ -26,6 +26,7 @@ interface Driver {
   lastName: string;
   phone: string;
   status: string;
+  activeDeliveryCount?: number;
 }
 
 interface Vehicle {
@@ -67,6 +68,7 @@ interface Delivery {
   distanceKm: number;
   tripStartMileage: number;
   tripEndMileage: number;
+  assignmentMode: 'manual' | 'automatic';
 }
 
 const TIME_SLOTS = [
@@ -121,6 +123,7 @@ function dbToDelivery(r: Record<string, unknown>): Delivery {
     distanceKm: (r.distance_km || 0) as number,
     tripStartMileage: (r.trip_start_mileage || 0) as number,
     tripEndMileage: (r.trip_end_mileage || 0) as number,
+    assignmentMode: (r.assignment_mode || 'manual') as 'manual' | 'automatic',
   };
 }
 
@@ -864,6 +867,72 @@ function AdminDeliveryView() {
   const [distanceError, setDistanceError] = useState('');
   const [distanceInfo, setDistanceInfo] = useState('');
 
+  // Assignment mode: 'manual' or 'automatic'
+  const [assignmentMode, setAssignmentMode] = useState<'manual' | 'automatic'>('automatic');
+  const [autoAssigning, setAutoAssigning] = useState(false);
+
+  // Fetch assignment mode setting from business_settings
+  useEffect(() => {
+    const fetchAssignmentMode = async () => {
+      const { data } = await supabase
+        .from('business_settings')
+        .select('value')
+        .eq('key', 'delivery_assignment_mode')
+        .single();
+      if (data?.value) {
+        try {
+          const mode = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+          if (mode === 'manual' || mode === 'automatic') setAssignmentMode(mode);
+        } catch { /* keep default */ }
+      }
+    };
+    fetchAssignmentMode();
+  }, []);
+
+  // Save assignment mode to business_settings
+  const toggleAssignmentMode = async (mode: 'manual' | 'automatic') => {
+    setAssignmentMode(mode);
+    await supabase
+      .from('business_settings')
+      .upsert({ key: 'delivery_assignment_mode', value: JSON.stringify(mode), category: 'delivery', label: 'Delivery Assignment Mode' });
+    logAudit({ action: 'UPDATE', module: 'Delivery Settings', record_id: 'delivery_assignment_mode', details: { mode } });
+  };
+
+  // Find the best available (free) rider - one who has the fewest active deliveries
+  const findFreeRider = useCallback((currentDrivers: Driver[]): Driver | null => {
+    const activeDrivers = currentDrivers.filter(d => d.status === 'Active');
+    if (activeDrivers.length === 0) return null;
+    // Sort by active delivery count (ascending) - rider with least active deliveries is "free"
+    const sorted = [...activeDrivers].sort((a, b) => (a.activeDeliveryCount || 0) - (b.activeDeliveryCount || 0));
+    // Return the rider with the fewest active deliveries (prefer truly free riders with 0)
+    return sorted[0];
+  }, []);
+
+  // Auto-assign rider to a delivery
+  const autoAssignRider = useCallback(async (deliveryId: string, currentDrivers: Driver[]) => {
+    const freeRider = findFreeRider(currentDrivers);
+    if (!freeRider) return null;
+
+    const driverName = `${freeRider.firstName} ${freeRider.lastName}`;
+    await supabase.from('deliveries').update({
+      driver_id: freeRider.id,
+      driver: driverName,
+      driver_name: driverName,
+      status: 'Assigned',
+      assignment_mode: 'automatic',
+      assigned_at: new Date().toISOString(),
+    }).eq('id', deliveryId);
+
+    logAudit({
+      action: 'UPDATE',
+      module: 'Delivery',
+      record_id: deliveryId,
+      details: { driver: driverName, status: 'Assigned', assignmentMode: 'automatic', autoAssigned: true },
+    });
+
+    return freeRider;
+  }, [findFreeRider]);
+
   // Location suggestions for departure
   const [departureSuggestions, setDepartureSuggestions] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
   const [showDepartureSuggestions, setShowDepartureSuggestions] = useState(false);
@@ -958,12 +1027,27 @@ function AdminDeliveryView() {
   const fetchDrivers = useCallback(async () => {
     const { data } = await supabase.from('employees').select('*').in('category', ['Driver', 'Rider']).order('first_name', { ascending: true });
     if (data) {
+      // Get active delivery counts per driver
+      const { data: activeDeliveries } = await supabase
+        .from('deliveries')
+        .select('driver_id')
+        .in('status', ['Assigned', 'In Transit']);
+
+      const deliveryCounts: Record<string, number> = {};
+      if (activeDeliveries) {
+        for (const d of activeDeliveries) {
+          const did = d.driver_id as string;
+          if (did) deliveryCounts[did] = (deliveryCounts[did] || 0) + 1;
+        }
+      }
+
       setDrivers(data.map((r: Record<string, unknown>) => ({
         id: r.id as string,
         firstName: (r.first_name || '') as string,
         lastName: (r.last_name || '') as string,
         phone: (r.phone || '') as string,
         status: (r.status || 'Active') as string,
+        activeDeliveryCount: deliveryCounts[r.id as string] || 0,
       })));
     }
   }, []);
@@ -1078,6 +1162,7 @@ function AdminDeliveryView() {
       distance_km: formData.distanceKm || null,
       trip_start_mileage: formData.tripStartMileage || null,
       trip_end_mileage: formData.tripEndMileage || null,
+      assignment_mode: driver ? 'manual' : (assignmentMode === 'automatic' ? 'automatic' : 'manual'),
     };
 
     try {
@@ -1097,6 +1182,25 @@ function AdminDeliveryView() {
           record_id: inserted?.id || formData.trackingNumber,
           details: { driver: driver ? `${driver.firstName} ${driver.lastName}` : '', status: formData.status },
         });
+
+        // Auto-assign a free rider if assignment mode is 'automatic' and no driver was manually selected
+        if (assignmentMode === 'automatic' && !formData.driverId && inserted?.id) {
+          setAutoAssigning(true);
+          const assignedRider = await autoAssignRider(inserted.id, drivers);
+          setAutoAssigning(false);
+          if (assignedRider) {
+            logAudit({
+              action: 'UPDATE',
+              module: 'Delivery',
+              record_id: inserted.id,
+              details: {
+                autoAssigned: true,
+                rider: `${assignedRider.firstName} ${assignedRider.lastName}`,
+                reason: 'Automatic assignment - rider had fewest active deliveries',
+              },
+            });
+          }
+        }
       }
       await fetchDeliveries();
     } catch {
@@ -1338,6 +1442,76 @@ function AdminDeliveryView() {
           <p className="text-sm text-muted-foreground">Delivered Today</p>
           <p className="text-2xl font-bold text-green-600">{deliveredTodayCount}</p>
         </div>
+      </div>
+
+      {/* Assignment Mode Toggle */}
+      <div className="mb-6 border border-border rounded-lg p-4 bg-card">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Settings2 className="w-5 h-5 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-semibold">Delivery Assignment Mode</p>
+              <p className="text-xs text-muted-foreground">
+                {assignmentMode === 'automatic'
+                  ? 'Deliveries are automatically assigned to the least busy available rider when created without a driver.'
+                  : 'Deliveries must be manually assigned to a driver by an admin.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex border border-border rounded-lg overflow-hidden">
+            <button
+              onClick={() => toggleAssignmentMode('manual')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                assignmentMode === 'manual'
+                  ? 'bg-foreground text-background'
+                  : 'bg-card text-foreground hover:bg-secondary'
+              }`}
+            >
+              Manual
+            </button>
+            <button
+              onClick={() => toggleAssignmentMode('automatic')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-l border-border ${
+                assignmentMode === 'automatic'
+                  ? 'bg-foreground text-background'
+                  : 'bg-card text-foreground hover:bg-secondary'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5" />
+                Automatic
+              </span>
+            </button>
+          </div>
+        </div>
+        {/* Show rider availability summary */}
+        {assignmentMode === 'automatic' && drivers.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-border">
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Rider Availability</p>
+            <div className="flex flex-wrap gap-2">
+              {drivers.filter(d => d.status === 'Active').map(d => (
+                <div key={d.id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${
+                  (d.activeDeliveryCount || 0) === 0
+                    ? 'bg-green-50 text-green-800 border-green-200'
+                    : (d.activeDeliveryCount || 0) <= 2
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-red-50 text-red-800 border-red-200'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${
+                    (d.activeDeliveryCount || 0) === 0 ? 'bg-green-500' : (d.activeDeliveryCount || 0) <= 2 ? 'bg-amber-500' : 'bg-red-500'
+                  }`} />
+                  {d.firstName} {d.lastName}
+                  <span className="text-[10px] opacity-75">
+                    ({(d.activeDeliveryCount || 0) === 0 ? 'Free' : `${d.activeDeliveryCount} active`})
+                  </span>
+                </div>
+              ))}
+              {drivers.filter(d => d.status === 'Active').length === 0 && (
+                <p className="text-xs text-muted-foreground">No active riders available. Add employees with category &quot;Driver&quot; or &quot;Rider&quot;.</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
@@ -1630,22 +1804,43 @@ function AdminDeliveryView() {
           {/* Section: Driver & Vehicle Assignment */}
           <div className="grid grid-cols-2 gap-4">
             <div className="border border-border rounded-lg p-4 bg-secondary/30">
-              <p className="text-sm font-semibold mb-3">Driver Assignment</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold">Driver Assignment</p>
+                {assignmentMode === 'automatic' && !editingId && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">
+                    <Zap className="w-3 h-3" /> Auto-assign enabled
+                  </span>
+                )}
+              </div>
               <select
                 value={formData.driverId}
                 onChange={(e) => setFormData({ ...formData, driverId: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
               >
-                <option value="">Select a driver</option>
+                <option value="">
+                  {assignmentMode === 'automatic' && !editingId ? '-- Auto-assign to free rider --' : 'Select a driver'}
+                </option>
                 {drivers.map(d => (
                   <option key={d.id} value={d.id}>
-                    {d.firstName} {d.lastName} {d.status !== 'Active' ? `(${d.status})` : ''}
+                    {d.firstName} {d.lastName} {d.status !== 'Active' ? `(${d.status})` : ''} {(d.activeDeliveryCount || 0) > 0 ? `[${d.activeDeliveryCount} active]` : '[Free]'}
                   </option>
                 ))}
               </select>
               {selectedDriver && (
                 <div className="mt-2 text-xs text-muted-foreground">
                   Phone: {selectedDriver.phone || '—'} | Status: <span className={selectedDriver.status === 'Active' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>{selectedDriver.status}</span>
+                  {' | '}{(selectedDriver.activeDeliveryCount || 0) === 0
+                    ? <span className="text-green-600 font-medium">Free</span>
+                    : <span className="text-amber-600 font-medium">{selectedDriver.activeDeliveryCount} active delivery(ies)</span>
+                  }
+                </div>
+              )}
+              {!formData.driverId && assignmentMode === 'automatic' && !editingId && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs text-blue-800">
+                    <Zap className="w-3 h-3 inline mr-1" />
+                    A free rider will be automatically assigned when you save this delivery. The system picks the rider with the fewest active deliveries.
+                  </p>
                 </div>
               )}
               {drivers.length === 0 && (
@@ -1780,9 +1975,16 @@ function AdminDeliveryView() {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium"
+              disabled={autoAssigning}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
             >
-              {editingId ? 'Update Delivery' : 'Schedule Delivery'}
+              {autoAssigning ? (
+                <span className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Auto-assigning rider...</span>
+              ) : editingId ? 'Update Delivery' : (
+                assignmentMode === 'automatic' && !formData.driverId
+                  ? 'Schedule & Auto-Assign'
+                  : 'Schedule Delivery'
+              )}
             </button>
           </div>
         </form>
@@ -1989,13 +2191,14 @@ function AdminDeliveryView() {
               <th className="px-4 py-3 text-left font-semibold">Date / Slot</th>
               <th className="px-4 py-3 text-center font-semibold">Items</th>
               <th className="px-4 py-3 text-center font-semibold">Status</th>
+              <th className="px-4 py-3 text-center font-semibold">Assigned</th>
               <th className="px-4 py-3 text-left font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
             {paginated.length === 0 && !loading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">No deliveries found</td>
+                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">No deliveries found</td>
               </tr>
             ) : (
               paginated.map((d) => (
@@ -2016,10 +2219,36 @@ function AdminDeliveryView() {
                   <td className="px-4 py-3 text-center">
                     <span className={`px-2 py-1 text-xs rounded font-semibold ${getStatusColor(d.status)}`}>{d.status}</span>
                   </td>
+                  <td className="px-4 py-3 text-center">
+                    {d.assignmentMode === 'automatic' ? (
+                      <span className="flex items-center justify-center gap-1 text-[10px] font-semibold text-blue-700">
+                        <Zap className="w-3 h-3" /> Auto
+                      </span>
+                    ) : d.driverName ? (
+                      <span className="text-[10px] font-medium text-muted-foreground">Manual</span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
                       <button onClick={() => setShowDetail(d)} className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium">View</button>
                       <button onClick={() => handleEdit(d)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium">Edit</button>
+                      {d.status === 'Pending' && !d.driverName && assignmentMode === 'automatic' && (
+                        <button
+                          onClick={async () => {
+                            const assigned = await autoAssignRider(d.id, drivers);
+                            if (assigned) {
+                              await fetchDeliveries();
+                              await fetchDrivers();
+                            }
+                          }}
+                          className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 font-medium flex items-center gap-0.5"
+                          title="Auto-assign a free rider"
+                        >
+                          <Zap className="w-3 h-3" /> Assign
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(d.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium">Delete</button>
                     </div>
                   </td>
