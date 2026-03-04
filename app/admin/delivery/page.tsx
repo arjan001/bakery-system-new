@@ -26,6 +26,10 @@ interface Driver {
   lastName: string;
   phone: string;
   status: string;
+  lastLat: number;
+  lastLng: number;
+  lastLocationUpdated: string;
+  activeDeliveries: number;
 }
 
 interface Vehicle {
@@ -130,6 +134,14 @@ interface RecentOrder {
   customerName: string;
   customerPhone: string;
   items: { productName: string; quantity: number }[];
+}
+
+interface OutletLocation {
+  id: string;
+  name: string;
+  gps_lat: number;
+  gps_lng: number;
+  address: string;
 }
 
 export default function DeliveryPage() {
@@ -958,13 +970,36 @@ function AdminDeliveryView() {
   const fetchDrivers = useCallback(async () => {
     const { data } = await supabase.from('employees').select('*').in('category', ['Driver', 'Rider']).order('first_name', { ascending: true });
     if (data) {
-      setDrivers(data.map((r: Record<string, unknown>) => ({
-        id: r.id as string,
-        firstName: (r.first_name || '') as string,
-        lastName: (r.last_name || '') as string,
-        phone: (r.phone || '') as string,
-        status: (r.status || 'Active') as string,
-      })));
+      // Get each rider's last known GPS location and active delivery count
+      const driversWithLocation = await Promise.all(data.map(async (r: Record<string, unknown>) => {
+        const driverId = r.id as string;
+        // Get last known location from most recent delivery with rider location
+        const { data: lastDelivery } = await supabase
+          .from('deliveries')
+          .select('rider_lat, rider_lng, rider_location_updated_at')
+          .eq('driver_id', driverId)
+          .not('rider_lat', 'is', null)
+          .order('rider_location_updated_at', { ascending: false })
+          .limit(1);
+        // Count active deliveries (Assigned or In Transit)
+        const { count } = await supabase
+          .from('deliveries')
+          .select('id', { count: 'exact', head: true })
+          .eq('driver_id', driverId)
+          .in('status', ['Assigned', 'In Transit']);
+        return {
+          id: driverId,
+          firstName: (r.first_name || '') as string,
+          lastName: (r.last_name || '') as string,
+          phone: (r.phone || '') as string,
+          status: (r.status || 'Active') as string,
+          lastLat: (lastDelivery?.[0]?.rider_lat || 0) as number,
+          lastLng: (lastDelivery?.[0]?.rider_lng || 0) as number,
+          lastLocationUpdated: (lastDelivery?.[0]?.rider_location_updated_at || '') as string,
+          activeDeliveries: (count || 0) as number,
+        };
+      }));
+      setDrivers(driversWithLocation);
     }
   }, []);
 
@@ -1005,13 +1040,122 @@ function AdminDeliveryView() {
     }
   }, []);
 
+  // Fetch outlet locations for auto-assign distance calculation
+  const [outletLocations, setOutletLocations] = useState<OutletLocation[]>([]);
+  const [autoAssigning, setAutoAssigning] = useState(false);
+  const [autoAssignResult, setAutoAssignResult] = useState('');
+
+  const fetchOutletLocations = useCallback(async () => {
+    const { data } = await supabase
+      .from('outlets')
+      .select('id, name, gps_lat, gps_lng, address')
+      .eq('status', 'Active')
+      .order('is_main_branch', { ascending: false });
+    if (data) {
+      setOutletLocations(data.map((r: Record<string, unknown>) => ({
+        id: (r.id || '') as string,
+        name: (r.name || '') as string,
+        gps_lat: (r.gps_lat || 0) as number,
+        gps_lng: (r.gps_lng || 0) as number,
+        address: (r.address || '') as string,
+      })));
+    }
+  }, []);
+
+  // Haversine distance (km) between two GPS points
+  const calcDistKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLng = (lng2 - lng1) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // Auto-assign the best available rider
+  const handleAutoAssign = () => {
+    setAutoAssignResult('');
+
+    // Get the departure/outlet GPS coordinates
+    let originLat = 0;
+    let originLng = 0;
+
+    // Try to get outlet GPS from departure location matching
+    if (formData.departureLocation) {
+      const matchedOutlet = outletLocations.find(o =>
+        o.name.toLowerCase().includes(formData.departureLocation.toLowerCase()) ||
+        formData.departureLocation.toLowerCase().includes(o.name.toLowerCase()) ||
+        o.address.toLowerCase().includes(formData.departureLocation.toLowerCase())
+      );
+      if (matchedOutlet && matchedOutlet.gps_lat !== 0) {
+        originLat = matchedOutlet.gps_lat;
+        originLng = matchedOutlet.gps_lng;
+      }
+    }
+
+    // If no departure match, use the customer's GPS as reference
+    const customer = customers.find(c => c.id === formData.customerId);
+    if (originLat === 0 && customer && customer.gpsLat !== 0) {
+      originLat = customer.gpsLat;
+      originLng = customer.gpsLng;
+    }
+
+    // If still no GPS reference, try the first outlet with GPS
+    if (originLat === 0) {
+      const outletWithGps = outletLocations.find(o => o.gps_lat !== 0);
+      if (outletWithGps) {
+        originLat = outletWithGps.gps_lat;
+        originLng = outletWithGps.gps_lng;
+      }
+    }
+
+    // Filter only active drivers
+    const activeDrivers = drivers.filter(d => d.status === 'Active');
+    if (activeDrivers.length === 0) {
+      setAutoAssignResult('No active riders available');
+      return;
+    }
+
+    // Scoring: prioritize riders with no active deliveries, then closest to origin
+    type ScoredDriver = Driver & { score: number; distanceKm: number };
+    const scoredDrivers: ScoredDriver[] = activeDrivers.map(d => {
+      let distanceKm = 9999;
+      if (originLat !== 0 && d.lastLat !== 0 && d.lastLng !== 0) {
+        distanceKm = calcDistKm(originLat, originLng, d.lastLat, d.lastLng);
+      }
+      // Score: lower is better
+      // Free riders (0 active deliveries) get a big bonus
+      // Riders with known location get preference
+      const deliveryPenalty = d.activeDeliveries * 50; // 50km penalty per active delivery
+      const noLocationPenalty = d.lastLat === 0 ? 100 : 0; // penalty for unknown location
+      const score = distanceKm + deliveryPenalty + noLocationPenalty;
+      return { ...d, score, distanceKm };
+    });
+
+    // Sort by score (lowest first = best match)
+    scoredDrivers.sort((a, b) => a.score - b.score);
+
+    const best = scoredDrivers[0];
+    setFormData(prev => ({ ...prev, driverId: best.id }));
+
+    const distText = best.lastLat !== 0 && originLat !== 0
+      ? `${best.distanceKm.toFixed(1)} km away`
+      : 'location unknown';
+    const deliveryText = best.activeDeliveries === 0
+      ? 'no active deliveries'
+      : `${best.activeDeliveries} active delivery(s)`;
+    setAutoAssignResult(`Auto-assigned ${best.firstName} ${best.lastName} (${distText}, ${deliveryText})`);
+  };
+
   useEffect(() => {
     fetchDeliveries();
     fetchCustomers();
     fetchDrivers();
     fetchVehicles();
     fetchRecentOrders();
-  }, [fetchDeliveries, fetchCustomers, fetchDrivers, fetchVehicles, fetchRecentOrders]);
+    fetchOutletLocations();
+  }, [fetchDeliveries, fetchCustomers, fetchDrivers, fetchVehicles, fetchRecentOrders, fetchOutletLocations]);
 
   // Import from order: populate customer + items
   const importFromOrder = (orderId: string) => {
@@ -1128,6 +1272,7 @@ function AdminDeliveryView() {
     setDistanceError('');
     setDistanceInfo('');
     setDepartureSuggestions([]);
+    setAutoAssignResult('');
   };
 
   const openNewForm = () => {
@@ -1630,22 +1775,47 @@ function AdminDeliveryView() {
           {/* Section: Driver & Vehicle Assignment */}
           <div className="grid grid-cols-2 gap-4">
             <div className="border border-border rounded-lg p-4 bg-secondary/30">
-              <p className="text-sm font-semibold mb-3">Driver Assignment</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold">Driver Assignment</p>
+                <button
+                  type="button"
+                  onClick={handleAutoAssign}
+                  disabled={drivers.length === 0}
+                  className="px-3 py-1.5 bg-foreground text-background text-xs font-semibold rounded-lg hover:opacity-80 disabled:opacity-40 transition-opacity flex items-center gap-1.5"
+                  title="Auto-assign the closest available rider"
+                >
+                  <Navigation size={12} /> Auto-Assign
+                </button>
+              </div>
               <select
                 value={formData.driverId}
-                onChange={(e) => setFormData({ ...formData, driverId: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, driverId: e.target.value }); setAutoAssignResult(''); }}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
               >
                 <option value="">Select a driver</option>
-                {drivers.map(d => (
+                {drivers
+                  .slice()
+                  .sort((a, b) => a.activeDeliveries - b.activeDeliveries)
+                  .map(d => (
                   <option key={d.id} value={d.id}>
-                    {d.firstName} {d.lastName} {d.status !== 'Active' ? `(${d.status})` : ''}
+                    {d.firstName} {d.lastName} {d.activeDeliveries > 0 ? `(${d.activeDeliveries} active)` : '(free)'} {d.status !== 'Active' ? `[${d.status}]` : ''}
                   </option>
                 ))}
               </select>
-              {selectedDriver && (
+              {autoAssignResult && (
+                <div className="mt-2 text-xs text-green-600 font-medium bg-green-50 px-3 py-2 rounded-lg">
+                  {autoAssignResult}
+                </div>
+              )}
+              {selectedDriver && !autoAssignResult && (
                 <div className="mt-2 text-xs text-muted-foreground">
                   Phone: {selectedDriver.phone || '—'} | Status: <span className={selectedDriver.status === 'Active' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>{selectedDriver.status}</span>
+                  {selectedDriver.activeDeliveries > 0 && (
+                    <span className="ml-1">| <span className="text-amber-600 font-medium">{selectedDriver.activeDeliveries} active delivery(s)</span></span>
+                  )}
+                  {selectedDriver.activeDeliveries === 0 && (
+                    <span className="ml-1">| <span className="text-green-600 font-medium">Available (no active deliveries)</span></span>
+                  )}
                 </div>
               )}
               {drivers.length === 0 && (

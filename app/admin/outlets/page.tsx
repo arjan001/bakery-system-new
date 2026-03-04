@@ -44,6 +44,8 @@ interface Outlet {
   opening_hours: string;
   status: 'Active' | 'Inactive' | 'Closed' | 'Suspended';
   notes: string;
+  gps_lat: number;
+  gps_lng: number;
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +101,8 @@ function dbToOutlet(row: Record<string, unknown>): Outlet {
     opening_hours: (row.opening_hours as string) || '',
     status: (row.status as Outlet['status']) || 'Active',
     notes: (row.notes as string) || '',
+    gps_lat: (row.gps_lat as number) || 0,
+    gps_lng: (row.gps_lng as number) || 0,
     created_at: (row.created_at as string) || '',
     updated_at: (row.updated_at as string) || '',
   };
@@ -198,9 +202,66 @@ export default function OutletsPage() {
     opening_hours: '',
     status: 'Active' as Outlet['status'],
     notes: '',
+    gps_lat: 0,
+    gps_lng: 0,
   };
 
   const [formData, setFormData] = useState(emptyForm);
+
+  // ─── Location search state ─────────────────────────────────────────
+  const [locationSuggestions, setLocationSuggestions] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [locationSearchTimeout, setLocationSearchTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+
+  const fetchOutletLocationSuggestions = async (query: string) => {
+    if (query.length < 3) {
+      setLocationSuggestions([]);
+      return;
+    }
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=ke&limit=5`);
+      const data = await res.json();
+      setLocationSuggestions(data || []);
+      setShowLocationSuggestions(true);
+    } catch {
+      setLocationSuggestions([]);
+    }
+  };
+
+  const handleLocationSearchChange = (value: string) => {
+    setLocationSearchQuery(value);
+    if (locationSearchTimeout) clearTimeout(locationSearchTimeout);
+    const timeout = setTimeout(() => fetchOutletLocationSuggestions(value), 400);
+    setLocationSearchTimeout(timeout);
+  };
+
+  const selectLocationSuggestion = (suggestion: { display_name: string; lat: string; lon: string }) => {
+    setFormData(prev => ({
+      ...prev,
+      address: suggestion.display_name,
+      gps_lat: parseFloat(suggestion.lat),
+      gps_lng: parseFloat(suggestion.lon),
+    }));
+    setLocationSearchQuery('');
+    setShowLocationSuggestions(false);
+    setLocationSuggestions([]);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setFormData(prev => ({
+          ...prev,
+          gps_lat: pos.coords.latitude,
+          gps_lng: pos.coords.longitude,
+        }));
+      },
+      () => showToast('Failed to get current location', 'error'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   // ─── Data fetching ───────────────────────────────────────────────────────
 
@@ -434,6 +495,8 @@ export default function OutletsPage() {
       opening_hours: outlet.opening_hours,
       status: outlet.status,
       notes: outlet.notes,
+      gps_lat: outlet.gps_lat,
+      gps_lng: outlet.gps_lng,
     });
     setEditingId(outlet.id);
     setShowForm(true);
@@ -479,6 +542,8 @@ export default function OutletsPage() {
       opening_hours: formData.opening_hours.trim(),
       status: formData.status,
       notes: formData.notes.trim(),
+      gps_lat: formData.gps_lat || 0,
+      gps_lng: formData.gps_lng || 0,
       updated_at: new Date().toISOString(),
     };
 
@@ -948,6 +1013,29 @@ export default function OutletsPage() {
                       <p className="text-sm font-medium">{selectedOutlet.city || '---'}</p>
                     </div>
                   </div>
+                  {selectedOutlet.gps_lat !== 0 && selectedOutlet.gps_lng !== 0 && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-muted-foreground">GPS: {selectedOutlet.gps_lat.toFixed(6)}, {selectedOutlet.gps_lng.toFixed(6)}</p>
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedOutlet.gps_lat},${selectedOutlet.gps_lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline font-medium"
+                        >
+                          Open in Google Maps
+                        </a>
+                      </div>
+                      <iframe
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedOutlet.gps_lng - 0.005},${selectedOutlet.gps_lat - 0.005},${selectedOutlet.gps_lng + 0.005},${selectedOutlet.gps_lat + 0.005}&layer=mapnik&marker=${selectedOutlet.gps_lat},${selectedOutlet.gps_lng}`}
+                        width="100%"
+                        height="180"
+                        className="rounded-lg border border-border"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
                   <div className="flex items-start gap-3">
                     <Clock className="w-4 h-4 text-muted-foreground mt-0.5" />
                     <div>
@@ -1563,15 +1651,35 @@ export default function OutletsPage() {
 
           {/* Address and City */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="relative">
               <label className="block text-xs text-muted-foreground mb-1">Address</label>
               <input
                 type="text"
                 value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, address: e.target.value });
+                  handleLocationSearchChange(e.target.value);
+                }}
+                onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
+                onFocus={() => { if (locationSuggestions.length > 0) setShowLocationSuggestions(true); }}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
-                placeholder="Full street address"
+                placeholder="Search address or type location..."
               />
+              {showLocationSuggestions && locationSuggestions.length > 0 && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {locationSuggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-secondary transition-colors border-b border-border last:border-0"
+                      onMouseDown={() => selectLocationSuggestion(s)}
+                    >
+                      <MapPin size={10} className="inline mr-1 text-muted-foreground" />
+                      {s.display_name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">City</label>
@@ -1583,6 +1691,74 @@ export default function OutletsPage() {
                 placeholder="e.g. Nairobi"
               />
             </div>
+          </div>
+
+          {/* GPS Location */}
+          <div className="border border-border rounded-lg p-4 bg-secondary/30">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <MapPin className="w-4 h-4" /> GPS Location
+              </p>
+              <button
+                type="button"
+                onClick={handleUseCurrentLocation}
+                className="text-xs px-3 py-1.5 bg-foreground text-background rounded-lg hover:opacity-80 transition-opacity font-medium"
+              >
+                Use Current Location
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Latitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.gps_lat || ''}
+                  onChange={(e) => setFormData({ ...formData, gps_lat: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
+                  placeholder="e.g. -1.2864"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Longitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.gps_lng || ''}
+                  onChange={(e) => setFormData({ ...formData, gps_lng: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm"
+                  placeholder="e.g. 36.8172"
+                />
+              </div>
+            </div>
+            {formData.gps_lat !== 0 && formData.gps_lng !== 0 && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-muted-foreground">
+                    GPS: {formData.gps_lat.toFixed(6)}, {formData.gps_lng.toFixed(6)}
+                  </p>
+                  <a
+                    href={`https://www.google.com/maps?q=${formData.gps_lat},${formData.gps_lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline font-medium"
+                  >
+                    View on Google Maps
+                  </a>
+                </div>
+                <iframe
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${formData.gps_lng - 0.005},${formData.gps_lat - 0.005},${formData.gps_lng + 0.005},${formData.gps_lat + 0.005}&layer=mapnik&marker=${formData.gps_lat},${formData.gps_lng}`}
+                  width="100%"
+                  height="200"
+                  className="rounded-lg border border-border"
+                  style={{ border: 0 }}
+                  loading="lazy"
+                />
+              </div>
+            )}
+            {formData.gps_lat === 0 && formData.gps_lng === 0 && (
+              <p className="text-xs text-muted-foreground">Type an address above to auto-fill GPS coordinates, or use &quot;Use Current Location&quot; button.</p>
+            )}
           </div>
 
           {/* Phone and Email */}
