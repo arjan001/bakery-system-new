@@ -16,6 +16,7 @@ const ENV_KEY_MAP: Record<string, string> = {
   mpesa_passkey: 'MPESA_PASSKEY',
   mpesa_callback_url: 'MPESA_CALLBACK_URL',
   mpesa_env: 'MPESA_ENV',
+  mpesa_transaction_type: 'MPESA_TRANSACTION_TYPE',
   mpesa_b2c_shortcode: 'MPESA_B2C_SHORTCODE',
   mpesa_b2c_initiator_name: 'MPESA_B2C_INITIATOR_NAME',
   mpesa_b2c_security_credential: 'MPESA_B2C_SECURITY_CREDENTIAL',
@@ -23,6 +24,10 @@ const ENV_KEY_MAP: Record<string, string> = {
   mpesa_b2c_consumer_secret: 'MPESA_B2C_CONSUMER_SECRET',
   mpesa_b2c_result_url: 'MPESA_B2C_RESULT_URL',
   mpesa_b2c_timeout_url: 'MPESA_B2C_TIMEOUT_URL',
+  mpesa_c2b_confirmation_url: 'MPESA_C2B_CONFIRMATION_URL',
+  mpesa_c2b_validation_url: 'MPESA_C2B_VALIDATION_URL',
+  family_bank_paybill: 'FAMILY_BANK_PAYBILL',
+  family_bank_account: 'FAMILY_BANK_ACCOUNT',
 };
 
 // Sensitive fields that should be masked when reading

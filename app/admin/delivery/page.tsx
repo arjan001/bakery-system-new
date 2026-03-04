@@ -1099,7 +1099,6 @@ function AdminDeliveryView() {
 
   // Fetch outlet locations for auto-assign distance calculation
   const [outletLocations, setOutletLocations] = useState<OutletLocation[]>([]);
-  const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoAssignResult, setAutoAssignResult] = useState('');
 
   const fetchOutletLocations = useCallback(async () => {
