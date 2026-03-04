@@ -9,12 +9,10 @@
 -- =============================================
 DO $$ BEGIN
   -- Add delivery_assignment_mode to business_settings if not already set
-  INSERT INTO business_settings (key, value, category, label)
+  INSERT INTO business_settings (key, value)
   VALUES (
     'delivery_assignment_mode',
-    '"automatic"',
-    'delivery',
-    'Delivery Assignment Mode'
+    '"automatic"'
   )
   ON CONFLICT (key) DO NOTHING;
 END $$;
