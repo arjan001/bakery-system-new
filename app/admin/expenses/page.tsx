@@ -270,14 +270,15 @@ export default function ExpensesPage() {
   // ─── Stats ───────────────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
-    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+    const safeAmount = (val: unknown): number => { const n = Number(val); return Number.isFinite(n) ? n : 0; };
+    const totalExpenses = expenses.reduce((sum, e) => sum + safeAmount(e.amount), 0);
 
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
     const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
     const thisMonthExpenses = expenses
       .filter((e) => e.expense_date >= thisMonthStart && e.expense_date <= thisMonthEnd)
-      .reduce((sum, e) => sum + Number(e.amount), 0);
+      .reduce((sum, e) => sum + safeAmount(e.amount), 0);
 
     const pendingCount = expenses.filter((e) => e.status === 'Pending').length;
 
@@ -1444,7 +1445,7 @@ export default function ExpensesPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {categories.map((cat) => {
                   const catExpenses = expenses.filter((e) => e.category_id === cat.id);
-                  const totalAmount = catExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+                  const totalAmount = catExpenses.reduce((sum, e) => { const n = Number(e.amount); return sum + (Number.isFinite(n) ? n : 0); }, 0);
                   const pendingCount = catExpenses.filter((e) => e.status === 'Pending').length;
                   return (
                     <div

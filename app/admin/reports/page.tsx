@@ -53,8 +53,26 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 const PAGE_SIZE = 10;
 const CHART_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
+// Safe number: guards against NaN, undefined, null, Infinity
+function safeNum(val: unknown): number {
+  if (val === null || val === undefined) return 0;
+  const n = typeof val === 'number' ? val : Number(val);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Safe division: prevents division by zero and NaN results
+function safeDiv(numerator: number, denominator: number, fallback: number = 0): number {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) return fallback;
+  return numerator / denominator;
+}
+
+// Round to 2 decimal places for currency precision
+function round2(val: number): number {
+  return Math.round((safeNum(val) + Number.EPSILON) * 100) / 100;
+}
+
 function formatKES(amount: number): string {
-  return `KES ${amount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `KES ${safeNum(amount).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -389,19 +407,19 @@ export default function ReportsPage() {
 
   // ─── Computed Totals ──────────────────────────────────────────────────────
 
-  const totalRevenue = plReports.reduce((s, r) => s + r.revenue, 0);
-  const totalCosts = plReports.reduce((s, r) => s + r.costs, 0);
-  const totalProfit = totalRevenue - totalCosts;
-  const totalOrderRevenue = orders.filter(o => o.status !== 'Cancelled').reduce((s, o) => s + o.totalAmount, 0);
-  const totalDebt = debtors.reduce((s, d) => s + d.totalDebt, 0);
-  const totalCredit = creditors.reduce((s, c) => s + c.totalCredit, 0);
-  const inventoryValuation = inventoryItems.reduce((s, i) => s + i.quantity * i.unitCost, 0);
-  const lowStockItems = inventoryItems.filter(i => i.quantity <= i.reorderLevel);
-  const totalLedgerDebit = ledgerEntries.reduce((s, e) => s + e.debit, 0);
-  const totalLedgerCredit = ledgerEntries.reduce((s, e) => s + e.credit, 0);
-  const totalSalesRevenue = sales.reduce((s, r) => s + r.totalPrice, 0);
-  const totalSalesQty = sales.reduce((s, r) => s + r.quantity, 0);
-  const totalPosRevenue = posSales.reduce((s, r) => s + r.total, 0);
+  const totalRevenue = round2(plReports.reduce((s, r) => s + safeNum(r.revenue), 0));
+  const totalCosts = round2(plReports.reduce((s, r) => s + safeNum(r.costs), 0));
+  const totalProfit = round2(totalRevenue - totalCosts);
+  const totalOrderRevenue = round2(orders.filter(o => o.status !== 'Cancelled').reduce((s, o) => s + safeNum(o.totalAmount), 0));
+  const totalDebt = round2(debtors.reduce((s, d) => s + safeNum(d.totalDebt), 0));
+  const totalCredit = round2(creditors.reduce((s, c) => s + safeNum(c.totalCredit), 0));
+  const inventoryValuation = round2(inventoryItems.reduce((s, i) => s + round2(safeNum(i.quantity) * safeNum(i.unitCost)), 0));
+  const lowStockItems = inventoryItems.filter(i => safeNum(i.quantity) <= safeNum(i.reorderLevel));
+  const totalLedgerDebit = round2(ledgerEntries.reduce((s, e) => s + safeNum(e.debit), 0));
+  const totalLedgerCredit = round2(ledgerEntries.reduce((s, e) => s + safeNum(e.credit), 0));
+  const totalSalesRevenue = round2(sales.reduce((s, r) => s + safeNum(r.totalPrice), 0));
+  const totalSalesQty = sales.reduce((s, r) => s + safeNum(r.quantity), 0);
+  const totalPosRevenue = round2(posSales.reduce((s, r) => s + safeNum(r.total), 0));
 
   // Top products
   const productRevenueMap: Record<string, { qty: number; revenue: number; count: number }> = {};
@@ -458,10 +476,12 @@ export default function ReportsPage() {
 
   const handlePnlSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const profit = pnlFormData.revenue - pnlFormData.costs;
-    const margin = pnlFormData.revenue > 0 ? (profit / pnlFormData.revenue) * 100 : 0;
-    const row = { period: pnlFormData.period, revenue: pnlFormData.revenue, costs: pnlFormData.costs, profit, margin };
-    try { if (pnlEditingId) { await supabase.from('pl_reports').update(row).eq('id', pnlEditingId); logAudit({ action: 'UPDATE', module: 'Reports', record_id: pnlEditingId, details: { table: 'pl_reports', period: pnlFormData.period, revenue: pnlFormData.revenue, costs: pnlFormData.costs } }); } else { await supabase.from('pl_reports').insert(row); logAudit({ action: 'CREATE', module: 'Reports', record_id: pnlFormData.period, details: { table: 'pl_reports', period: pnlFormData.period, revenue: pnlFormData.revenue, costs: pnlFormData.costs } }); } await fetchPlReports(); } catch { /* ignore */ }
+    const rev = round2(safeNum(pnlFormData.revenue));
+    const cos = round2(safeNum(pnlFormData.costs));
+    const profit = round2(rev - cos);
+    const margin = round2(safeDiv(profit, rev, 0) * 100);
+    const row = { period: pnlFormData.period, revenue: rev, costs: cos, profit, margin };
+    try { if (pnlEditingId) { await supabase.from('pl_reports').update(row).eq('id', pnlEditingId); logAudit({ action: 'UPDATE', module: 'Reports', record_id: pnlEditingId, details: { table: 'pl_reports', period: pnlFormData.period, revenue: rev, costs: cos } }); } else { await supabase.from('pl_reports').insert(row); logAudit({ action: 'CREATE', module: 'Reports', record_id: pnlFormData.period, details: { table: 'pl_reports', period: pnlFormData.period, revenue: rev, costs: cos } }); } await fetchPlReports(); } catch { /* ignore */ }
     setPnlEditingId(null); setPnlFormData({ period: '', revenue: 0, costs: 0 }); setShowPnlForm(false);
   };
   const handlePnlEdit = (r: PlReport) => { setPnlFormData({ period: r.period, revenue: r.revenue, costs: r.costs }); setPnlEditingId(r.id); setShowPnlForm(true); };
@@ -469,7 +489,13 @@ export default function ReportsPage() {
 
   const handleLedgerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const row = { entry_date: ledgerFormData.entryDate, description: ledgerFormData.description, account: ledgerFormData.account, debit: ledgerFormData.debit, credit: ledgerFormData.credit, reference: ledgerFormData.reference, category: ledgerFormData.category };
+    const debitVal = round2(safeNum(ledgerFormData.debit));
+    const creditVal = round2(safeNum(ledgerFormData.credit));
+    if (debitVal === 0 && creditVal === 0) {
+      alert('At least one of Debit or Credit must be greater than zero.');
+      return;
+    }
+    const row = { entry_date: ledgerFormData.entryDate, description: ledgerFormData.description, account: ledgerFormData.account, debit: debitVal, credit: creditVal, reference: ledgerFormData.reference, category: ledgerFormData.category };
     try { if (ledgerEditingId) { await supabase.from('ledger_entries').update(row).eq('id', ledgerEditingId); logAudit({ action: 'UPDATE', module: 'Reports', record_id: ledgerEditingId, details: { table: 'ledger_entries', description: ledgerFormData.description, account: ledgerFormData.account } }); } else { await supabase.from('ledger_entries').insert(row); logAudit({ action: 'CREATE', module: 'Reports', record_id: ledgerFormData.description, details: { table: 'ledger_entries', description: ledgerFormData.description, account: ledgerFormData.account } }); } await fetchLedger(); } catch { /* ignore */ }
     setLedgerEditingId(null); setLedgerFormData({ entryDate: new Date().toISOString().split('T')[0], description: '', account: '', debit: 0, credit: 0, reference: '', category: 'General' }); setShowLedgerForm(false);
   };
@@ -489,10 +515,10 @@ export default function ReportsPage() {
   // ─── Tab Renderers ────────────────────────────────────────────────────────
 
   // M-Pesa vs Cash breakdown
-  const posCashSales = posSales.filter(s => s.paymentMethod === 'Cash').reduce((sum, s) => sum + s.total, 0);
-  const posMpesaSales = posSales.filter(s => s.paymentMethod === 'Mpesa' || s.paymentMethod === 'M-Pesa').reduce((sum, s) => sum + s.total, 0);
-  const posCardSales = posSales.filter(s => s.paymentMethod === 'Card').reduce((sum, s) => sum + s.total, 0);
-  const posCreditSales = posSales.filter(s => s.paymentMethod === 'Credit').reduce((sum, s) => sum + s.total, 0);
+  const posCashSales = round2(posSales.filter(s => s.paymentMethod === 'Cash').reduce((sum, s) => sum + safeNum(s.total), 0));
+  const posMpesaSales = round2(posSales.filter(s => s.paymentMethod === 'Mpesa' || s.paymentMethod === 'M-Pesa').reduce((sum, s) => sum + safeNum(s.total), 0));
+  const posCardSales = round2(posSales.filter(s => s.paymentMethod === 'Card').reduce((sum, s) => sum + safeNum(s.total), 0));
+  const posCreditSales = round2(posSales.filter(s => s.paymentMethod === 'Credit').reduce((sum, s) => sum + safeNum(s.total), 0));
   const posCashCount = posSales.filter(s => s.paymentMethod === 'Cash').length;
   const posMpesaCount = posSales.filter(s => s.paymentMethod === 'Mpesa' || s.paymentMethod === 'M-Pesa').length;
 
@@ -514,22 +540,22 @@ export default function ReportsPage() {
             <div className="p-3 bg-white/80 rounded-lg text-center border border-green-200">
               <p className="text-[10px] md:text-xs text-green-700 font-medium">Cash Sales</p>
               <p className="text-sm md:text-xl font-bold text-green-700">{formatKES(posCashSales)}</p>
-              <p className="text-[10px] text-green-600">{posCashCount} txns &bull; {totalPosRevenue > 0 ? ((posCashSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+              <p className="text-[10px] text-muted-foreground">{posCashCount} txns &bull; {safeDiv(posCashSales, totalPosRevenue, 0) > 0 ? (safeDiv(posCashSales, totalPosRevenue) * 100).toFixed(1) : '0.0'}%</p>
             </div>
             <div className="p-3 bg-white/80 rounded-lg text-center border border-blue-200">
               <p className="text-[10px] md:text-xs text-blue-700 font-medium">M-Pesa Sales</p>
               <p className="text-sm md:text-xl font-bold text-blue-700">{formatKES(posMpesaSales)}</p>
-              <p className="text-[10px] text-blue-600">{posMpesaCount} txns &bull; {totalPosRevenue > 0 ? ((posMpesaSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+              <p className="text-[10px] text-blue-600">{posMpesaCount} txns &bull; {(safeDiv(posMpesaSales, totalPosRevenue) * 100).toFixed(1)}%</p>
             </div>
             <div className="p-3 bg-white/80 rounded-lg text-center border border-purple-200">
               <p className="text-[10px] md:text-xs text-purple-700 font-medium">Card Sales</p>
               <p className="text-sm md:text-xl font-bold text-purple-700">{formatKES(posCardSales)}</p>
-              <p className="text-[10px] text-purple-600">{totalPosRevenue > 0 ? ((posCardSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+              <p className="text-[10px] text-purple-600">{(safeDiv(posCardSales, totalPosRevenue) * 100).toFixed(1)}%</p>
             </div>
             <div className="p-3 bg-white/80 rounded-lg text-center border border-amber-200">
               <p className="text-[10px] md:text-xs text-amber-700 font-medium">Credit Sales</p>
               <p className="text-sm md:text-xl font-bold text-amber-700">{formatKES(posCreditSales)}</p>
-              <p className="text-[10px] text-amber-600">{totalPosRevenue > 0 ? ((posCreditSales / totalPosRevenue) * 100).toFixed(1) : 0}%</p>
+              <p className="text-[10px] text-amber-600">{(safeDiv(posCreditSales, totalPosRevenue) * 100).toFixed(1)}%</p>
             </div>
           </div>
         </div>
@@ -537,7 +563,7 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <SummaryCard title="Total Revenue (P&L)" value={formatKES(totalRevenue)} subtitle="From P&L reports" color="green" />
           <SummaryCard title="POS Revenue" value={formatKES(totalPosRevenue)} subtitle={`${posSales.length} POS transactions`} color="green" />
-          <SummaryCard title="Net Profit" value={formatKES(totalProfit)} subtitle={totalRevenue > 0 ? `Margin: ${((totalProfit / totalRevenue) * 100).toFixed(1)}%` : 'No data'} color={totalProfit >= 0 ? 'green' : 'red'} />
+          <SummaryCard title="Net Profit" value={formatKES(totalProfit)} subtitle={totalRevenue > 0 ? `Margin: ${(safeDiv(totalProfit, totalRevenue) * 100).toFixed(1)}%` : 'No data'} color={totalProfit >= 0 ? 'green' : 'red'} />
           <SummaryCard title="Outstanding Debts" value={formatKES(totalDebt)} subtitle={`${debtors.length} debtors`} color="amber" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -631,7 +657,7 @@ export default function ReportsPage() {
 
   const renderPnl = () => {
     const { data: pnlData, totalPages: pnlTotalPages } = paginate(plReports, pnlPage);
-    const avgMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0.0';
+    const avgMargin = totalRevenue > 0 ? (safeDiv(totalProfit, totalRevenue) * 100).toFixed(1) : '0.0';
     const csvHeaders = ['Period', 'Revenue (KES)', 'Costs (KES)', 'Profit (KES)', 'Margin (%)'];
     const csvRows = plReports.map(r => [r.period, r.revenue.toFixed(2), r.costs.toFixed(2), r.profit.toFixed(2), r.margin.toFixed(1)]);
 
@@ -640,18 +666,18 @@ export default function ReportsPage() {
     //          Gross Profit - (Indirect Costs + General Expenses) = Net Profit
 
     // Direct costs: raw materials, production costs, labor, packaging
-    const rawMaterialsCost = costEntries.filter(c => c.costType === 'raw_materials' || c.category?.toLowerCase().includes('raw') || c.category?.toLowerCase().includes('ingredient')).reduce((s, c) => s + c.amount, 0);
-    const productionCosts = costEntries.filter(c => c.costType === 'direct_cost' || c.category?.toLowerCase().includes('production') || c.category?.toLowerCase().includes('labor') || c.category?.toLowerCase().includes('packaging')).reduce((s, c) => s + c.amount, 0);
-    const displayDirectCosts = rawMaterialsCost + productionCosts;
+    const rawMaterialsCost = round2(costEntries.filter(c => c.costType === 'raw_materials' || c.category?.toLowerCase().includes('raw') || c.category?.toLowerCase().includes('ingredient')).reduce((s, c) => s + safeNum(c.amount), 0));
+    const productionCosts = round2(costEntries.filter(c => c.costType === 'direct_cost' || c.category?.toLowerCase().includes('production') || c.category?.toLowerCase().includes('labor') || c.category?.toLowerCase().includes('packaging')).reduce((s, c) => s + safeNum(c.amount), 0));
+    const displayDirectCosts = round2(rawMaterialsCost + productionCosts);
 
     // Gross Profit = Total Sales - Direct Costs
-    const displayGrossProfit = totalRevenue - displayDirectCosts;
+    const displayGrossProfit = round2(totalRevenue - displayDirectCosts);
 
     // Indirect costs: utilities, rent, maintenance
-    const indirectCosts = costEntries.filter(c => c.costType === 'indirect_cost' || c.category?.toLowerCase().includes('utility') || c.category?.toLowerCase().includes('rent') || c.category?.toLowerCase().includes('maintenance')).reduce((s, c) => s + c.amount, 0);
+    const indirectCosts = round2(costEntries.filter(c => c.costType === 'indirect_cost' || c.category?.toLowerCase().includes('utility') || c.category?.toLowerCase().includes('rent') || c.category?.toLowerCase().includes('maintenance')).reduce((s, c) => s + safeNum(c.amount), 0));
 
     // General expenses: everything else that isn't direct or indirect
-    const generalExpenses = costEntries.filter(c => {
+    const generalExpenses = round2(costEntries.filter(c => {
       const ct = c.costType || '';
       const cat = (c.category || '').toLowerCase();
       return !['raw_materials', 'direct_cost', 'indirect_cost'].includes(ct) &&
@@ -659,12 +685,12 @@ export default function ReportsPage() {
         !cat.includes('production') && !cat.includes('labor') &&
         !cat.includes('packaging') && !cat.includes('utility') &&
         !cat.includes('rent') && !cat.includes('maintenance');
-    }).reduce((s, c) => s + c.amount, 0);
+    }).reduce((s, c) => s + safeNum(c.amount), 0));
 
-    const displayGeneralExpenses = indirectCosts + generalExpenses;
+    const displayGeneralExpenses = round2(indirectCosts + generalExpenses);
 
     // Net Profit = Gross Profit - (Indirect Costs + General Expenses)
-    const displayNetProfit = displayGrossProfit - displayGeneralExpenses;
+    const displayNetProfit = round2(displayGrossProfit - displayGeneralExpenses);
 
     return (
       <div className="space-y-6">
@@ -683,7 +709,7 @@ export default function ReportsPage() {
           <div className="bg-card border-2 border-blue-200 rounded-xl p-5 shadow-sm">
             <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Gross Profit</p>
             <p className={`text-2xl font-bold ${displayGrossProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{formatKES(displayGrossProfit)}</p>
-            <p className="text-xs text-muted-foreground mt-1">{totalRevenue > 0 ? `Margin: ${((displayGrossProfit / totalRevenue) * 100).toFixed(1)}%` : '-'}</p>
+            <p className="text-xs text-muted-foreground mt-1">{totalRevenue > 0 ? `Margin: ${(safeDiv(displayGrossProfit, totalRevenue) * 100).toFixed(1)}%` : '-'}</p>
           </div>
           <div className="bg-card border-2 border-purple-200 rounded-xl p-5 shadow-sm">
             <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">Indirect + Expenses</p>
@@ -693,7 +719,7 @@ export default function ReportsPage() {
           <div className={`bg-card border-2 rounded-xl p-5 shadow-sm ${displayNetProfit >= 0 ? 'border-emerald-300' : 'border-red-300'}`}>
             <p className="text-xs font-semibold uppercase tracking-wide mb-1 text-muted-foreground">Net Profit</p>
             <p className={`text-2xl font-bold ${displayNetProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatKES(displayNetProfit)}</p>
-            <p className="text-xs text-muted-foreground mt-1">{totalRevenue > 0 ? `Net margin: ${((displayNetProfit / totalRevenue) * 100).toFixed(1)}%` : '-'}</p>
+            <p className="text-xs text-muted-foreground mt-1">{totalRevenue > 0 ? `Net margin: ${(safeDiv(displayNetProfit, totalRevenue) * 100).toFixed(1)}%` : '-'}</p>
           </div>
         </div>
 
@@ -706,7 +732,7 @@ export default function ReportsPage() {
             </div>
             <div className="text-right">
               <p className="text-sm text-muted-foreground">Net Margin</p>
-              <p className={`text-2xl font-bold ${displayNetProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{totalRevenue > 0 ? `${((displayNetProfit / totalRevenue) * 100).toFixed(1)}%` : '0.0%'}</p>
+              <p className={`text-2xl font-bold ${displayNetProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{totalRevenue > 0 ? `${(safeDiv(displayNetProfit, totalRevenue) * 100).toFixed(1)}%` : '0.0%'}</p>
             </div>
           </div>
           <div className="mt-3 grid grid-cols-5 gap-2 text-xs">
@@ -1014,7 +1040,7 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <SummaryCard title="Total Items Sold" value={String(topProducts.length)} subtitle="Unique products" color="blue" />
           <SummaryCard title="Total Item Revenue" value={formatKES(totalSalesRevenue)} color="green" />
-          <SummaryCard title="Avg Revenue/Product" value={formatKES(topProducts.length > 0 ? totalSalesRevenue / topProducts.length : 0)} color="purple" />
+          <SummaryCard title="Avg Revenue/Product" value={formatKES(safeDiv(totalSalesRevenue, topProducts.length, 0))} color="purple" />
           <SummaryCard title="Total Units Sold" value={totalSalesQty.toLocaleString()} color="amber" />
         </div>
 
@@ -1029,8 +1055,8 @@ export default function ReportsPage() {
               <tbody>
                 {itemsData.length === 0 ? (<tr><td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">No item data</td></tr>) : itemsData.map((p, idx) => {
                   const rank = (itemsPage - 1) * PAGE_SIZE + idx + 1;
-                  const avgPrice = p.qty > 0 ? p.revenue / p.qty : 0;
-                  const revPct = totalSalesRevenue > 0 ? ((p.revenue / totalSalesRevenue) * 100).toFixed(1) : '0.0';
+                  const avgPrice = safeDiv(p.revenue, p.qty, 0);
+                  const revPct = totalSalesRevenue > 0 ? (safeDiv(p.revenue, totalSalesRevenue) * 100).toFixed(1) : '0.0';
                   return (<tr key={p.name} className="border-b border-border hover:bg-secondary/30 transition-colors"><td className="px-5 py-3 text-muted-foreground">{rank}</td><td className="px-5 py-3 font-medium">{p.name}</td><td className="px-5 py-3 text-right">{p.qty.toLocaleString()}</td><td className="px-5 py-3 text-right font-semibold text-emerald-600">{formatKES(p.revenue)}</td><td className="px-5 py-3 text-right">{formatKES(avgPrice)}</td><td className="px-5 py-3 text-right"><div className="flex items-center justify-end gap-2"><span>{revPct}%</span><div className="w-16 bg-secondary rounded-full h-1.5"><div className="bg-primary h-1.5 rounded-full" style={{ width: `${parseFloat(revPct)}%` }} /></div></div></td></tr>);
                 })}
               </tbody>
@@ -1045,13 +1071,23 @@ export default function ReportsPage() {
 
   const renderLedger = () => {
     const { data: ledgerData, totalPages: ledgerTotalPages } = paginate(ledgerEntries, ledgerPage);
-    const balance = totalLedgerDebit - totalLedgerCredit;
+    const balance = round2(totalLedgerDebit - totalLedgerCredit);
     const isBalanced = Math.abs(balance) < 0.01;
-    const csvHeaders = ['Date', 'Account', 'Description', 'Category', 'Debit', 'Credit', 'Reference'];
-    const csvRows = ledgerEntries.map(e => [e.entryDate, e.account, e.description, e.category, e.debit.toFixed(2), e.credit.toFixed(2), e.reference]);
+    const csvHeaders = ['Date', 'Account', 'Description', 'Category', 'Debit', 'Credit', 'Running Balance', 'Reference'];
+
+    // Compute running balance for all entries (oldest to newest, then reverse for display)
+    const entriesOldestFirst = [...ledgerEntries].reverse();
+    const runningBalances = new Map<string, number>();
+    let runBal = 0;
+    entriesOldestFirst.forEach(e => {
+      runBal = round2(runBal + safeNum(e.debit) - safeNum(e.credit));
+      runningBalances.set(e.id, runBal);
+    });
+
+    const csvRows = ledgerEntries.map(e => [e.entryDate, e.account, e.description, e.category, e.debit.toFixed(2), e.credit.toFixed(2), (runningBalances.get(e.id) || 0).toFixed(2), e.reference]);
 
     const categoryTotals: Record<string, { debit: number; credit: number }> = {};
-    ledgerEntries.forEach(e => { const cat = e.category || 'Uncategorized'; if (!categoryTotals[cat]) categoryTotals[cat] = { debit: 0, credit: 0 }; categoryTotals[cat].debit += e.debit; categoryTotals[cat].credit += e.credit; });
+    ledgerEntries.forEach(e => { const cat = e.category || 'Uncategorized'; if (!categoryTotals[cat]) categoryTotals[cat] = { debit: 0, credit: 0 }; categoryTotals[cat].debit = round2(categoryTotals[cat].debit + safeNum(e.debit)); categoryTotals[cat].credit = round2(categoryTotals[cat].credit + safeNum(e.credit)); });
 
     return (
       <div className="space-y-6">
@@ -1089,13 +1125,16 @@ export default function ReportsPage() {
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-secondary/50"><tr><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Date</th><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Account</th><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Description</th><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Category</th><th className="px-5 py-3 text-right font-semibold text-blue-700">Debit</th><th className="px-5 py-3 text-right font-semibold text-purple-700">Credit</th><th className="px-5 py-3 text-center font-semibold text-muted-foreground">Actions</th></tr></thead>
+              <thead className="bg-secondary/50"><tr><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Date</th><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Account</th><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Description</th><th className="px-5 py-3 text-left font-semibold text-muted-foreground">Category</th><th className="px-5 py-3 text-right font-semibold text-blue-700">Debit</th><th className="px-5 py-3 text-right font-semibold text-purple-700">Credit</th><th className="px-5 py-3 text-right font-semibold text-muted-foreground">Balance</th><th className="px-5 py-3 text-center font-semibold text-muted-foreground">Actions</th></tr></thead>
               <tbody>
-                {ledgerData.length === 0 ? (<tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground">No ledger entries</td></tr>) : ledgerData.map(e => (
-                  <tr key={e.id} className="border-b border-border hover:bg-secondary/30 transition-colors"><td className="px-5 py-3 whitespace-nowrap">{formatDate(e.entryDate)}</td><td className="px-5 py-3 font-medium">{e.account}</td><td className="px-5 py-3 max-w-[200px] truncate">{e.description}</td><td className="px-5 py-3"><span className="px-2 py-0.5 text-xs bg-secondary rounded-full font-medium">{e.category}</span></td><td className="px-5 py-3 text-right font-semibold text-blue-600">{e.debit > 0 ? formatKES(e.debit) : '-'}</td><td className="px-5 py-3 text-right font-semibold text-purple-600">{e.credit > 0 ? formatKES(e.credit) : '-'}</td><td className="px-5 py-3"><div className="flex gap-2 justify-center"><button onClick={() => handleLedgerEdit(e)} className="px-3 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 font-medium">Edit</button><button onClick={() => handleLedgerDelete(e.id)} className="px-3 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 font-medium">Delete</button></div></td></tr>
-                ))}
+                {ledgerData.length === 0 ? (<tr><td colSpan={8} className="px-5 py-8 text-center text-muted-foreground">No ledger entries</td></tr>) : ledgerData.map(e => {
+                  const entryBalance = runningBalances.get(e.id) || 0;
+                  return (
+                  <tr key={e.id} className="border-b border-border hover:bg-secondary/30 transition-colors"><td className="px-5 py-3 whitespace-nowrap">{formatDate(e.entryDate)}</td><td className="px-5 py-3 font-medium">{e.account}</td><td className="px-5 py-3 max-w-[200px] truncate">{e.description}</td><td className="px-5 py-3"><span className="px-2 py-0.5 text-xs bg-secondary rounded-full font-medium">{e.category}</span></td><td className="px-5 py-3 text-right font-semibold text-blue-600">{e.debit > 0 ? formatKES(e.debit) : '-'}</td><td className="px-5 py-3 text-right font-semibold text-purple-600">{e.credit > 0 ? formatKES(e.credit) : '-'}</td><td className={`px-5 py-3 text-right font-semibold ${entryBalance >= 0 ? 'text-blue-700' : 'text-purple-700'}`}>{formatKES(Math.abs(entryBalance))} {entryBalance >= 0 ? 'DR' : 'CR'}</td><td className="px-5 py-3"><div className="flex gap-2 justify-center"><button onClick={() => handleLedgerEdit(e)} className="px-3 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 font-medium">Edit</button><button onClick={() => handleLedgerDelete(e.id)} className="px-3 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 font-medium">Delete</button></div></td></tr>
+                  );
+                })}
               </tbody>
-              {ledgerEntries.length > 0 && (<tfoot className="bg-secondary/70 font-bold"><tr><td className="px-5 py-3" colSpan={4}>TOTALS</td><td className="px-5 py-3 text-right text-blue-700">{formatKES(totalLedgerDebit)}</td><td className="px-5 py-3 text-right text-purple-700">{formatKES(totalLedgerCredit)}</td><td className="px-5 py-3 text-center"><span className={`px-2 py-0.5 text-xs rounded-full font-medium ${isBalanced ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{isBalanced ? 'Balanced' : 'Unbalanced'}</span></td></tr></tfoot>)}
+              {ledgerEntries.length > 0 && (<tfoot className="bg-secondary/70 font-bold"><tr><td className="px-5 py-3" colSpan={4}>TOTALS</td><td className="px-5 py-3 text-right text-blue-700">{formatKES(totalLedgerDebit)}</td><td className="px-5 py-3 text-right text-purple-700">{formatKES(totalLedgerCredit)}</td><td className={`px-5 py-3 text-right ${isBalanced ? 'text-emerald-700' : Math.abs(balance) > 0 ? (balance > 0 ? 'text-blue-700' : 'text-purple-700') : ''}`}>{isBalanced ? 'Balanced' : `${formatKES(Math.abs(balance))} ${balance > 0 ? 'DR' : 'CR'}`}</td><td className="px-5 py-3 text-center"><span className={`px-2 py-0.5 text-xs rounded-full font-medium ${isBalanced ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{isBalanced ? 'Balanced' : 'Unbalanced'}</span></td></tr></tfoot>)}
             </table>
           </div>
           <Pagination currentPage={ledgerPage} totalPages={ledgerTotalPages} totalItems={ledgerEntries.length} onPageChange={setLedgerPage} />
@@ -1106,28 +1145,32 @@ export default function ReportsPage() {
 
   const renderBalanceSheet = () => {
     // ─── Assets ───
-    const totalFixedAssets = assets.reduce((s, a) => s + a.currentValue, 0);
-    const totalAssetDepreciation = assets.reduce((s, a) => s + a.accumulatedDepreciation, 0);
+    const totalFixedAssets = round2(assets.reduce((s, a) => s + safeNum(a.currentValue), 0));
+    const totalAssetDepreciation = round2(assets.reduce((s, a) => s + safeNum(a.accumulatedDepreciation), 0));
     const netFixedAssets = totalFixedAssets;
-    const cashAndBank = ledgerEntries.filter(e => e.account?.toLowerCase().includes('cash') || e.account?.toLowerCase().includes('bank')).reduce((s, e) => s + e.debit - e.credit, 0);
+    const cashAndBank = round2(ledgerEntries.filter(e => e.account?.toLowerCase().includes('cash') || e.account?.toLowerCase().includes('bank')).reduce((s, e) => s + safeNum(e.debit) - safeNum(e.credit), 0));
     const accountsReceivable = totalDebt; // debtors owe us
-    const currentAssets = inventoryValuation + Math.max(0, cashAndBank) + accountsReceivable;
-    const totalAssets = netFixedAssets + currentAssets;
+    const currentAssets = round2(inventoryValuation + cashAndBank + accountsReceivable);
+    const totalAssets = round2(netFixedAssets + currentAssets);
 
     // ─── Liabilities ───
     const accountsPayable = totalCredit; // we owe creditors
-    const otherCurrentLiabilities = ledgerEntries.filter(e => e.category === 'Liabilities' && e.credit > 0).reduce((s, e) => s + e.credit - e.debit, 0);
-    const currentLiabilities = accountsPayable + Math.max(0, otherCurrentLiabilities);
+    const otherCurrentLiabilities = round2(ledgerEntries.filter(e => e.category === 'Liabilities' && safeNum(e.credit) > 0).reduce((s, e) => s + safeNum(e.credit) - safeNum(e.debit), 0));
+    const currentLiabilities = round2(accountsPayable + Math.max(0, otherCurrentLiabilities));
     const longTermLiabilities = 0;
-    const totalLiabilities = currentLiabilities + longTermLiabilities;
+    const totalLiabilities = round2(currentLiabilities + longTermLiabilities);
 
     // ─── Equity ───
     const retainedEarnings = totalProfit;
-    const totalEquity = totalAssets - totalLiabilities;
-    const ownerCapital = totalEquity - retainedEarnings;
+    const totalEquity = round2(totalAssets - totalLiabilities);
+    const ownerCapital = round2(totalEquity - retainedEarnings);
 
-    // Verify balance
-    const isBalanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01;
+    // Verify balance: check that ledger debits equal credits (meaningful accounting check)
+    const ledgerBalance = round2(totalLedgerDebit - totalLedgerCredit);
+    const isLedgerBalanced = Math.abs(ledgerBalance) < 0.01;
+    // Balance sheet always balances by construction (Assets = Liabilities + Equity),
+    // so check underlying ledger integrity instead
+    const isBalanced = isLedgerBalanced;
 
     const bsDate = dateTo || new Date().toISOString().split('T')[0];
 
@@ -1138,7 +1181,7 @@ export default function ReportsPage() {
       ['Less: Accumulated Depreciation', totalAssetDepreciation.toFixed(2)],
       ['Inventory', inventoryValuation.toFixed(2)],
       ['Accounts Receivable (Debtors)', accountsReceivable.toFixed(2)],
-      ['Cash & Bank', Math.max(0, cashAndBank).toFixed(2)],
+      ['Cash & Bank', cashAndBank.toFixed(2)],
       ['TOTAL ASSETS', totalAssets.toFixed(2)],
       ['', ''],
       ['LIABILITIES', ''],
@@ -1147,7 +1190,7 @@ export default function ReportsPage() {
       ['TOTAL LIABILITIES', totalLiabilities.toFixed(2)],
       ['', ''],
       ['EQUITY', ''],
-      ['Owner Capital', Math.max(0, ownerCapital).toFixed(2)],
+      ['Owner Capital', ownerCapital.toFixed(2)],
       ['Retained Earnings', retainedEarnings.toFixed(2)],
       ['TOTAL EQUITY', totalEquity.toFixed(2)],
     ];
@@ -1194,7 +1237,7 @@ export default function ReportsPage() {
                 <tr className="border-b border-border bg-blue-50/30"><td className="px-5 py-2 font-semibold text-blue-800" colSpan={2}>Current Assets</td></tr>
                 {renderBSRow('Inventory', inventoryValuation, true)}
                 {renderBSRow('Accounts Receivable (Debtors)', accountsReceivable, true)}
-                {renderBSRow('Cash & Bank Balances', Math.max(0, cashAndBank), true)}
+                {renderBSRow('Cash & Bank Balances', cashAndBank, true)}
                 {renderBSRow('Total Current Assets', currentAssets, false, true)}
 
                 <tr className="border-t-2 border-blue-300 bg-blue-100/50 font-bold">
@@ -1218,7 +1261,7 @@ export default function ReportsPage() {
                 {renderBSRow('Total Current Liabilities', currentLiabilities, false, true)}
 
                 <tr className="border-b border-border bg-emerald-50/30"><td className="px-5 py-2 font-semibold text-emerald-800" colSpan={2}>Equity</td></tr>
-                {renderBSRow("Owner's Capital", Math.max(0, ownerCapital), true)}
+                {renderBSRow("Owner's Capital", ownerCapital, true, false, ownerCapital < 0)}
                 {renderBSRow('Retained Earnings', retainedEarnings, true)}
                 {renderBSRow('Total Equity', totalEquity, false, true)}
 
@@ -1238,12 +1281,12 @@ export default function ReportsPage() {
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isBalanced ? "M5 13l4 4L19 7" : "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"} /></svg>
             </div>
             <div>
-              <p className={`font-semibold ${isBalanced ? 'text-emerald-800' : 'text-amber-800'}`}>{isBalanced ? 'Balance Sheet is Balanced' : 'Balance Sheet Requires Review'}</p>
-              <p className="text-xs text-muted-foreground">Assets ({formatKES(totalAssets)}) {isBalanced ? '=' : '≠'} Liabilities + Equity ({formatKES(totalLiabilities + totalEquity)})</p>
+              <p className={`font-semibold ${isBalanced ? 'text-emerald-800' : 'text-amber-800'}`}>{isBalanced ? 'Ledger is Balanced - Books Verified' : 'Ledger Out of Balance - Review Entries'}</p>
+              <p className="text-xs text-muted-foreground">Total Debits ({formatKES(totalLedgerDebit)}) {isBalanced ? '=' : '≠'} Total Credits ({formatKES(totalLedgerCredit)}){!isBalanced ? ` | Difference: ${formatKES(Math.abs(ledgerBalance))}` : ''}</p>
             </div>
           </div>
           <span className={`text-sm font-bold px-3 py-1 rounded-full ${isBalanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-            {isBalanced ? 'Verified' : `Diff: ${formatKES(Math.abs(totalAssets - (totalLiabilities + totalEquity)))}`}
+            {isBalanced ? 'Verified' : `Diff: ${formatKES(Math.abs(ledgerBalance))}`}
           </span>
         </div>
       </div>
@@ -1313,8 +1356,8 @@ export default function ReportsPage() {
             <div><label className="block text-sm font-medium mb-1">Costs (KES)</label><input type="number" step="0.01" value={pnlFormData.costs} onChange={(e) => setPnlFormData({ ...pnlFormData, costs: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" required /></div>
           </div>
           <div className="bg-secondary rounded-lg p-4 space-y-2">
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Profit:</span><span className={`font-bold ${pnlFormData.revenue - pnlFormData.costs >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatKES(pnlFormData.revenue - pnlFormData.costs)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Margin:</span><span className="font-bold">{pnlFormData.revenue > 0 ? (((pnlFormData.revenue - pnlFormData.costs) / pnlFormData.revenue) * 100).toFixed(1) : '0.0'}%</span></div>
+            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Profit:</span><span className={`font-bold ${safeNum(pnlFormData.revenue) - safeNum(pnlFormData.costs) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatKES(round2(safeNum(pnlFormData.revenue) - safeNum(pnlFormData.costs)))}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Margin:</span><span className="font-bold">{safeNum(pnlFormData.revenue) > 0 ? (safeDiv(safeNum(pnlFormData.revenue) - safeNum(pnlFormData.costs), safeNum(pnlFormData.revenue)) * 100).toFixed(1) : '0.0'}%</span></div>
           </div>
           <div className="flex gap-3 justify-end pt-4 border-t border-border">
             <button type="button" onClick={() => { setShowPnlForm(false); setPnlEditingId(null); }} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary">Cancel</button>
@@ -1335,6 +1378,18 @@ export default function ReportsPage() {
             <div><label className="block text-sm font-medium mb-1">Debit (KES)</label><input type="number" step="0.01" min="0" value={ledgerFormData.debit} onChange={(e) => setLedgerFormData({ ...ledgerFormData, debit: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" /></div>
             <div><label className="block text-sm font-medium mb-1">Credit (KES)</label><input type="number" step="0.01" min="0" value={ledgerFormData.credit} onChange={(e) => setLedgerFormData({ ...ledgerFormData, credit: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" /></div>
           </div>
+          {safeNum(ledgerFormData.debit) === 0 && safeNum(ledgerFormData.credit) === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-sm text-amber-700">At least one of Debit or Credit must be greater than zero.</div>
+          )}
+          {safeNum(ledgerFormData.debit) > 0 && safeNum(ledgerFormData.credit) > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700">Compound entry: Both debit and credit are set. Net effect: {formatKES(Math.abs(safeNum(ledgerFormData.debit) - safeNum(ledgerFormData.credit)))} {safeNum(ledgerFormData.debit) >= safeNum(ledgerFormData.credit) ? 'DR' : 'CR'}</div>
+          )}
+          {(safeNum(ledgerFormData.debit) > 0 || safeNum(ledgerFormData.credit) > 0) && !(safeNum(ledgerFormData.debit) > 0 && safeNum(ledgerFormData.credit) > 0) && (
+            <div className="bg-secondary rounded-lg px-4 py-2 text-sm">
+              <span className="text-muted-foreground">Entry: </span>
+              <span className="font-semibold">{formatKES(Math.max(safeNum(ledgerFormData.debit), safeNum(ledgerFormData.credit)))} {safeNum(ledgerFormData.debit) > 0 ? 'DEBIT' : 'CREDIT'}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium mb-1">Category</label><select value={ledgerFormData.category} onChange={(e) => setLedgerFormData({ ...ledgerFormData, category: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"><option>General</option><option>Sales</option><option>Purchases</option><option>Expenses</option><option>Payroll</option><option>Assets</option><option>Liabilities</option><option>Equity</option><option>Taxes</option><option>Bank</option><option>Cash</option><option>M-Pesa</option></select></div>
             <div><label className="block text-sm font-medium mb-1">Reference</label><input type="text" placeholder="Invoice #, Receipt #" value={ledgerFormData.reference} onChange={(e) => setLedgerFormData({ ...ledgerFormData, reference: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" /></div>

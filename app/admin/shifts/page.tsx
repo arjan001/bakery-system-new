@@ -85,8 +85,15 @@ const TABS: { key: TabKey; label: string }[] = [
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Safe number: guards against NaN, undefined, null, Infinity
+function safeNum(val: unknown): number {
+  if (val === null || val === undefined) return 0;
+  const n = typeof val === 'number' ? val : Number(val);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function formatKES(amount: number): string {
-  return `KES ${amount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `KES ${safeNum(amount).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -358,7 +365,7 @@ export default function ShiftsPage() {
   );
 
   const todayTotalSales = useMemo(() =>
-    todayShifts.reduce((sum, s) => sum + s.total_sales, 0),
+    todayShifts.reduce((sum, s) => sum + safeNum(s.total_sales), 0),
     [todayShifts]
   );
 
@@ -641,7 +648,7 @@ export default function ShiftsPage() {
         <StatCard
           title="Total Sales Today"
           value={formatKES(todayTotalSales)}
-          subtitle={`From ${todayShifts.reduce((s, sh) => s + sh.total_transactions, 0)} transactions`}
+          subtitle={`From ${todayShifts.reduce((s, sh) => s + safeNum(sh.total_transactions), 0)} transactions`}
           borderColor="border-l-purple-500"
         />
         <StatCard
@@ -685,7 +692,7 @@ export default function ShiftsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {activeShifts.map(shift => {
                 const expenses = shiftExpenses.filter(e => e.shift_id === shift.id);
-                const expenseTotal = expenses.reduce((s, e) => s + e.amount, 0);
+                const expenseTotal = expenses.reduce((s, e) => s + safeNum(e.amount), 0);
                 const elapsedMs = Date.now() - new Date(shift.start_time).getTime();
                 const elapsedHrs = Math.floor(elapsedMs / 3600000);
                 const elapsedMins = Math.floor((elapsedMs % 3600000) / 60000);
@@ -1051,11 +1058,11 @@ export default function ShiftsPage() {
           {/* Report Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <StatCard title="Report Period Shifts" value={String(reportShifts.length)} borderColor="border-l-blue-500" />
-            <StatCard title="Total Sales" value={formatKES(reportShifts.reduce((s, sh) => s + sh.total_sales, 0))} borderColor="border-l-green-500" />
-            <StatCard title="Total Expenses" value={formatKES(reportShifts.reduce((s, sh) => s + sh.total_expenses, 0))} borderColor="border-l-red-500" />
+            <StatCard title="Total Sales" value={formatKES(reportShifts.reduce((s, sh) => s + safeNum(sh.total_sales), 0))} borderColor="border-l-green-500" />
+            <StatCard title="Total Expenses" value={formatKES(reportShifts.reduce((s, sh) => s + safeNum(sh.total_expenses), 0))} borderColor="border-l-red-500" />
             <StatCard
               title="Total Variance"
-              value={formatKES(reportShifts.reduce((s, sh) => s + sh.cash_variance, 0))}
+              value={formatKES(reportShifts.reduce((s, sh) => s + safeNum(sh.cash_variance), 0))}
               subtitle={reportShifts.filter(s => Math.abs(s.cash_variance) > 50).length > 0 ? `${reportShifts.filter(s => Math.abs(s.cash_variance) > 50).length} alert(s)` : 'All clear'}
               borderColor="border-l-yellow-500"
             />
@@ -1283,21 +1290,21 @@ export default function ShiftsPage() {
               {/* Branch summary cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <StatCard title="Branch Shifts" value={String(branchShifts.length)} borderColor="border-l-blue-500" />
-                <StatCard title="Branch Sales" value={formatKES(branchShifts.reduce((s, sh) => s + sh.total_sales, 0))} borderColor="border-l-green-500" />
-                <StatCard title="Branch Expenses" value={formatKES(branchShifts.reduce((s, sh) => s + sh.total_expenses, 0))} borderColor="border-l-red-500" />
+                <StatCard title="Branch Sales" value={formatKES(branchShifts.reduce((s, sh) => s + safeNum(sh.total_sales), 0))} borderColor="border-l-green-500" />
+                <StatCard title="Branch Expenses" value={formatKES(branchShifts.reduce((s, sh) => s + safeNum(sh.total_expenses), 0))} borderColor="border-l-red-500" />
                 <StatCard
                   title="Branch Variance"
-                  value={formatKES(branchShifts.reduce((s, sh) => s + sh.cash_variance, 0))}
+                  value={formatKES(branchShifts.reduce((s, sh) => s + safeNum(sh.cash_variance), 0))}
                   borderColor="border-l-yellow-500"
                 />
               </div>
 
               {/* Branch payment breakdown */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <StatCard title="Cash Sales" value={formatKES(branchShifts.reduce((s, sh) => s + sh.cash_sales, 0))} borderColor="border-l-emerald-500" />
-                <StatCard title="M-Pesa Sales" value={formatKES(branchShifts.reduce((s, sh) => s + sh.mpesa_sales, 0))} borderColor="border-l-lime-500" />
-                <StatCard title="Card Sales" value={formatKES(branchShifts.reduce((s, sh) => s + sh.card_sales, 0))} borderColor="border-l-indigo-500" />
-                <StatCard title="Credit Sales" value={formatKES(branchShifts.reduce((s, sh) => s + sh.credit_sales, 0))} borderColor="border-l-pink-500" />
+                <StatCard title="Cash Sales" value={formatKES(branchShifts.reduce((s, sh) => s + safeNum(sh.cash_sales), 0))} borderColor="border-l-emerald-500" />
+                <StatCard title="M-Pesa Sales" value={formatKES(branchShifts.reduce((s, sh) => s + safeNum(sh.mpesa_sales), 0))} borderColor="border-l-lime-500" />
+                <StatCard title="Card Sales" value={formatKES(branchShifts.reduce((s, sh) => s + safeNum(sh.card_sales), 0))} borderColor="border-l-indigo-500" />
+                <StatCard title="Credit Sales" value={formatKES(branchShifts.reduce((s, sh) => s + safeNum(sh.credit_sales), 0))} borderColor="border-l-pink-500" />
               </div>
 
               {/* Branch shifts table */}

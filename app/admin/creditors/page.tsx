@@ -184,7 +184,7 @@ export default function CreditorsPage() {
     setEditingId(null);
   };
 
-  const totalCredit = creditors.reduce((s, c) => s + c.totalCredit, 0);
+  const totalCredit = creditors.reduce((s, c) => { const n = Number(c.totalCredit); return s + (Number.isFinite(n) ? n : 0); }, 0);
   const overdueCount = creditors.filter(c => c.status === 'Overdue').length;
   const flaggedCreditors = creditors.filter(c => c.flagged && c.totalCredit > 0);
 

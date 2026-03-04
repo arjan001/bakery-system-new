@@ -180,7 +180,7 @@ export default function DebtorsPage() {
     setFormData({ name: '', phone: '', totalDebt: 0, debtOpenedDate: new Date().toISOString().split('T')[0], creditLimitDays: 30, lastPayment: '', notes: '' });
   };
 
-  const totalDebt = debtors.reduce((s, d) => s + d.totalDebt, 0);
+  const totalDebt = debtors.reduce((s, d) => { const n = Number(d.totalDebt); return s + (Number.isFinite(n) ? n : 0); }, 0);
   const overdueCount = debtors.filter(d => d.status === 'Overdue' || d.status === 'Defaulted').length;
   const flaggedDebtors = debtors.filter(d => d.flagged && d.totalDebt > 0);
 
