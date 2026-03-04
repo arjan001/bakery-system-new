@@ -6,7 +6,7 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'gemini-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
+type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
 
 interface NewsletterSubscriber {
   id: string;
@@ -73,16 +73,15 @@ export default function SettingsPage() {
     reportWatermarkOpacity: 8,
   });
 
-  // ── Gemini AI Settings ──
-  const [geminiSettings, setGeminiSettings] = useState({
-    apiKey: '',
-    model: 'gemini-2.0-flash',
+  // ── ChatGPT AI Settings ──
+  const [chatGptSettings, setChatGptSettings] = useState({
+    model: 'gpt-4o-mini',
     enabled: false,
     maxTokens: 2048,
     temperature: 0.7,
   });
-  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [geminiTesting, setGeminiTesting] = useState(false);
+  const [chatGptTestResult, setChatGptTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [chatGptTesting, setChatGptTesting] = useState(false);
 
   // ── Receipt Settings ──
   const [receipt, setReceipt] = useState({
@@ -657,7 +656,7 @@ export default function SettingsPage() {
           const settings: Record<string, unknown> = {};
           for (const row of data) settings[row.key] = row.value;
           if (settings.general) setGeneral(prev => ({ ...prev, ...(settings.general as Record<string, unknown>) }));
-          if (settings.geminiAi) setGeminiSettings(prev => ({ ...prev, ...(settings.geminiAi as Record<string, unknown>) }));
+          if (settings.chatGptAi) setChatGptSettings(prev => ({ ...prev, ...(settings.chatGptAi as Record<string, unknown>) }));
           if (settings.receipt) setReceipt(prev => ({ ...prev, ...(settings.receipt as Record<string, unknown>) }));
           if (settings.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...(settings.paymentDetails as Record<string, unknown>) }));
           if (settings.posCard) setPosCard(prev => ({ ...prev, ...(settings.posCard as Record<string, unknown>) }));
@@ -677,7 +676,7 @@ export default function SettingsPage() {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.general) setGeneral(prev => ({ ...prev, ...parsed.general }));
-          if (parsed.geminiAi) setGeminiSettings(prev => ({ ...prev, ...parsed.geminiAi }));
+          if (parsed.chatGptAi) setChatGptSettings(prev => ({ ...prev, ...parsed.chatGptAi }));
           if (parsed.receipt) setReceipt(prev => ({ ...prev, ...parsed.receipt }));
           if (parsed.paymentDetails) setPaymentDetails(prev => ({ ...prev, ...parsed.paymentDetails }));
           if (parsed.posCard) setPosCard(prev => ({ ...prev, ...parsed.posCard }));
@@ -695,25 +694,25 @@ export default function SettingsPage() {
   // Load backup list on mount
   useEffect(() => { loadBackups(); }, []);
 
-  const testGeminiConnection = async () => {
-    setGeminiTesting(true);
-    setGeminiTestResult(null);
+  const testChatGptConnection = async () => {
+    setChatGptTesting(true);
+    setChatGptTestResult(null);
     try {
-      const res = await fetch('/api/gemini', {
+      const res = await fetch('/api/chatgpt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'test' }),
       });
       const result = await res.json();
       if (result.success) {
-        setGeminiTestResult({ success: true, message: 'Gemini AI connection successful! API key is valid.' });
+        setChatGptTestResult({ success: true, message: 'ChatGPT AI connection successful! Netlify AI Gateway is active.' });
       } else {
-        setGeminiTestResult({ success: false, message: result.message || `API error: ${res.status}` });
+        setChatGptTestResult({ success: false, message: result.message || `API error: ${res.status}` });
       }
     } catch (e) {
-      setGeminiTestResult({ success: false, message: `Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}` });
+      setChatGptTestResult({ success: false, message: `Connection failed: ${e instanceof Error ? e.message : 'Unknown error'}` });
     }
-    setGeminiTesting(false);
+    setChatGptTesting(false);
   };
 
   // ── Backup Functions ──
@@ -818,7 +817,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, geminiAi: geminiSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal, socialMedia, kraEtims, shaNssf };
+    const settingsData = { general, chatGptAi: chatGptSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal, socialMedia, kraEtims, shaNssf };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -858,7 +857,7 @@ export default function SettingsPage() {
 
   const tabs: { key: SettingsTab; label: string; icon: string; tip: string }[] = [
     { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
-    { key: 'gemini-ai', label: 'Gemini AI', icon: '🤖', tip: 'Configure Gemini AI for recipe generation & suggestions' },
+    { key: 'chatgpt-ai', label: 'ChatGPT AI', icon: '🤖', tip: 'Configure ChatGPT AI for recipe generation & suggestions' },
     { key: 'offers', label: 'Offers', icon: '🏷️', tip: 'Manage promotional offers & banner content' },
     { key: 'navbar-ads', label: 'Navbar Ads', icon: '📢', tip: 'Scrolling marquee text on customer website navbar' },
     { key: 'newsletter', label: 'Newsletter', icon: '📧', tip: 'Newsletter modal settings & subscriber management' },
@@ -1092,47 +1091,47 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ── GEMINI AI ── */}
-      {activeTab === 'gemini-ai' && (
+      {/* ── CHATGPT AI ── */}
+      {activeTab === 'chatgpt-ai' && (
         <div className="max-w-2xl space-y-6">
           <div className="border border-border rounded-lg p-6 bg-card">
-            <h3 className="font-semibold mb-1">Gemini AI Configuration</h3>
-            <p className="text-xs text-muted-foreground mb-4">Configure Google Gemini AI to auto-generate recipes based on your inventory items. The AI will formulate recipes and auto-fill ingredients with costs.</p>
+            <h3 className="font-semibold mb-1">ChatGPT AI Configuration</h3>
+            <p className="text-xs text-muted-foreground mb-4">ChatGPT AI is powered by Netlify AI Gateway — no API key needed. Auto-generate recipes based on your inventory items with AI-powered recipe formulation.</p>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium">Enable Gemini AI</p>
+                  <p className="text-sm font-medium">Enable ChatGPT AI</p>
                   <p className="text-xs text-muted-foreground">Allow AI recipe generation in the Recipes module</p>
                 </div>
-                <button type="button" onClick={() => setGeminiSettings({ ...geminiSettings, enabled: !geminiSettings.enabled })} className={`w-10 h-5 rounded-full transition-colors ${geminiSettings.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
-                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${geminiSettings.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                <button type="button" onClick={() => setChatGptSettings({ ...chatGptSettings, enabled: !chatGptSettings.enabled })} className={`w-10 h-5 rounded-full transition-colors ${chatGptSettings.enabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${chatGptSettings.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </button>
               </div>
 
-              <div>
-                <label className={labelCls}>Gemini API Key *</label>
-                <input type="password" value={geminiSettings.apiKey} onChange={e => setGeminiSettings({ ...geminiSettings, apiKey: e.target.value })} className={inputCls} placeholder="Enter your Google Gemini API key" />
-                <p className="text-xs text-muted-foreground mt-1">Get your API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google AI Studio</a></p>
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm font-medium text-green-800">Powered by Netlify AI Gateway</p>
+                <p className="text-xs text-green-700 mt-1">No API key required — ChatGPT access is automatically provided through Netlify AI Gateway at no extra cost.</p>
               </div>
 
               <div>
                 <label className={labelCls}>Model</label>
-                <select value={geminiSettings.model} onChange={e => setGeminiSettings({ ...geminiSettings, model: e.target.value })} className={inputCls}>
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recommended)</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <select value={chatGptSettings.model} onChange={e => setChatGptSettings({ ...chatGptSettings, model: e.target.value })} className={inputCls}>
+                  <option value="gpt-4o-mini">GPT-4o Mini (Recommended - Fast & Free)</option>
+                  <option value="gpt-4o">GPT-4o (More Capable)</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                  <option value="gpt-4.1-nano">GPT-4.1 Nano (Fastest)</option>
                 </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Max Tokens</label>
-                  <input type="number" value={geminiSettings.maxTokens} onChange={e => setGeminiSettings({ ...geminiSettings, maxTokens: parseInt(e.target.value) || 2048 })} className={inputCls} min={256} max={8192} />
+                  <input type="number" value={chatGptSettings.maxTokens} onChange={e => setChatGptSettings({ ...chatGptSettings, maxTokens: parseInt(e.target.value) || 2048 })} className={inputCls} min={256} max={8192} />
                 </div>
                 <div>
                   <label className={labelCls}>Temperature (Creativity)</label>
-                  <input type="number" step="0.1" min="0" max="2" value={geminiSettings.temperature} onChange={e => setGeminiSettings({ ...geminiSettings, temperature: parseFloat(e.target.value) || 0.7 })} className={inputCls} />
+                  <input type="number" step="0.1" min="0" max="2" value={chatGptSettings.temperature} onChange={e => setChatGptSettings({ ...chatGptSettings, temperature: parseFloat(e.target.value) || 0.7 })} className={inputCls} />
                   <p className="text-xs text-muted-foreground mt-1">Lower = more precise, Higher = more creative</p>
                 </div>
               </div>
@@ -1142,12 +1141,12 @@ export default function SettingsPage() {
           <div className="border border-border rounded-lg p-6 bg-card">
             <h3 className="font-semibold mb-4">Test Connection</h3>
             <div className="flex items-center gap-3">
-              <button onClick={testGeminiConnection} disabled={geminiTesting || !geminiSettings.apiKey} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
-                {geminiTesting ? 'Testing...' : 'Test Gemini Connection'}
+              <button onClick={testChatGptConnection} disabled={chatGptTesting} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50">
+                {chatGptTesting ? 'Testing...' : 'Test ChatGPT Connection'}
               </button>
-              {geminiTestResult && (
-                <span className={`text-sm font-medium ${geminiTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
-                  {geminiTestResult.message}
+              {chatGptTestResult && (
+                <span className={`text-sm font-medium ${chatGptTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
+                  {chatGptTestResult.message}
                 </span>
               )}
             </div>
@@ -1158,7 +1157,7 @@ export default function SettingsPage() {
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>1. Go to <strong>Recipes & Products</strong> and click <strong>&quot;AI Generate Recipe&quot;</strong></p>
               <p>2. Enter a product name or description (e.g. &quot;Chocolate Croissant&quot;)</p>
-              <p>3. Gemini AI will formulate a recipe with ingredients, quantities, and instructions</p>
+              <p>3. ChatGPT AI will formulate a recipe with ingredients, quantities, and instructions</p>
               <p>4. The AI checks your <strong>inventory items</strong> — if an ingredient isn&apos;t in stock, it flags it</p>
               <p>5. Review and adjust the auto-filled recipe, then save</p>
             </div>
