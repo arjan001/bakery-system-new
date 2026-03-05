@@ -458,9 +458,10 @@ For productType use one of: White Bread, Brown Bread, Sourdough, Croissant, Dani
 For units use: g, kg, ml, l, pieces, tbsp, tsp, cups
 Use realistic quantities and costs in KES.`;
 
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/chatgpt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || ''}` },
         body: JSON.stringify({ prompt, maxOutputTokens: 2048, temperature: 0.7 }),
       });
 
@@ -588,9 +589,10 @@ Style the HTML with inline CSS for a clean, professional look. Use these colors:
 Use font-family: system-ui, -apple-system, sans-serif.
 Make it printer-friendly.`;
 
+      const { data: { session: printSession } } = await supabase.auth.getSession();
       const res = await fetch('/api/chatgpt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${printSession?.access_token || ''}` },
         body: JSON.stringify({ prompt, maxOutputTokens: 4096, temperature: 0.7 }),
       });
 

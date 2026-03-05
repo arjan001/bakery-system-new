@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { verifyAdminAuth } from '@/lib/api-auth';
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -35,6 +36,12 @@ async function getGoogleMapsApiKey(): Promise<string> {
 // POST: Calculate distance between two locations using Google Distance Matrix API
 export async function POST(request: NextRequest) {
   try {
+    // Verify the caller is authenticated
+    const auth = await verifyAdminAuth(request);
+    if (!auth.authenticated) {
+      return auth.response;
+    }
+
     const body = await request.json();
     const { origin, destination } = body as { origin: string; destination: string };
 

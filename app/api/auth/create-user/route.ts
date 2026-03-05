@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { verifyAdminAuth } from '@/lib/api-auth';
 
 /**
  * Server-side API route that creates a Supabase Auth user using the service role key.
  * This bypasses email confirmation and does NOT affect the calling user's session.
+ * Requires admin authentication.
  */
 export async function POST(req: NextRequest) {
   try {
+    // Verify the caller is an authenticated admin
+    const auth = await verifyAdminAuth(req);
+    if (!auth.authenticated) {
+      return auth.response;
+    }
+    if (!auth.user.isAdmin) {
+      return NextResponse.json(
+        { success: false, message: 'Admin privileges required to create users' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const { email, password, fullName, role } = body;
 

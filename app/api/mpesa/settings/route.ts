@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { verifyAdminAuth } from '@/lib/api-auth';
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -46,8 +47,20 @@ function maskValue(value: string): string {
 }
 
 // GET: Fetch current M-Pesa settings (env vars primary, DB backup shown alongside)
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Verify the caller is an authenticated admin
+    const auth = await verifyAdminAuth(request);
+    if (!auth.authenticated) {
+      return auth.response;
+    }
+    if (!auth.user.isAdmin) {
+      return NextResponse.json(
+        { success: false, message: 'Admin privileges required to view M-Pesa settings' },
+        { status: 403 }
+      );
+    }
+
     // Read from environment variables (primary source)
     const envSettings: Record<string, { value: string; masked: string; source: string }> = {};
     for (const [dbKey, envKey] of Object.entries(ENV_KEY_MAP)) {
@@ -98,6 +111,18 @@ export async function GET() {
 // POST: Save M-Pesa settings to database (backup) and update runtime env
 export async function POST(request: NextRequest) {
   try {
+    // Verify the caller is an authenticated admin
+    const auth = await verifyAdminAuth(request);
+    if (!auth.authenticated) {
+      return auth.response;
+    }
+    if (!auth.user.isAdmin) {
+      return NextResponse.json(
+        { success: false, message: 'Admin privileges required to modify M-Pesa settings' },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { settings } = body as { settings: Record<string, string> };
 

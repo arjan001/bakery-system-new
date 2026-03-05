@@ -431,7 +431,10 @@ export default function SettingsPage() {
   const loadMpesaApiSettings = async () => {
     setMpesaApiLoading(true);
     try {
-      const res = await fetch('/api/mpesa/settings');
+      const token = await getAuthToken();
+      const res = await fetch('/api/mpesa/settings', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
       const data = await res.json();
       if (data.success) {
         const masked: Record<string, string> = {};
@@ -475,9 +478,10 @@ export default function SettingsPage() {
         if (value) settingsToSave[key] = value;
       }
 
+      const token = await getAuthToken();
       const res = await fetch('/api/mpesa/settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ settings: settingsToSave }),
       });
       const data = await res.json();
@@ -698,9 +702,10 @@ export default function SettingsPage() {
     setChatGptTesting(true);
     setChatGptTestResult(null);
     try {
+      const token = await getAuthToken();
       const res = await fetch('/api/chatgpt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ action: 'test' }),
       });
       const result = await res.json();

@@ -537,9 +537,11 @@ export default function EmployeesPage() {
     // This avoids session conflicts (admin stays logged in) and bypasses email confirmation
     if (dataToSave.systemAccess && loginPassword && dataToSave.loginEmail) {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
         const res = await fetch('/api/auth/create-user', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({
             email: dataToSave.loginEmail,
             password: loginPassword,
@@ -685,13 +687,14 @@ export default function EmployeesPage() {
     try {
       // Get current admin info for audit logging
       const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       const adminEmail = currentUser?.email || '';
       const adminName = currentUser?.user_metadata?.full_name || adminEmail.split('@')[0] || 'Admin';
       const targetName = `${emp.firstName} ${emp.lastName}`.trim();
 
       const res = await fetch('/api/auth/impersonate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || ''}` },
         body: JSON.stringify({
           email: targetEmail,
           adminEmail,
