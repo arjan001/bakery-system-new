@@ -6,7 +6,7 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf';
+type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf' | 'maintenance';
 
 interface NewsletterSubscriber {
   id: string;
@@ -209,6 +209,16 @@ export default function SettingsPage() {
     nhifAutoDeduct: false,
     nhifLastSync: '',
   });
+
+  // ── Maintenance Mode ──
+  const [maintenanceMode, setMaintenanceMode] = useState({
+    enabled: false,
+    message: 'System under automatic maintenance and backup. Please check back shortly.',
+    started_at: null as string | null,
+    started_by: null as string | null,
+  });
+  const [maintenanceSaving, setMaintenanceSaving] = useState(false);
+  const [maintenanceMsg, setMaintenanceMsg] = useState('');
 
   // ── Offers ──
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -669,6 +679,7 @@ export default function SettingsPage() {
           if (settings.delivery) setDelivery(prev => ({ ...prev, ...(settings.delivery as Record<string, unknown>) }));
           if (settings.kraEtims) setKraEtims(prev => ({ ...prev, ...(settings.kraEtims as Record<string, unknown>) }));
           if (settings.shaNssf) setShaNssf(prev => ({ ...prev, ...(settings.shaNssf as Record<string, unknown>) }));
+          if (settings.maintenance_mode) setMaintenanceMode(prev => ({ ...prev, ...(settings.maintenance_mode as Record<string, unknown>) }));
           return;
         }
       } catch {
@@ -877,6 +888,7 @@ export default function SettingsPage() {
     { key: 'backup', label: 'Backup', icon: '💾', tip: 'Auto-backup schedule & data retention' },
     { key: 'delivery', label: 'Delivery', icon: '🚚', tip: 'Minimum order for delivery, delivery fees & thresholds' },
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
+    { key: 'maintenance', label: 'Maintenance', icon: '🔧', tip: 'Enable maintenance mode for the admin panel' },
   ];
 
   const inputCls = 'w-full px-3 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-background';
@@ -3020,6 +3032,151 @@ export default function SettingsPage() {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MAINTENANCE MODE ── */}
+      {activeTab === 'maintenance' && (
+        <div className="max-w-2xl space-y-6">
+          {/* Maintenance Mode Toggle */}
+          <div className={`border-2 rounded-lg p-6 transition-colors ${maintenanceMode.enabled ? 'border-red-300 bg-red-50/50' : 'border-border bg-card'}`}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <span className="text-xl">🔧</span> Admin Panel Maintenance Mode
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  When enabled, all staff accessing the admin panel will see a maintenance & backup screen. The customer-facing website remains fully operational.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const newEnabled = !maintenanceMode.enabled;
+                  const updated = {
+                    ...maintenanceMode,
+                    enabled: newEnabled,
+                    started_at: newEnabled ? new Date().toISOString() : null,
+                    started_by: newEnabled ? 'Admin' : null,
+                  };
+                  setMaintenanceMode(updated);
+                  setMaintenanceSaving(true);
+                  try {
+                    await supabase.from('business_settings').upsert(
+                      { key: 'maintenance_mode', value: updated, updated_at: new Date().toISOString() },
+                      { onConflict: 'key' }
+                    );
+                    logAudit({
+                      action: 'UPDATE',
+                      module: 'Settings',
+                      record_id: 'maintenance_mode',
+                      details: { enabled: newEnabled },
+                    });
+                    setMaintenanceMsg(newEnabled ? 'Maintenance mode ENABLED - staff will see maintenance screen' : 'Maintenance mode DISABLED - admin panel is accessible');
+                  } catch {
+                    setMaintenanceMsg('Failed to update maintenance mode');
+                  }
+                  setMaintenanceSaving(false);
+                  setTimeout(() => setMaintenanceMsg(''), 4000);
+                }}
+                disabled={maintenanceSaving}
+                className={`relative w-14 h-7 rounded-full transition-colors flex-shrink-0 ${maintenanceMode.enabled ? 'bg-red-500' : 'bg-gray-300'}`}
+              >
+                <div className={`w-6 h-6 rounded-full bg-white shadow transform transition-transform ${maintenanceMode.enabled ? 'translate-x-7' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            {maintenanceMsg && (
+              <div className={`p-3 rounded-lg text-sm mb-4 ${maintenanceMsg.includes('ENABLED') ? 'bg-red-100 text-red-700 border border-red-200' : maintenanceMsg.includes('DISABLED') ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-yellow-100 text-yellow-700 border border-yellow-200'}`}>
+                {maintenanceMsg}
+              </div>
+            )}
+
+            {/* Current Status */}
+            <div className={`p-4 rounded-xl border ${maintenanceMode.enabled ? 'bg-red-100/50 border-red-200' : 'bg-green-100/50 border-green-200'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${maintenanceMode.enabled ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
+                <div>
+                  <p className={`font-semibold text-sm ${maintenanceMode.enabled ? 'text-red-800' : 'text-green-800'}`}>
+                    {maintenanceMode.enabled ? 'Maintenance Mode is ACTIVE' : 'Admin Panel is Operational'}
+                  </p>
+                  <p className={`text-xs ${maintenanceMode.enabled ? 'text-red-600' : 'text-green-600'}`}>
+                    {maintenanceMode.enabled
+                      ? `Started ${maintenanceMode.started_at ? new Date(maintenanceMode.started_at).toLocaleString() : 'just now'}`
+                      : 'All staff can access the admin dashboard normally'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Custom Maintenance Message */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-1">Maintenance Message</h3>
+            <p className="text-xs text-muted-foreground mb-4">Customize the message displayed to staff during maintenance</p>
+            <textarea
+              value={maintenanceMode.message}
+              onChange={e => setMaintenanceMode({ ...maintenanceMode, message: e.target.value })}
+              rows={3}
+              className={inputCls}
+              placeholder="System under automatic maintenance and backup..."
+            />
+            <button
+              onClick={async () => {
+                setMaintenanceSaving(true);
+                try {
+                  await supabase.from('business_settings').upsert(
+                    { key: 'maintenance_mode', value: maintenanceMode, updated_at: new Date().toISOString() },
+                    { onConflict: 'key' }
+                  );
+                  setMaintenanceMsg('Maintenance message updated');
+                } catch {
+                  setMaintenanceMsg('Failed to save message');
+                }
+                setMaintenanceSaving(false);
+                setTimeout(() => setMaintenanceMsg(''), 3000);
+              }}
+              disabled={maintenanceSaving}
+              className="mt-3 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium disabled:opacity-50"
+            >
+              {maintenanceSaving ? 'Saving...' : 'Save Message'}
+            </button>
+          </div>
+
+          {/* How It Works */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-3">How Maintenance Mode Works</h3>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <div className="flex items-start gap-3">
+                <span className="text-lg">🌐</span>
+                <div>
+                  <p className="font-medium text-foreground">Customer Website</p>
+                  <p>Remains fully operational. Online orders, browsing, and the store continue as normal.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">🔒</span>
+                <div>
+                  <p className="font-medium text-foreground">Admin Panel</p>
+                  <p>All staff members see a professional maintenance & backup screen when trying to access any admin page.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">👑</span>
+                <div>
+                  <p className="font-medium text-foreground">Owner/Super Admin</p>
+                  <p>The primary owner account (super admin) can still access the admin panel to manage settings and disable maintenance mode.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">📝</span>
+                <div>
+                  <p className="font-medium text-foreground">Audit Logged</p>
+                  <p>Enabling or disabling maintenance mode is recorded in the audit log for accountability.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

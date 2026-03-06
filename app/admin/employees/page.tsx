@@ -1390,6 +1390,70 @@ export default function EmployeesPage() {
                     <span className="px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800">System User</span>
                   )}
                 </div>
+                {/* Toggle Active/Inactive Button */}
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    onClick={async () => {
+                      const newStatus = showDetail.status === 'Active' ? 'Inactive' : 'Active';
+                      const confirmMsg = newStatus === 'Inactive'
+                        ? `Deactivate ${showDetail.firstName} ${showDetail.lastName}? They will no longer be able to access the system and will see a maintenance message when trying to log in.`
+                        : `Reactivate ${showDetail.firstName} ${showDetail.lastName}? They will be able to access the system again.`;
+                      if (!confirm(confirmMsg)) return;
+
+                      try {
+                        // Update employee status
+                        await supabase.from('employees').update({
+                          status: newStatus,
+                          system_access: newStatus === 'Active' ? showDetail.systemAccess : false,
+                        }).eq('id', showDetail.id);
+
+                        // Also update users table is_active if they have a login email
+                        if (showDetail.loginEmail) {
+                          const { data: usr } = await supabase
+                            .from('users')
+                            .select('id')
+                            .eq('email', showDetail.loginEmail)
+                            .single();
+                          if (usr) {
+                            await supabase.from('users').update({
+                              is_active: newStatus === 'Active',
+                              deactivated_at: newStatus === 'Inactive' ? new Date().toISOString() : null,
+                              deactivated_reason: newStatus === 'Inactive' ? 'Deactivated by admin' : null,
+                            }).eq('id', usr.id);
+                          }
+                        }
+
+                        logAudit({
+                          action: 'UPDATE',
+                          module: 'Employees',
+                          record_id: showDetail.id,
+                          details: { field: 'status', from: showDetail.status, to: newStatus, employee: `${showDetail.firstName} ${showDetail.lastName}` },
+                        });
+
+                        // Refresh the employee in local state
+                        setEmployees(prev => prev.map(emp =>
+                          emp.id === showDetail.id
+                            ? { ...emp, status: newStatus as Employee['status'], systemAccess: newStatus === 'Active' ? emp.systemAccess : false }
+                            : emp
+                        ));
+                        setShowDetail({ ...showDetail, status: newStatus as Employee['status'], systemAccess: newStatus === 'Active' ? showDetail.systemAccess : false });
+                      } catch (err) {
+                        alert('Failed to update status: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                      showDetail.status === 'Active'
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200'
+                        : 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
+                    }`}
+                  >
+                    {showDetail.status === 'Active' ? (
+                      <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg> Deactivate User</>
+                    ) : (
+                      <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Reactivate User</>
+                    )}
+                  </button>
+                </div>
                 <p className="text-sm text-muted-foreground">{showDetail.role} -- {showDetail.department}</p>
                 {showDetail.employeeIdNumber && (
                   <p className="text-xs text-muted-foreground font-mono mt-1">ID: {showDetail.employeeIdNumber}</p>
@@ -1724,6 +1788,56 @@ export default function EmployeesPage() {
                     <div className="flex gap-1 flex-wrap">
                       <button onClick={() => setShowDetail(emp)} className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors font-medium">View</button>
                       <button onClick={() => handleEdit(emp)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium">Edit</button>
+                      <button
+                        onClick={async () => {
+                          const newStatus = emp.status === 'Active' ? 'Inactive' : 'Active';
+                          const confirmMsg = newStatus === 'Inactive'
+                            ? `Deactivate ${emp.firstName} ${emp.lastName}?`
+                            : `Reactivate ${emp.firstName} ${emp.lastName}?`;
+                          if (!confirm(confirmMsg)) return;
+                          try {
+                            await supabase.from('employees').update({
+                              status: newStatus,
+                              system_access: newStatus === 'Active' ? emp.systemAccess : false,
+                            }).eq('id', emp.id);
+                            if (emp.loginEmail) {
+                              const { data: usr } = await supabase
+                                .from('users')
+                                .select('id')
+                                .eq('email', emp.loginEmail)
+                                .single();
+                              if (usr) {
+                                await supabase.from('users').update({
+                                  is_active: newStatus === 'Active',
+                                  deactivated_at: newStatus === 'Inactive' ? new Date().toISOString() : null,
+                                  deactivated_reason: newStatus === 'Inactive' ? 'Deactivated by admin' : null,
+                                }).eq('id', usr.id);
+                              }
+                            }
+                            logAudit({
+                              action: 'UPDATE',
+                              module: 'Employees',
+                              record_id: emp.id,
+                              details: { field: 'status', from: emp.status, to: newStatus, employee: `${emp.firstName} ${emp.lastName}` },
+                            });
+                            setEmployees(prev => prev.map(e =>
+                              e.id === emp.id
+                                ? { ...e, status: newStatus as Employee['status'], systemAccess: newStatus === 'Active' ? e.systemAccess : false }
+                                : e
+                            ));
+                          } catch {
+                            alert('Failed to update status');
+                          }
+                        }}
+                        className={`px-2 py-1 text-xs rounded transition-colors font-medium ${
+                          emp.status === 'Active'
+                            ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                            : 'bg-green-100 text-green-800 hover:bg-green-200'
+                        }`}
+                        title={emp.status === 'Active' ? 'Deactivate this user' : 'Reactivate this user'}
+                      >
+                        {emp.status === 'Active' ? 'Deactivate' : 'Activate'}
+                      </button>
                       {emp.systemAccess && (
                         <button
                           onClick={() => handleLoginAsUser(emp)}
