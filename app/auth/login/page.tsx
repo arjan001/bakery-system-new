@@ -119,8 +119,7 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold text-gray-900 mb-3">System Temporarily Unavailable</h1>
             <div className="bg-red-50 border border-red-200 rounded-2xl p-5 mb-6">
               <p className="text-red-700 font-semibold text-sm leading-relaxed">
-                Your account access has been temporarily suspended for scheduled maintenance and system updates.
-                Please try logging in again later.
+               Unable to Login Please try logging in again later.
               </p>
             </div>
             <p className="text-gray-500 text-sm mb-6">
