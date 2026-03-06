@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
-import { Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Lock, Eye, EyeOff, Loader2, ShieldOff } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [accountDeactivated, setAccountDeactivated] = useState(false);
 
   const [form, setForm] = useState({
     email: '',
@@ -21,6 +22,7 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setAccountDeactivated(false);
     setSubmitting(true);
 
     try {
@@ -32,6 +34,43 @@ export default function LoginPage() {
       if (authError) throw authError;
 
       if (data.user) {
+        // Check if this user's account is active
+        try {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('is_active')
+            .eq('id', data.user.id)
+            .single();
+
+          if (userData && userData.is_active === false) {
+            // Sign the user out immediately — account is deactivated
+            await supabase.auth.signOut();
+            setAccountDeactivated(true);
+            setSubmitting(false);
+            return;
+          }
+        } catch {
+          // users table may not have a record yet — allow login
+        }
+
+        // Also check employee system_access
+        try {
+          const { data: emp } = await supabase
+            .from('employees')
+            .select('system_access, status')
+            .eq('login_email', data.user.email)
+            .single();
+
+          if (emp && (emp.system_access === false || emp.status === 'Inactive')) {
+            await supabase.auth.signOut();
+            setAccountDeactivated(true);
+            setSubmitting(false);
+            return;
+          }
+        } catch {
+          // No employee record — allow login (likely owner/super admin)
+        }
+
         // Ensure the user has a record in the users table (may be missing for employee accounts)
         const meta = data.user.user_metadata || {};
         try {
@@ -66,6 +105,46 @@ export default function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // If account is deactivated, show a full-page friendly maintenance message
+  if (accountDeactivated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 flex items-center justify-center px-4">
+        <div className="max-w-lg w-full text-center">
+          <div className="bg-white rounded-3xl shadow-xl p-10 border border-red-100">
+            <div className="w-20 h-20 mx-auto mb-6 bg-red-100 rounded-full flex items-center justify-center">
+              <ShieldOff size={36} className="text-red-500" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-3">System Temporarily Unavailable</h1>
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-5 mb-6">
+              <p className="text-red-700 font-semibold text-sm leading-relaxed">
+                Your account access has been temporarily suspended for scheduled maintenance and system updates.
+                Please try logging in again later.
+              </p>
+            </div>
+            <p className="text-gray-500 text-sm mb-6">
+              If you believe this is an error, please contact your system administrator for assistance.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => { setAccountDeactivated(false); setForm({ email: '', password: '' }); }}
+                className="px-6 py-2.5 bg-orange-600 text-white font-semibold text-sm rounded-xl hover:bg-orange-700 transition-colors"
+              >
+                Try Again
+              </button>
+              <Link
+                href="/"
+                className="px-6 py-2.5 border border-gray-200 text-gray-700 font-semibold text-sm rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Back to Store
+              </Link>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-6">SNACKOH Bakers Management System</p>
+        </div>
+      </div>
+    );
   }
 
   return (
