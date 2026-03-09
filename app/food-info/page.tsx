@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Navigation } from '@/components/navigation';
+import { Modal } from '@/components/modal';
 
 interface FoodInfo {
   id: string;

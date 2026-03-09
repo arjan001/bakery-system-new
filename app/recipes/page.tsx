@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Navigation } from '@/components/navigation';
-import Link from 'next/link';
+import { Modal } from '@/components/modal';
 
 interface Recipe {
   id: string;

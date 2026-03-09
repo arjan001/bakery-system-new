@@ -51,7 +51,13 @@ export function Sidebar() {
       items: [
         { label: 'Inventory', href: '/inventory' },
         { label: 'Assets', href: '/assets' },
-        { label: 'P&L Reports', href: '/reports' },
+        { label: 'Reports', href: '/reports' },
+      ],
+    },
+    {
+      title: 'ADMIN',
+      items: [
+        { label: 'Roles & Permissions', href: '/roles-permissions' },
       ],
     },
   ];
