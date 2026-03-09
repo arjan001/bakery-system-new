@@ -4,15 +4,17 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
-import { ChevronRight, Lock, Smartphone, Truck, Store, CheckCircle, Clock, Loader2, ShieldCheck } from 'lucide-react';
+import { ChevronRight, Lock, Smartphone, Truck, Store, CheckCircle, Clock, Loader2, ShieldCheck, CreditCard } from 'lucide-react';
 
 type FulfillmentType = 'ship' | 'pickup';
+type PaymentMethod = 'mpesa' | 'card' | 'pay_on_delivery';
 type MpesaState = 'idle' | 'sending' | 'waiting' | 'checking' | 'done' | 'failed';
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCart();
 
   const [fulfillment, setFulfillment] = useState<FulfillmentType>('ship');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mpesa');
   const [step, setStep] = useState<'form' | 'success'>('form');
 
   // Contact
@@ -204,10 +206,12 @@ export default function CheckoutPage() {
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Save order to database (M-Pesa payment is temporarily disabled — pay on delivery/pickup)
+    // Save order to database
     const orderNumber = `ON-${Date.now().toString(36).toUpperCase()}`;
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
     const customerPhone = form.phone || mpesaPhone || email;
+    const paymentLabel = paymentMethod === 'mpesa' ? 'M-Pesa' : paymentMethod === 'card' ? 'Card' : 'Pay on Delivery/Pickup';
+    const paymentSt = paymentMethod === 'mpesa' && mpesaState === 'done' ? 'Paid' : paymentMethod === 'card' ? 'Pending' : 'Pending';
     setOrderError('');
     try {
       const { error: orderError } = await supabase.from('orders').insert({
@@ -216,8 +220,8 @@ export default function CheckoutPage() {
         customer_phone: customerPhone,
         status: 'Confirmed',
         total_amount: orderTotal,
-        payment_status: 'Pending',
-        payment_method: 'Pay on Delivery/Pickup',
+        payment_status: paymentSt,
+        payment_method: paymentLabel,
         source: 'Online',
         fulfillment: fulfillment === 'ship' ? 'Delivery' : 'Pickup',
         delivery_notes: fulfillment === 'ship'
@@ -444,7 +448,7 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* Payment - M-Pesa (Temporarily Disabled) */}
+            {/* Payment */}
             <div>
               <h2 className="text-base font-black text-gray-900 mb-1">Payment</h2>
               <p className="text-xs text-gray-400 flex items-center gap-1 mb-3">
@@ -452,15 +456,100 @@ export default function CheckoutPage() {
               </p>
 
               <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <div className="px-4 py-6 bg-amber-50 text-center">
-                  <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Smartphone size={20} className="text-amber-600" />
-                  </div>
-                  <h3 className="font-bold text-gray-800 mb-1">Online Payment Coming Soon</h3>
-                  <p className="text-sm text-gray-600 mb-2">M-Pesa online payment is currently being set up.</p>
-                  <p className="text-xs text-gray-500">Please place your order below and pay on delivery or at pickup.</p>
-                </div>
+                {/* Payment method selector */}
+                {[
+                  { value: 'mpesa' as PaymentMethod, label: 'M-Pesa', sub: 'Pay via M-Pesa STK Push', icon: Smartphone },
+                  { value: 'card' as PaymentMethod, label: 'Card Payment', sub: 'Pay with Visa / Mastercard', icon: CreditCard },
+                  { value: 'pay_on_delivery' as PaymentMethod, label: fulfillment === 'ship' ? 'Pay on Delivery' : 'Pay at Pickup', sub: fulfillment === 'ship' ? 'Pay when your order arrives' : 'Pay when you collect your order', icon: ShieldCheck },
+                ].map((opt, i) => (
+                  <label key={opt.value}
+                    className={`flex items-center gap-4 px-4 py-3.5 cursor-pointer transition-colors ${paymentMethod === opt.value ? 'bg-orange-50' : 'bg-white hover:bg-gray-50'} ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                    <input type="radio" name="paymentMethod" value={opt.value}
+                      checked={paymentMethod === opt.value} onChange={() => setPaymentMethod(opt.value)}
+                      className="accent-orange-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">{opt.label}</p>
+                      <p className="text-xs text-gray-500">{opt.sub}</p>
+                    </div>
+                    <opt.icon size={18} className="text-gray-400" />
+                  </label>
+                ))}
               </div>
+
+              {/* M-Pesa payment form */}
+              {paymentMethod === 'mpesa' && (
+                <div className="mt-4 border border-green-200 rounded-xl p-4 bg-green-50/50">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Smartphone size={18} className="text-green-600" />
+                    <h3 className="text-sm font-bold text-gray-800">M-Pesa Payment</h3>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-3">Enter your M-Pesa phone number. You&apos;ll receive an STK push to complete payment.</p>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 0712 345 678"
+                    value={mpesaPhone}
+                    onChange={e => setMpesaPhone(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-400 outline-none mb-3"
+                  />
+                  {mpesaState === 'idle' || mpesaState === 'failed' ? (
+                    <button type="button" onClick={handleMpesaPush}
+                      className="w-full py-3 bg-green-600 text-white font-bold text-sm rounded-xl hover:bg-green-700 transition-colors flex items-center justify-center gap-2">
+                      <Smartphone size={16} /> Pay KES {orderTotal.toLocaleString()} with M-Pesa
+                    </button>
+                  ) : mpesaState === 'sending' ? (
+                    <div className="flex items-center justify-center gap-2 py-3 text-sm text-gray-600">
+                      <Loader2 size={16} className="animate-spin" /> Sending STK push...
+                    </div>
+                  ) : mpesaState === 'waiting' || mpesaState === 'checking' ? (
+                    <div className="flex items-center justify-center gap-2 py-3 text-sm text-amber-700">
+                      <Clock size={16} className="animate-pulse" /> Waiting for payment confirmation...
+                    </div>
+                  ) : mpesaState === 'done' ? (
+                    <div className="flex items-center justify-center gap-2 py-3 text-sm text-green-700 font-bold">
+                      <CheckCircle size={16} /> Payment confirmed!
+                    </div>
+                  ) : null}
+                  {mpesaMsg && mpesaState !== 'done' && (
+                    <p className={`text-xs mt-2 ${mpesaState === 'failed' ? 'text-red-600' : 'text-gray-500'}`}>{mpesaMsg}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Card payment form */}
+              {paymentMethod === 'card' && (
+                <div className="mt-4 border border-blue-200 rounded-xl p-4 bg-blue-50/50">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CreditCard size={18} className="text-blue-600" />
+                    <h3 className="text-sm font-bold text-gray-800">Card Payment</h3>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-3">Enter your card details to pay securely.</p>
+                  <input type="text" placeholder="Card number" maxLength={19}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none mb-3" />
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <input type="text" placeholder="MM / YY" maxLength={7}
+                      className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
+                    <input type="text" placeholder="CVV" maxLength={4}
+                      className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
+                  </div>
+                  <input type="text" placeholder="Name on card"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
+                </div>
+              )}
+
+              {/* Pay on delivery/pickup info */}
+              {paymentMethod === 'pay_on_delivery' && (
+                <div className="mt-4 border border-amber-200 rounded-xl p-4 bg-amber-50/50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck size={18} className="text-amber-600" />
+                    <h3 className="text-sm font-bold text-gray-800">{fulfillment === 'ship' ? 'Pay on Delivery' : 'Pay at Pickup'}</h3>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {fulfillment === 'ship'
+                      ? 'You can pay via M-Pesa or cash when your order is delivered.'
+                      : 'You can pay via M-Pesa or cash when you collect your order from our bakery.'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Order save error */}
