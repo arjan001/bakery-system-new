@@ -55,6 +55,7 @@ import {
   ClipboardCheck,
   Clock,
   ShieldCheck,
+  FileUp,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -88,6 +89,7 @@ const allNavGroups: NavGroup[] = [
     items: [
       { label: 'Recipes & Products', href: '/admin/recipes', tip: 'Define recipes with ingredients, costs & output', icon: BookOpen },
       { label: 'Product Catalogue', href: '/admin/food-info', tip: 'Allergens, nutrition info & certifications', icon: UtensilsCrossed },
+      { label: 'Catalog Upload', href: '/admin/catalog-upload', tip: 'Bulk-import products from CSV catalogue files', icon: FileUp },
       { label: 'Production Runs', href: '/admin/production', tip: 'Schedule & track production batches', icon: Factory },
       { label: 'Store Requisitions', href: '/admin/store-requisitions', tip: 'Request ingredients from store with approval flow', icon: ClipboardCopy },
       { label: 'Picking Lists', href: '/admin/picking-lists', tip: 'Ingredient lists for production batches', icon: ClipboardList },
