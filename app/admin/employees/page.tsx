@@ -525,6 +525,10 @@ export default function EmployeesPage() {
           module: 'Employees',
           record_id: dataToSave.employeeIdNumber || dataToSave.id,
           details: { name: `${dataToSave.firstName} ${dataToSave.lastName}`, category: dataToSave.category, department: dataToSave.department },
+          trackChangelog: true,
+          changelogTitle: `New Employee Added — ${dataToSave.firstName} ${dataToSave.lastName}`,
+          changelogDescription: `Added new employee "${dataToSave.firstName} ${dataToSave.lastName}" to ${dataToSave.department || 'the team'}${dataToSave.category ? ` (${dataToSave.category})` : ''}.`,
+          changelogCategory: 'feature',
         });
       }
     } catch (err) {

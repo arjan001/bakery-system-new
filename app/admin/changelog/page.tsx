@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
 import {
   Download,
   Shield,
@@ -28,6 +29,9 @@ import {
   Package,
   Activity,
   Wrench,
+  Plus,
+  X,
+  Loader2,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -36,6 +40,7 @@ type ChangeStatus = 'completed' | 'in-progress' | 'pending';
 type ChangeCategory = 'security' | 'feature' | 'integration' | 'fix' | 'performance' | 'infrastructure';
 
 interface ChangeItem {
+  id?: string;
   title: string;
   description: string;
   details?: string[];
@@ -45,15 +50,22 @@ interface ChangeItem {
 }
 
 interface ChangeSection {
+  id?: string;
   version: string;
   releaseDate: string;
   summary: string;
   changes: ChangeItem[];
 }
 
-// ─── Data ────────────────────────────────────────────────────────────────────
+interface SystemHealthItem {
+  label: string;
+  value: string;
+  status: 'healthy' | 'pending' | 'degraded';
+}
 
-const changelog: ChangeSection[] = [
+// ─── Fallback Data (used when DB is not yet seeded) ─────────────────────────
+
+const fallbackChangelog: ChangeSection[] = [
   {
     version: 'v2.0.4',
     releaseDate: 'March 10, 2026',
@@ -61,211 +73,32 @@ const changelog: ChangeSection[] = [
     changes: [
       {
         title: 'CSV Catalog Bulk Upload',
-        description: 'New module allowing bulk import of products from CSV catalogue files directly into the database. Includes template download, column mapping, validation, and batch insert.',
-        details: [
-          'Upload CSV files with product data (name, category, price, description, etc.)',
-          'Automatic column detection and mapping',
-          'Data validation before import with error reporting',
-          'Downloadable CSV template for standardized uploads',
-          'SQL migration for catalog data structure',
-        ],
+        description: 'New module allowing bulk import of products from CSV catalogue files directly into the database.',
+        details: ['Upload CSV files with product data', 'Automatic column detection and mapping', 'Data validation before import with error reporting', 'Downloadable CSV template'],
         status: 'completed',
         category: 'feature',
         date: '2026-03-10',
       },
       {
         title: 'Sidebar Navigation — Catalog Upload Link',
-        description: 'Added "Catalog Upload" navigation item under the Production section with FileUp icon for easy access.',
+        description: 'Added "Catalog Upload" navigation item under the Production section.',
         status: 'completed',
         category: 'feature',
         date: '2026-03-10',
       },
     ],
   },
-  {
-    version: 'v2.0.3',
-    releaseDate: 'March 9, 2026',
-    summary: 'Restored M-Pesa and card payment options on the public checkout page.',
-    changes: [
-      {
-        title: 'Checkout Payment Methods Restored',
-        description: 'Re-enabled M-Pesa STK Push and card payment options on the e-commerce checkout page. Customers can now complete payments via mobile money or card during checkout.',
-        details: [
-          'M-Pesa STK Push payment flow restored',
-          'Card payment option re-enabled',
-          'Payment method selection UI updated',
-        ],
-        status: 'completed',
-        category: 'fix',
-        date: '2026-03-09',
-      },
-    ],
-  },
-  {
-    version: 'v2.0.2',
-    releaseDate: 'March 6, 2026',
-    summary: 'User activation controls, maintenance mode with SQL integration, and system stability improvements.',
-    changes: [
-      {
-        title: 'User Activation Toggle',
-        description: 'Administrators can now activate or deactivate user accounts directly from the admin panel. Deactivated users are immediately locked out of the system.',
-        details: [
-          'Toggle switch on employee/user management page',
-          'Immediate session invalidation on deactivation',
-          'SQL-backed activation state',
-          'Audit log entry on activation changes',
-        ],
-        status: 'completed',
-        category: 'feature',
-        date: '2026-03-06',
-      },
-      {
-        title: 'Maintenance Mode',
-        description: 'System-wide maintenance mode that displays a branded maintenance screen to all non-admin users. Admins can bypass the screen to continue working.',
-        details: [
-          'One-click enable/disable from admin settings',
-          'Custom maintenance message support',
-          'Admin bypass with impersonation banner',
-          'SQL-backed toggle persisted across sessions',
-        ],
-        status: 'completed',
-        category: 'feature',
-        date: '2026-03-06',
-      },
-    ],
-  },
-  {
-    version: 'v2.0.1',
-    releaseDate: 'March 4–5, 2026',
-    summary: 'Major security review, Family Bank C2B/B2C integration, audit log hardening, delivery automation, and financial calculation accuracy.',
-    changes: [
-      {
-        title: 'API Security Review — Frontend Key Exposure Fix',
-        description: 'Comprehensive security audit across all API routes to prevent sensitive keys and credentials from being exposed to the frontend. All API keys moved to server-side environment variables with proper access controls.',
-        details: [
-          'Audited 10+ API routes (auth, payments, AI, maps, settings)',
-          'Removed all hardcoded API keys from client-side code',
-          'Moved secrets to server-side environment variables',
-          'Updated .gitignore to exclude sensitive configuration files',
-          'Implemented server-side proxy patterns for external API calls',
-          'M-Pesa credentials secured behind API routes',
-          'ChatGPT/AI API keys isolated to serverless functions',
-          'Google Maps API key restricted to server-side distance calculations',
-        ],
-        status: 'completed',
-        category: 'security',
-        date: '2026-03-05',
-      },
-      {
-        title: 'Family Bank C2B & B2C Integration',
-        description: 'Full integration with Family Bank for Customer-to-Business (C2B) and Business-to-Customer (B2C) payment services. The bank API integration is complete and tested. Awaiting production credentials from the bank to go live.',
-        details: [
-          'C2B Registration endpoint with validation and confirmation callbacks',
-          'B2C Payment endpoint with result and timeout callbacks',
-          'SQL migration for B2C/C2B transaction tracking tables',
-          'Admin settings page updated — M-Pesa tab replaced with Family Bank tab',
-          'Environment variables configured (.env.local.example updated)',
-          '⚠️ PENDING: Production API credentials from Family Bank',
-          '→ Once received, add credentials in Admin → Settings → Family Bank tab',
-          '→ Register C2B URLs with the bank to start receiving payments',
-        ],
-        status: 'in-progress',
-        category: 'integration',
-        date: '2026-03-04',
-      },
-      {
-        title: 'Audit Logs — Super Admin Protection',
-        description: 'Main super admin account is now hidden from the employee list and audit log views to protect the root account from exposure. Test coverage added.',
-        details: [
-          'Super admin filtered from employee listing queries',
-          'Super admin actions hidden from audit log UI',
-          'Unit tests added for audit logger filtering',
-          'Maintains full logging in database for compliance',
-        ],
-        status: 'completed',
-        category: 'security',
-        date: '2026-03-04',
-      },
-      {
-        title: 'Reports & Ledger — Zero Margin of Error',
-        description: 'Financial calculations across the Reports & Ledger module verified and hardened to ensure zero margin of error in totals, balances, and P&L statements.',
-        details: [
-          'Decimal precision enforced on all monetary calculations',
-          'Rounding consistency applied across all report types',
-          'Cross-verified totals between individual entries and summary reports',
-        ],
-        status: 'completed',
-        category: 'fix',
-        date: '2026-03-04',
-      },
-      {
-        title: 'Delivery — Auto Rider Assignment',
-        description: 'Automatic assignment of the closest available delivery rider based on real-time GPS location. Integrates with the map view for outlet-based deliveries.',
-        details: [
-          'Proximity-based rider matching algorithm',
-          'Real-time availability checking',
-          'Map integration showing rider positions',
-          'Outlet-to-rider distance optimization',
-        ],
-        status: 'completed',
-        category: 'feature',
-        date: '2026-03-04',
-      },
-      {
-        title: 'Inventory & Purchase Orders — Auto-Generation',
-        description: 'Enhanced inventory module with auto-selection of low-stock items and automatic generation of purchase orders based on reorder levels.',
-        details: [
-          'Auto-detect items below reorder threshold',
-          'One-click purchase order generation',
-          'Supplier auto-selection based on pricing history',
-          'Quantity suggestions based on consumption patterns',
-        ],
-        status: 'completed',
-        category: 'feature',
-        date: '2026-03-04',
-      },
-      {
-        title: 'AI Provider Switch — ChatGPT Integration',
-        description: 'Switched AI provider from Gemini to Free ChatGPT for product descriptions, recipe suggestions, and customer support automation.',
-        status: 'completed',
-        category: 'infrastructure',
-        date: '2026-03-04',
-      },
-      {
-        title: 'Build Process & Cache Optimization',
-        description: 'Improved build pipeline with dependency caching, repository preparation, and optimized installation. Automated cache clearing on deployments.',
-        details: [
-          'Build cache configured for faster deployments',
-          'Dependency tree cached between builds',
-          'Automated stale cache clearing on system',
-          'Repository preparation scripts optimized',
-        ],
-        status: 'completed',
-        category: 'performance',
-        date: '2026-03-04',
-      },
-      {
-        title: 'SQL Fix — Business Settings Table',
-        description: 'Fixed SQL query error where "category" column was incorrectly referenced in the "business_settings" table.',
-        status: 'completed',
-        category: 'fix',
-        date: '2026-03-04',
-      },
-    ],
-  },
 ];
 
-// ─── System Health Overview ──────────────────────────────────────────────────
-
-const systemHealthItems = [
-  { label: 'Test Suite', value: '278 Tests — 100% Pass Rate', status: 'healthy' as const },
-  { label: 'Build Cache', value: 'Automated clearing on deploy', status: 'healthy' as const },
-  { label: 'API Security', value: 'All keys server-side only', status: 'healthy' as const },
-  { label: 'Audit Logging', value: 'Active — all actions tracked', status: 'healthy' as const },
-  { label: 'Backup System', value: 'Database backup API available', status: 'healthy' as const },
-  { label: 'Family Bank C2B', value: 'Awaiting bank credentials', status: 'pending' as const },
-  { label: 'Family Bank B2C', value: 'Awaiting bank credentials', status: 'pending' as const },
-  { label: 'M-Pesa STK Push', value: 'Operational on checkout', status: 'healthy' as const },
+const fallbackHealth: SystemHealthItem[] = [
+  { label: 'Test Suite', value: '278 Tests — 100% Pass Rate', status: 'healthy' },
+  { label: 'Build Cache', value: 'Automated clearing on deploy', status: 'healthy' },
+  { label: 'API Security', value: 'All keys server-side only', status: 'healthy' },
+  { label: 'Audit Logging', value: 'Active — all actions tracked', status: 'healthy' },
+  { label: 'Backup System', value: 'Database backup API available', status: 'healthy' },
+  { label: 'Family Bank C2B', value: 'Awaiting bank credentials', status: 'pending' },
+  { label: 'Family Bank B2C', value: 'Awaiting bank credentials', status: 'pending' },
+  { label: 'M-Pesa STK Push', value: 'Operational on checkout', status: 'healthy' },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -288,9 +121,72 @@ const categoryConfig: Record<ChangeCategory, { label: string; bg: string; text: 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ChangelogPage() {
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ 'v2.0.4': true, 'v2.0.3': true, 'v2.0.2': true, 'v2.0.1': true });
+  const [changelog, setChangelog] = useState<ChangeSection[]>(fallbackChangelog);
+  const [systemHealthItems, setSystemHealthItems] = useState<SystemHealthItem[]>(fallbackHealth);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // New entry form state
+  const [newEntry, setNewEntry] = useState({
+    title: '',
+    description: '',
+    details: '',
+    category: 'feature' as ChangeCategory,
+    status: 'completed' as ChangeStatus,
+  });
+
+  // ─── Fetch changelog from database ─────────────────────────────────────
+  const fetchChangelog = useCallback(async () => {
+    try {
+      // Try fetching from the API
+      const res = await fetch('/api/changelog');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.changelog && data.changelog.length > 0) {
+          setChangelog(data.changelog);
+          // Auto-expand the first two versions
+          const expanded: Record<string, boolean> = {};
+          data.changelog.slice(0, 2).forEach((s: ChangeSection) => { expanded[s.version] = true; });
+          setExpandedSections(prev => {
+            const merged = { ...expanded };
+            // Preserve user's manual expand/collapse choices
+            for (const key of Object.keys(prev)) {
+              if (key in merged) merged[key] = prev[key];
+            }
+            return merged;
+          });
+        }
+        if (data.systemHealth && data.systemHealth.length > 0) {
+          setSystemHealthItems(data.systemHealth);
+        }
+      }
+    } catch {
+      // Silently fall back to hardcoded data — DB tables may not exist yet
+      console.log('Changelog: Using fallback data (database tables not yet created)');
+    } finally {
+      setLoading(false);
+      setLastRefresh(new Date());
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchChangelog();
+    // Auto-expand fallback sections on first load
+    setExpandedSections({ 'v2.0.4': true, 'v2.0.3': true });
+  }, [fetchChangelog]);
+
+  // ─── Auto-refresh every 30 seconds ─────────────────────────────────────
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchChangelog();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchChangelog]);
 
   const toggleSection = (version: string) => {
     setExpandedSections(prev => ({ ...prev, [version]: !prev[version] }));
@@ -302,11 +198,47 @@ export default function ChangelogPage() {
   const securityFixes = changelog.reduce((sum, s) => sum + s.changes.filter(c => c.category === 'security').length, 0);
   const newFeatures = changelog.reduce((sum, s) => sum + s.changes.filter(c => c.category === 'feature').length, 0);
 
-  // PDF Download via print
-  const handleDownloadPDF = () => {
-    const printContent = reportRef.current;
-    if (!printContent) return;
+  // ─── Submit new entry ──────────────────────────────────────────────────
+  const handleSubmitEntry = async () => {
+    if (!newEntry.title.trim()) return;
+    setSubmitting(true);
 
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const res = await fetch('/api/changelog', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          title: newEntry.title.trim(),
+          description: newEntry.description.trim(),
+          details: newEntry.details.trim()
+            ? newEntry.details.split('\n').map(d => d.trim()).filter(Boolean)
+            : [],
+          category: newEntry.category,
+          status: newEntry.status,
+        }),
+      });
+
+      if (res.ok) {
+        setNewEntry({ title: '', description: '', details: '', category: 'feature', status: 'completed' });
+        setShowAddForm(false);
+        // Refresh data
+        await fetchChangelog();
+      }
+    } catch (err) {
+      console.error('Failed to add changelog entry:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ─── PDF Download via print ────────────────────────────────────────────
+  const handleDownloadPDF = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
@@ -349,6 +281,7 @@ export default function ChangelogPage() {
           .change-tag { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase; }
           .tag-completed { background: #dcfce7; color: #16a34a; }
           .tag-in-progress { background: #fef3c7; color: #d97706; }
+          .tag-pending { background: #f3f4f6; color: #6b7280; }
           .tag-security { background: #fee2e2; color: #dc2626; }
           .tag-feature { background: #dbeafe; color: #2563eb; }
           .tag-integration { background: #ede9fe; color: #7c3aed; }
@@ -359,11 +292,6 @@ export default function ChangelogPage() {
           .change-details { margin: 0; padding-left: 20px; }
           .change-details li { font-size: 12px; color: #4b5563; margin-bottom: 3px; }
           .footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid #f97316; text-align: center; font-size: 11px; color: #9ca3af; }
-          .bank-notice { background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
-          .bank-notice h3 { font-size: 15px; font-weight: 700; color: #92400e; margin-bottom: 6px; }
-          .bank-notice p { font-size: 13px; color: #78350f; }
-          .bank-notice ul { margin-top: 6px; padding-left: 20px; }
-          .bank-notice li { font-size: 12px; color: #92400e; margin-bottom: 3px; }
           @media print { body { padding: 20px; } .summary-grid { grid-template-columns: repeat(4, 1fr); } }
         </style>
       </head>
@@ -393,16 +321,6 @@ export default function ChangelogPage() {
           </div>
         </div>
 
-        <div class="bank-notice">
-          <h3>⏳ Family Bank Integration — Action Required</h3>
-          <p>The Family Bank C2B (Customer-to-Business) and B2C (Business-to-Customer) payment integration has been <strong>fully developed and tested</strong>. The system is ready to process payments once production credentials are provided by the bank.</p>
-          <ul>
-            <li><strong>Next Step:</strong> Receive API credentials (Consumer Key, Consumer Secret, Short Code) from Family Bank</li>
-            <li><strong>Configuration:</strong> Navigate to Admin → Settings → Family Bank tab and enter the credentials</li>
-            <li><strong>Activation:</strong> Register C2B validation/confirmation URLs with Family Bank to start receiving payments</li>
-          </ul>
-        </div>
-
         <div class="health-section">
           <h2>System Health Overview</h2>
           <div class="health-grid">
@@ -428,7 +346,7 @@ export default function ChangelogPage() {
                   <span class="change-tag tag-${change.category}">${categoryConfig[change.category].label}</span>
                 </div>
                 <div class="change-desc">${change.description}</div>
-                ${change.details ? `<ul class="change-details">${change.details.map(d => `<li>${d}</li>`).join('')}</ul>` : ''}
+                ${change.details && change.details.length > 0 ? `<ul class="change-details">${change.details.map(d => `<li>${d}</li>`).join('')}</ul>` : ''}
               </div>
             `).join('')}
           </div>
@@ -437,7 +355,7 @@ export default function ChangelogPage() {
         <div class="footer">
           <p><strong>Snackoh Bakers Management System</strong> — Confidential Implementation Report</p>
           <p>This report was auto-generated from the system changelog. For questions, contact your system administrator.</p>
-          <p>© ${new Date().getFullYear()} Snackoh Bakers. All rights reserved.</p>
+          <p>&copy; ${new Date().getFullYear()} Snackoh Bakers. All rights reserved.</p>
         </div>
       </body>
       </html>
@@ -459,16 +377,134 @@ export default function ChangelogPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Track all system changes, security fixes, new features, and integrations.
+            <span className="ml-2 text-xs text-muted-foreground/50">
+              Auto-refreshes every 30s &middot; Last updated: {lastRefresh.toLocaleTimeString()}
+            </span>
           </p>
         </div>
-        <button
-          onClick={handleDownloadPDF}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm"
-        >
-          <Download size={16} />
-          Download PDF Report
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setLoading(true); fetchChangelog(); }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-muted text-foreground rounded-lg font-semibold text-sm hover:bg-muted/70 transition-colors border border-border"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg font-semibold text-sm hover:bg-green-700 transition-colors shadow-sm"
+          >
+            <Plus size={14} />
+            Add Entry
+          </button>
+          <button
+            onClick={handleDownloadPDF}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            <Download size={16} />
+            PDF Report
+          </button>
+        </div>
       </div>
+
+      {/* Add Entry Modal */}
+      {showAddForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h2 className="text-lg font-bold text-foreground">Add Changelog Entry</h2>
+              <button onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-1">Title *</label>
+                <input
+                  type="text"
+                  value={newEntry.title}
+                  onChange={e => setNewEntry(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="e.g., New Payment Gateway Integration"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-1">Description</label>
+                <textarea
+                  value={newEntry.description}
+                  onChange={e => setNewEntry(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Brief description of what changed..."
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-1">Details (one per line)</label>
+                <textarea
+                  value={newEntry.details}
+                  onChange={e => setNewEntry(prev => ({ ...prev, details: e.target.value }))}
+                  placeholder={"Added new endpoint for X\nUpdated UI component for Y\nFixed validation logic"}
+                  rows={4}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none font-mono"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-1">Category</label>
+                  <select
+                    value={newEntry.category}
+                    onChange={e => setNewEntry(prev => ({ ...prev, category: e.target.value as ChangeCategory }))}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="feature">New Feature</option>
+                    <option value="fix">Bug Fix</option>
+                    <option value="security">Security</option>
+                    <option value="integration">Integration</option>
+                    <option value="performance">Performance</option>
+                    <option value="infrastructure">Infrastructure</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-1">Status</label>
+                  <select
+                    value={newEntry.status}
+                    onChange={e => setNewEntry(prev => ({ ...prev, status: e.target.value as ChangeStatus }))}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="completed">Completed</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={handleSubmitEntry}
+                  disabled={submitting || !newEntry.title.trim()}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  {submitting ? 'Adding...' : 'Add Entry'}
+                </button>
+                <button
+                  onClick={() => setShowAddForm(false)}
+                  className="px-4 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+          <Loader2 size={16} className="animate-spin" />
+          Loading changelog...
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
@@ -497,13 +533,13 @@ export default function ChangelogPage() {
           <div>
             <h3 className="font-bold text-amber-800 text-base">Family Bank C2B/B2C Integration — Awaiting Credentials</h3>
             <p className="text-sm text-amber-700 mt-1">
-              The Family Bank payment integration has been <strong>fully developed and tested</strong>. All API endpoints (C2B registration, validation, confirmation, B2C payments, callbacks) are implemented and ready.
+              The Family Bank payment integration has been <strong>fully developed and tested</strong>. All API endpoints are implemented and ready.
             </p>
             <div className="mt-3 space-y-1.5">
               <p className="text-sm text-amber-800 font-semibold">What&apos;s needed to go live:</p>
               <ul className="text-sm text-amber-700 space-y-1 list-disc pl-5">
-                <li>Receive production API credentials from Family Bank (Consumer Key, Consumer Secret, Short Code)</li>
-                <li>Enter credentials in <strong>Admin → Settings → Family Bank</strong> tab</li>
+                <li>Receive production API credentials from Family Bank</li>
+                <li>Enter credentials in <strong>Admin &rarr; Settings &rarr; Family Bank</strong> tab</li>
                 <li>Register C2B validation &amp; confirmation URLs with the bank</li>
               </ul>
             </div>
@@ -527,6 +563,8 @@ export default function ChangelogPage() {
               <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
                 item.status === 'healthy'
                   ? 'bg-green-100 text-green-700'
+                  : item.status === 'degraded'
+                  ? 'bg-red-100 text-red-700'
                   : 'bg-amber-100 text-amber-700'
               }`}>
                 {item.value}
@@ -600,7 +638,7 @@ export default function ChangelogPage() {
 
                     return (
                       <div
-                        key={idx}
+                        key={change.id || idx}
                         className="border border-border/60 rounded-lg p-4 hover:bg-muted/20 transition-colors"
                       >
                         <div className="flex flex-col sm:flex-row sm:items-start gap-3">
@@ -621,13 +659,13 @@ export default function ChangelogPage() {
                             <p className="text-sm text-muted-foreground leading-relaxed">
                               {change.description}
                             </p>
-                            {change.details && (
+                            {change.details && change.details.length > 0 && (
                               <ul className="mt-2 space-y-1">
                                 {change.details.map((detail, dIdx) => (
                                   <li
                                     key={dIdx}
                                     className={`text-xs flex items-start gap-2 ${
-                                      detail.startsWith('⚠️') || detail.startsWith('→')
+                                      detail.startsWith('\u26a0\ufe0f') || detail.startsWith('\u2192')
                                         ? 'text-amber-600 font-semibold'
                                         : 'text-muted-foreground'
                                     }`}
@@ -654,7 +692,7 @@ export default function ChangelogPage() {
       {/* Footer */}
       <div className="mt-10 text-center text-xs text-muted-foreground/60 space-y-1">
         <p>Snackoh Bakers Management System — Changelog & Implementation Report</p>
-        <p>Auto-generated from system version history. Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.</p>
+        <p>Auto-updated from database. Last synced: {lastRefresh.toLocaleTimeString()} | Refreshes automatically every 30 seconds.</p>
       </div>
     </div>
   );
