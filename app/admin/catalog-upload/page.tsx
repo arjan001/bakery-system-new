@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { logAudit } from '@/lib/audit-logger';
+import { logAudit, type AuditAction } from '@/lib/audit-logger';
 import { Upload, FileText, CheckCircle2, XCircle, AlertTriangle, Loader2, Download, Trash2 } from 'lucide-react';
 
 interface CatalogRow {
@@ -320,10 +320,14 @@ export default function CatalogUploadPage() {
     }
 
     logAudit({
-      action: 'BULK_IMPORT',
+      action: 'BULK_IMPORT' as AuditAction,
       module: 'Catalog Upload',
       record_id: 'catalog-csv',
       details: { total: result.total, success: result.success, failed: result.failed, filename: file?.name },
+      trackChangelog: true,
+      changelogTitle: `Bulk Catalog Import — ${result.success} Products`,
+      changelogDescription: `Imported ${result.success} of ${result.total} products from CSV file "${file?.name || 'catalog'}"${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
+      changelogCategory: 'feature',
     });
 
     setImportResult(result);

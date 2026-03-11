@@ -581,6 +581,10 @@ export default function SettingsPage() {
           module: 'Settings',
           record_id: offerForm.title,
           details: { table: 'offers', title: offerForm.title },
+          trackChangelog: true,
+          changelogTitle: `New Offer Created — ${offerForm.title}`,
+          changelogDescription: `Created new promotional offer "${offerForm.title}".`,
+          changelogCategory: 'feature',
         });
       }
     } catch {
@@ -770,7 +774,7 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         setBackupMessage(`Backup completed! ${data.backup.tableCount} tables, ${data.backup.totalRows.toLocaleString()} rows (${formatBytes(data.backup.sizeBytes)})`);
-        logAudit({ action: 'EXPORT', module: 'Backup', details: { trigger: 'manual', tables: data.backup.tableCount, rows: data.backup.totalRows } });
+        logAudit({ action: 'EXPORT', module: 'Backup', details: { trigger: 'manual', tables: data.backup.tableCount, rows: data.backup.totalRows }, trackChangelog: true, changelogTitle: 'Database Backup Completed', changelogDescription: `Manual database backup exported: ${data.backup.tableCount} tables, ${data.backup.totalRows.toLocaleString()} rows.`, changelogCategory: 'infrastructure' });
         loadBackups();
       } else {
         setBackupMessage(`Backup failed: ${data.message}`);
@@ -3070,9 +3074,15 @@ export default function SettingsPage() {
                     );
                     logAudit({
                       action: 'UPDATE',
-                      module: 'Settings',
+                      module: 'Maintenance Mode',
                       record_id: 'maintenance_mode',
                       details: { enabled: newEnabled },
+                      trackChangelog: true,
+                      changelogTitle: newEnabled ? 'Maintenance Mode Enabled' : 'Maintenance Mode Disabled',
+                      changelogDescription: newEnabled
+                        ? 'System-wide maintenance mode activated. Non-admin users see maintenance screen.'
+                        : 'Maintenance mode deactivated. System is fully accessible to all users.',
+                      changelogCategory: 'infrastructure',
                     });
                     setMaintenanceMsg(newEnabled ? 'Maintenance mode ENABLED - staff will see maintenance screen' : 'Maintenance mode DISABLED - admin panel is accessible');
                   } catch {
