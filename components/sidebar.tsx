@@ -56,6 +56,7 @@ import {
   Clock,
   ShieldCheck,
   FileUp,
+  History,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -165,6 +166,7 @@ const allNavGroups: NavGroup[] = [
       { label: 'Reports & Ledger', href: '/admin/reports', tip: 'Financial reports, P&L, sales, debtors, creditors & ledger', icon: BarChart3 },
       { label: 'Audit Logs', href: '/admin/audit-logs', tip: 'Track system activity, user actions & access logs', icon: ScrollText },
       { label: 'Settings', href: '/admin/settings', tip: 'System config, receipt, theme & security', icon: Settings },
+      { label: 'Changelog Report', href: '/admin/changelog', tip: 'System changelog, implementation report & PDF download', icon: History },
     ],
   },
   {
