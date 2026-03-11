@@ -6,7 +6,31 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf' | 'maintenance';
+type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf' | 'maintenance' | 'bug-tracker';
+
+interface SystemBug {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  status: 'open' | 'in_progress' | 'resolved' | 'dismissed';
+  module: string;
+  source: string;
+  error_code?: string;
+  stack_trace?: string;
+  endpoint?: string;
+  http_status?: number;
+  request_details?: Record<string, unknown>;
+  occurrence_count: number;
+  first_detected_at: string;
+  detected_at: string;
+  resolved_at?: string;
+  notes?: string;
+  scan_id?: string;
+  updated_at: string;
+  created_at: string;
+}
 
 interface NewsletterSubscriber {
   id: string;
@@ -219,6 +243,19 @@ export default function SettingsPage() {
   });
   const [maintenanceSaving, setMaintenanceSaving] = useState(false);
   const [maintenanceMsg, setMaintenanceMsg] = useState('');
+
+  // ── Bug Tracker ──
+  const [bugs, setBugs] = useState<SystemBug[]>([]);
+  const [bugsLoading, setBugsLoading] = useState(false);
+  const [bugScanning, setBugScanning] = useState(false);
+  const [bugScanResult, setBugScanResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [bugFilter, setBugFilter] = useState({ status: 'all', severity: 'all', category: 'all', search: '' });
+  const [bugStats, setBugStats] = useState({ total: 0, open: 0, in_progress: 0, resolved: 0, critical: 0, high: 0 });
+  const [expandedBugId, setExpandedBugId] = useState<string | null>(null);
+  const [lastScanInfo, setLastScanInfo] = useState<Record<string, unknown> | null>(null);
+  const [bugAutoScan, setBugAutoScan] = useState(true);
+  const [bugPage, setBugPage] = useState(0);
+  const bugsPerPage = 15;
 
   // ── Offers ──
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -875,6 +912,106 @@ export default function SettingsPage() {
     });
   }, []);
 
+  // ── Bug Tracker: Load bugs ──
+  const loadBugs = async () => {
+    setBugsLoading(true);
+    try {
+      const token = await getAuthToken();
+      const params = new URLSearchParams();
+      if (bugFilter.status !== 'all') params.set('status', bugFilter.status);
+      if (bugFilter.severity !== 'all') params.set('severity', bugFilter.severity);
+      if (bugFilter.category !== 'all') params.set('category', bugFilter.category);
+      if (bugFilter.search) params.set('search', bugFilter.search);
+      params.set('limit', String(bugsPerPage));
+      params.set('offset', String(bugPage * bugsPerPage));
+
+      const res = await fetch(`/api/bugs?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBugs(data.bugs);
+        setBugStats(data.stats);
+      }
+    } catch (err) {
+      console.error('Failed to load bugs:', err);
+    }
+    setBugsLoading(false);
+  };
+
+  const loadLastScanInfo = async () => {
+    try {
+      const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'last_bug_scan').single();
+      if (!error && data?.value) setLastScanInfo(data.value as Record<string, unknown>);
+    } catch { /* ignore */ }
+  };
+
+  const runBugScan = async () => {
+    setBugScanning(true);
+    setBugScanResult(null);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/bugs/scan', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBugScanResult({
+          success: true,
+          message: `Scan complete: ${data.issues_found} issue(s) found, ${data.new_bugs} new, ${data.updated_bugs} updated, ${data.auto_resolved} auto-resolved (${data.duration_ms}ms)`,
+        });
+        loadBugs();
+        loadLastScanInfo();
+        logAudit({
+          action: 'VIEW',
+          module: 'Bug Tracker',
+          record_id: data.scan_id,
+          details: { issues_found: data.issues_found, new_bugs: data.new_bugs, trigger: 'manual' },
+        });
+      } else {
+        setBugScanResult({ success: false, message: data.message || 'Scan failed' });
+      }
+    } catch (err) {
+      setBugScanResult({ success: false, message: 'Network error: ' + (err instanceof Error ? err.message : 'Unknown') });
+    }
+    setBugScanning(false);
+  };
+
+  const updateBugStatus = async (bugId: string, status: string) => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/bugs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ id: bugId, status }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBugs(prev => prev.map(b => b.id === bugId ? { ...b, ...data.bug } : b));
+        loadBugs();
+      }
+    } catch (err) {
+      console.error('Failed to update bug:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'bug-tracker') {
+      loadBugs();
+      loadLastScanInfo();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, bugFilter.status, bugFilter.severity, bugFilter.category, bugPage]);
+
+  // Debounced search for bug tracker
+  useEffect(() => {
+    if (activeTab !== 'bug-tracker') return;
+    const timer = setTimeout(() => loadBugs(), 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bugFilter.search]);
+
   const tabs: { key: SettingsTab; label: string; icon: string; tip: string }[] = [
     { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
     { key: 'chatgpt-ai', label: 'ChatGPT AI', icon: '🤖', tip: 'Configure ChatGPT AI for recipe generation & suggestions' },
@@ -893,6 +1030,7 @@ export default function SettingsPage() {
     { key: 'delivery', label: 'Delivery', icon: '🚚', tip: 'Minimum order for delivery, delivery fees & thresholds' },
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
     { key: 'maintenance', label: 'Maintenance', icon: '🔧', tip: 'Enable maintenance mode for the admin panel' },
+    { key: 'bug-tracker', label: 'Bug Tracker', icon: '🐛', tip: 'Automatic bug detection, system health scanning & error monitoring' },
   ];
 
   const inputCls = 'w-full px-3 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-background';
@@ -3185,6 +3323,416 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium text-foreground">Audit Logged</p>
                   <p>Enabling or disabling maintenance mode is recorded in the audit log for accountability.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── BUG TRACKER ── */}
+      {activeTab === 'bug-tracker' && (
+        <div className="space-y-6">
+          {/* Stats Overview */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: 'Total Issues', value: bugStats.total, color: 'text-foreground', bg: 'bg-card' },
+              { label: 'Open', value: bugStats.open, color: 'text-orange-700', bg: 'bg-orange-50' },
+              { label: 'In Progress', value: bugStats.in_progress, color: 'text-blue-700', bg: 'bg-blue-50' },
+              { label: 'Resolved', value: bugStats.resolved, color: 'text-green-700', bg: 'bg-green-50' },
+              { label: 'Critical', value: bugStats.critical, color: 'text-red-700', bg: 'bg-red-50' },
+              { label: 'High', value: bugStats.high, color: 'text-amber-700', bg: 'bg-amber-50' },
+            ].map(stat => (
+              <div key={stat.label} className={`${stat.bg} border border-border rounded-lg p-4 text-center`}>
+                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                <p className="text-xs text-muted-foreground mt-1">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Scan Controls */}
+          <div className="border border-border rounded-lg p-5 bg-card">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <span className="text-xl">🔍</span> System Scanner
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Scan the system for bugs, errors, misconfigurations, security issues, and data integrity problems
+                </p>
+                {lastScanInfo && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Last scan: {new Date(lastScanInfo.timestamp as string).toLocaleString()} &middot;{' '}
+                    {lastScanInfo.issues_found} issue(s) found &middot;{' '}
+                    {lastScanInfo.duration_ms}ms &middot;{' '}
+                    Trigger: {lastScanInfo.trigger as string}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Auto-scan</span>
+                  <button
+                    type="button"
+                    onClick={() => setBugAutoScan(!bugAutoScan)}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${bugAutoScan ? 'bg-green-500' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${bugAutoScan ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <button
+                  onClick={runBugScan}
+                  disabled={bugScanning}
+                  className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium text-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {bugScanning ? (
+                    <>
+                      <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Scanning...
+                    </>
+                  ) : (
+                    <>
+                      <span>🔍</span> Run Scan Now
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {bugScanResult && (
+              <div className={`mt-4 p-3 rounded-lg text-sm ${bugScanResult.success ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
+                {bugScanResult.message}
+              </div>
+            )}
+
+            {/* What the scanner checks */}
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                { icon: '🗃️', label: 'Database Health' },
+                { icon: '🔐', label: 'Security Audit' },
+                { icon: '📊', label: 'Data Integrity' },
+                { icon: '⚙️', label: 'Configuration' },
+                { icon: '🚀', label: 'Performance' },
+                { icon: '📡', label: 'API Endpoints' },
+                { icon: '📦', label: 'Stale Data' },
+                { icon: '💾', label: 'Backup Status' },
+              ].map(check => (
+                <div key={check.label} className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2">
+                  <span>{check.icon}</span> {check.label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Search bugs by title, description, or module..."
+                value={bugFilter.search}
+                onChange={e => { setBugFilter({ ...bugFilter, search: e.target.value }); setBugPage(0); }}
+                className={inputCls}
+              />
+            </div>
+            <select
+              value={bugFilter.status}
+              onChange={e => { setBugFilter({ ...bugFilter, status: e.target.value }); setBugPage(0); }}
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-background"
+            >
+              <option value="all">All Statuses</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="dismissed">Dismissed</option>
+            </select>
+            <select
+              value={bugFilter.severity}
+              onChange={e => { setBugFilter({ ...bugFilter, severity: e.target.value }); setBugPage(0); }}
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-background"
+            >
+              <option value="all">All Severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="info">Info</option>
+            </select>
+            <select
+              value={bugFilter.category}
+              onChange={e => { setBugFilter({ ...bugFilter, category: e.target.value }); setBugPage(0); }}
+              className="px-3 py-2.5 border border-border rounded-lg text-sm bg-background"
+            >
+              <option value="all">All Categories</option>
+              <option value="database">Database</option>
+              <option value="api">API</option>
+              <option value="security">Security</option>
+              <option value="data_integrity">Data Integrity</option>
+              <option value="configuration">Configuration</option>
+              <option value="performance">Performance</option>
+              <option value="workflow">Workflow</option>
+            </select>
+          </div>
+
+          {/* Bug List */}
+          <div className="border border-border rounded-lg bg-card overflow-hidden">
+            {bugsLoading ? (
+              <div className="p-12 text-center text-muted-foreground">
+                <span className="inline-block w-6 h-6 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin mb-3" />
+                <p className="text-sm">Loading issues...</p>
+              </div>
+            ) : bugs.length === 0 ? (
+              <div className="p-12 text-center text-muted-foreground">
+                <p className="text-4xl mb-3">✅</p>
+                <p className="font-medium">No issues found</p>
+                <p className="text-xs mt-1">Run a scan to check for system bugs and errors</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {bugs.map(bug => {
+                  const severityColors: Record<string, string> = {
+                    critical: 'bg-red-100 text-red-700 border-red-200',
+                    high: 'bg-amber-100 text-amber-700 border-amber-200',
+                    medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+                    low: 'bg-blue-100 text-blue-700 border-blue-200',
+                    info: 'bg-gray-100 text-gray-600 border-gray-200',
+                  };
+                  const statusColors: Record<string, string> = {
+                    open: 'bg-orange-100 text-orange-700',
+                    in_progress: 'bg-blue-100 text-blue-700',
+                    resolved: 'bg-green-100 text-green-700',
+                    dismissed: 'bg-gray-100 text-gray-500',
+                  };
+                  const categoryIcons: Record<string, string> = {
+                    database: '🗃️',
+                    api: '📡',
+                    security: '🔐',
+                    data_integrity: '📊',
+                    configuration: '⚙️',
+                    performance: '🚀',
+                    workflow: '📋',
+                    error: '❌',
+                  };
+                  const isExpanded = expandedBugId === bug.id;
+
+                  return (
+                    <div key={bug.id} className={`${isExpanded ? 'bg-muted/20' : 'hover:bg-muted/10'} transition-colors`}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedBugId(isExpanded ? null : bug.id)}
+                        className="w-full px-5 py-4 text-left"
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-lg mt-0.5">{categoryIcons[bug.category] || '🐛'}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-medium text-sm truncate">{bug.title}</h4>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase border ${severityColors[bug.severity] || severityColors.medium}`}>
+                                {bug.severity}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${statusColors[bug.status] || statusColors.open}`}>
+                                {bug.status.replace('_', ' ')}
+                              </span>
+                              {bug.occurrence_count > 1 && (
+                                <span className="px-2 py-0.5 rounded text-[10px] bg-purple-100 text-purple-700 font-medium">
+                                  x{bug.occurrence_count}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-xs text-muted-foreground">{bug.module}</span>
+                              <span className="text-xs text-muted-foreground">&middot;</span>
+                              <span className="text-xs text-muted-foreground">{new Date(bug.detected_at).toLocaleString()}</span>
+                              {bug.source === 'auto_scan' && (
+                                <>
+                                  <span className="text-xs text-muted-foreground">&middot;</span>
+                                  <span className="text-xs text-muted-foreground">Auto-detected</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`text-muted-foreground transform transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▾</span>
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-5 pb-5 pt-0 ml-9">
+                          <div className="border border-border rounded-lg p-4 bg-background space-y-4">
+                            {/* Description */}
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground mb-1">Description</p>
+                              <p className="text-sm">{bug.description}</p>
+                            </div>
+
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                              <div>
+                                <p className="text-muted-foreground font-medium">Category</p>
+                                <p className="capitalize">{bug.category.replace('_', ' ')}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground font-medium">Module</p>
+                                <p>{bug.module}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground font-medium">First Detected</p>
+                                <p>{new Date(bug.first_detected_at).toLocaleString()}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground font-medium">Occurrences</p>
+                                <p>{bug.occurrence_count}</p>
+                              </div>
+                              {bug.error_code && (
+                                <div>
+                                  <p className="text-muted-foreground font-medium">Error Code</p>
+                                  <p className="font-mono">{bug.error_code}</p>
+                                </div>
+                              )}
+                              {bug.endpoint && (
+                                <div>
+                                  <p className="text-muted-foreground font-medium">Endpoint</p>
+                                  <p className="font-mono truncate">{bug.endpoint}</p>
+                                </div>
+                              )}
+                              {bug.resolved_at && (
+                                <div>
+                                  <p className="text-muted-foreground font-medium">Resolved At</p>
+                                  <p>{new Date(bug.resolved_at).toLocaleString()}</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Request Details / Extra Data */}
+                            {bug.request_details && Object.keys(bug.request_details).length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1">Additional Data</p>
+                                <pre className="text-xs bg-muted/50 rounded-lg p-3 overflow-x-auto max-h-40 border border-border">
+                                  {JSON.stringify(bug.request_details, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+
+                            {/* Stack Trace */}
+                            {bug.stack_trace && (
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1">Stack Trace</p>
+                                <pre className="text-xs bg-red-50 text-red-800 rounded-lg p-3 overflow-x-auto max-h-40 border border-red-200">
+                                  {bug.stack_trace}
+                                </pre>
+                              </div>
+                            )}
+
+                            {/* Notes */}
+                            {bug.notes && (
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>
+                                <p className="text-sm text-muted-foreground italic">{bug.notes}</p>
+                              </div>
+                            )}
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2 pt-2 border-t border-border">
+                              {bug.status !== 'resolved' && (
+                                <button
+                                  onClick={() => updateBugStatus(bug.id, 'resolved')}
+                                  className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700"
+                                >
+                                  Mark Resolved
+                                </button>
+                              )}
+                              {bug.status === 'open' && (
+                                <button
+                                  onClick={() => updateBugStatus(bug.id, 'in_progress')}
+                                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700"
+                                >
+                                  Mark In Progress
+                                </button>
+                              )}
+                              {bug.status !== 'dismissed' && bug.status !== 'resolved' && (
+                                <button
+                                  onClick={() => updateBugStatus(bug.id, 'dismissed')}
+                                  className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-300"
+                                >
+                                  Dismiss
+                                </button>
+                              )}
+                              {bug.status === 'resolved' && (
+                                <button
+                                  onClick={() => updateBugStatus(bug.id, 'open')}
+                                  className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-xs font-medium hover:bg-orange-700"
+                                >
+                                  Reopen
+                                </button>
+                              )}
+                              <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+                                ID: {bug.id.slice(0, 8)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {bugs.length > 0 && (
+              <div className="flex items-center justify-between px-5 py-3 bg-muted/20 border-t border-border">
+                <p className="text-xs text-muted-foreground">
+                  Showing {bugPage * bugsPerPage + 1}–{Math.min((bugPage + 1) * bugsPerPage, bugStats.total)} of {bugStats.total}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setBugPage(p => Math.max(0, p - 1))}
+                    disabled={bugPage === 0}
+                    className="px-3 py-1 text-xs border border-border rounded hover:bg-muted disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setBugPage(p => p + 1)}
+                    disabled={(bugPage + 1) * bugsPerPage >= bugStats.total}
+                    className="px-3 py-1 text-xs border border-border rounded hover:bg-muted disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* How it works info */}
+          <div className="border border-border rounded-lg p-6 bg-card">
+            <h3 className="font-semibold mb-3">How the Bug Tracker Works</h3>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <div className="flex items-start gap-3">
+                <span className="text-lg">🤖</span>
+                <div>
+                  <p className="font-medium text-foreground">Automatic Scanning</p>
+                  <p>The system automatically scans every 6 hours for database issues, security vulnerabilities, data integrity problems, stale data, and misconfigurations.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">🔍</span>
+                <div>
+                  <p className="font-medium text-foreground">Manual Scans</p>
+                  <p>Click &quot;Run Scan Now&quot; to immediately perform a comprehensive system check. Results are stored and tracked over time.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">🔄</span>
+                <div>
+                  <p className="font-medium text-foreground">Smart Deduplication</p>
+                  <p>Recurring issues are tracked by occurrence count rather than creating duplicates. When an issue is no longer detected, it is automatically resolved.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">📊</span>
+                <div>
+                  <p className="font-medium text-foreground">Comprehensive Checks</p>
+                  <p>Scans cover database health, API endpoints, data integrity, security audit, configuration validation, performance metrics, backup status, and stale data detection.</p>
                 </div>
               </div>
             </div>
