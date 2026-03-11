@@ -75,6 +75,7 @@ const permRouteMap: Record<string, string[]> = {
     '/admin/outlet-reports',
     '/admin/outlet-waste',
     '/admin/outlet-settings',
+    '/admin/outlet-menu-generator',
   ],
   'View Outlets': [
     '/admin/outlets',
@@ -83,6 +84,7 @@ const permRouteMap: Record<string, string[]> = {
     '/admin/outlet-returns',
     '/admin/outlet-products',
     '/admin/outlet-reports',
+    '/admin/outlet-menu-generator',
   ],
   'Manage Outlet Inventory': ['/admin/outlet-inventory'],
   'Manage Requisitions': ['/admin/outlet-requisitions'],
@@ -195,6 +197,7 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
       '/admin/outlet-reports',
       '/admin/outlet-waste',
       '/admin/outlet-settings',
+      '/admin/outlet-menu-generator',
     );
   }
 

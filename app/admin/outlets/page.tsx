@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
@@ -27,6 +28,7 @@ import {
   Home,
   Navigation,
   Crosshair,
+  QrCode,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -149,6 +151,7 @@ const ITEMS_PER_PAGE = 10;
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function OutletsPage() {
+  const router = useRouter();
   // ─── Core state ──────────────────────────────────────────────────────────
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -907,6 +910,13 @@ export default function OutletsPage() {
               </div>
               <div className="flex gap-2">
                 <button
+                  onClick={() => router.push(`/admin/outlet-menu-generator?outlet=${selectedOutlet.id}`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-orange-100 text-orange-800 rounded-lg hover:bg-orange-200 transition-colors font-medium"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  Menu &amp; QR
+                </button>
+                <button
                   onClick={() => openEditForm(selectedOutlet)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors font-medium"
                 >
@@ -1553,6 +1563,14 @@ export default function OutletsPage() {
                             >
                               <Edit className="w-3 h-3" />
                               Edit
+                            </button>
+                            <button
+                              onClick={() => router.push(`/admin/outlet-menu-generator?outlet=${outlet.id}`)}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded hover:bg-orange-200 transition-colors font-medium"
+                              title="Generate Menu QR Code"
+                            >
+                              <QrCode className="w-3 h-3" />
+                              QR
                             </button>
                             <button
                               onClick={() => setShowDeleteConfirm(outlet.id)}
