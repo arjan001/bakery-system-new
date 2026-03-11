@@ -57,6 +57,7 @@ import {
   ShieldCheck,
   FileUp,
   History,
+  QrCode,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -136,6 +137,7 @@ const allNavGroups: NavGroup[] = [
       { label: 'Branch Reports', href: '/admin/outlet-reports', tip: 'Sales, inventory & performance reports per branch', icon: PieChart },
       { label: 'Branch Waste', href: '/admin/outlet-waste', tip: 'Record & track waste at each branch', icon: Recycle },
       { label: 'Branch Settings', href: '/admin/outlet-settings', tip: 'Receipt, POS & display settings per branch', icon: SlidersHorizontal },
+      { label: 'Menu Generator', href: '/admin/outlet-menu-generator', tip: 'Generate QR codes & PDF menus for outlets', icon: QrCode },
     ],
   },
   {
