@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
 import { ChevronRight, Lock, Smartphone, Truck, Store, CheckCircle, Clock, Loader2, ShieldCheck, CreditCard } from 'lucide-react';
+import { CardPaymentModal } from '@/components/card-payment-modal';
 
 type FulfillmentType = 'ship' | 'pickup';
 type PaymentMethod = 'mpesa' | 'card' | 'pay_on_delivery';
@@ -33,6 +34,10 @@ export default function CheckoutPage() {
   const [mpesaMsg, setMpesaMsg] = useState('');
   const [mpesaCheckoutId, setMpesaCheckoutId] = useState('');
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Card payment modal
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardPaymentDone, setCardPaymentDone] = useState(false);
 
   // Track the order number for the success screen
   const [completedOrderNumber, setCompletedOrderNumber] = useState('');
@@ -211,7 +216,7 @@ export default function CheckoutPage() {
     const customerName = `${form.firstName} ${form.lastName}`.trim() || 'Customer';
     const customerPhone = form.phone || mpesaPhone || email;
     const paymentLabel = paymentMethod === 'mpesa' ? 'M-Pesa' : paymentMethod === 'card' ? 'Card' : 'Pay on Delivery/Pickup';
-    const paymentSt = paymentMethod === 'mpesa' && mpesaState === 'done' ? 'Paid' : paymentMethod === 'card' ? 'Pending' : 'Pending';
+    const paymentSt = paymentMethod === 'mpesa' && mpesaState === 'done' ? 'Paid' : paymentMethod === 'card' && cardPaymentDone ? 'Paid' : 'Pending';
     setOrderError('');
     try {
       const { error: orderError } = await supabase.from('orders').insert({
@@ -522,17 +527,38 @@ export default function CheckoutPage() {
                     <CreditCard size={18} className="text-blue-600" />
                     <h3 className="text-sm font-bold text-gray-800">Card Payment</h3>
                   </div>
-                  <p className="text-xs text-gray-500 mb-3">Enter your card details to pay securely.</p>
-                  <input type="text" placeholder="Card number" maxLength={19}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none mb-3" />
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <input type="text" placeholder="MM / YY" maxLength={7}
-                      className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
-                    <input type="text" placeholder="CVV" maxLength={4}
-                      className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
-                  </div>
-                  <input type="text" placeholder="Name on card"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
+                  {cardPaymentDone ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 py-2 text-green-700">
+                        <CheckCircle size={18} />
+                        <span className="text-sm font-bold">Card payment confirmed</span>
+                      </div>
+                      <p className="text-xs text-gray-500">Your card has been charged KES {orderTotal.toLocaleString()}. You can now place your order.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-xs text-gray-500">Click the button below to enter your card details securely.</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowCardModal(true)}
+                        className="w-full py-3 bg-blue-600 text-white font-bold text-sm rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-600/15 active:scale-[0.98]"
+                      >
+                        <CreditCard size={16} />
+                        Pay KES {orderTotal.toLocaleString()} with Card
+                      </button>
+                      <div className="flex items-center justify-center gap-3 pt-1">
+                        <div className="flex items-center gap-1 text-gray-400">
+                          <Lock size={10} />
+                          <span className="text-[10px]">Secure payment</span>
+                        </div>
+                        <span className="text-gray-200">|</span>
+                        <div className="flex items-center gap-1 text-gray-400">
+                          <ShieldCheck size={10} />
+                          <span className="text-[10px]">SSL encrypted</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -621,6 +647,17 @@ export default function CheckoutPage() {
           </div>
         </div>
       </div>
+
+      {/* Card Payment Modal */}
+      <CardPaymentModal
+        isOpen={showCardModal}
+        onClose={() => setShowCardModal(false)}
+        amount={orderTotal}
+        onPaymentComplete={() => {
+          setCardPaymentDone(true);
+          setShowCardModal(false);
+        }}
+      />
     </div>
   );
 }

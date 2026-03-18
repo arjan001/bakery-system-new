@@ -140,3 +140,9 @@
   margin: 10px 14px !important;
   font-size: 13px !important;
 }
+
+/* Card payment modal progress bar animation */
+@keyframes progressBar {
+  from { width: 5%; }
+  to { width: 90%; }
+}
