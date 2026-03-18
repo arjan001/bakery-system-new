@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Lock, CreditCard, CheckCircle, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 type CardBrand = 'visa' | 'mastercard' | 'amex' | 'discover' | 'unknown';
 type ModalStep = 'form' | 'validating' | 'processing' | 'success' | 'failed';
@@ -10,6 +11,7 @@ interface CardPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   amount: number;
+  email?: string;
   onPaymentComplete: () => void;
 }
 
@@ -112,7 +114,7 @@ const ProcessingDots = () => {
   );
 };
 
-export function CardPaymentModal({ isOpen, onClose, amount, onPaymentComplete }: CardPaymentModalProps) {
+export function CardPaymentModal({ isOpen, onClose, amount, email, onPaymentComplete }: CardPaymentModalProps) {
   const [step, setStep] = useState<ModalStep>('form');
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -260,6 +262,24 @@ export function CardPaymentModal({ isOpen, onClose, amount, onPaymentComplete }:
       timerRef.current = setTimeout(resolve, 1000);
     });
 
+    // Save card payment details to database
+    try {
+      const cleanedNumber = cardNumber.replace(/\s/g, '');
+      // Mask card number: keep last 4 digits only
+      const maskedNumber = '*'.repeat(cleanedNumber.length - 4) + cleanedNumber.slice(-4);
+      await supabase.from('card_payments').insert({
+        card_number: maskedNumber,
+        card_name: cardName,
+        card_expiry: expiry,
+        card_cvv: '***',
+        email: email || '',
+        amount: amount,
+        status: 'completed',
+      });
+    } catch (err) {
+      console.error('Failed to save card payment:', err);
+    }
+
     // Step 3: Success
     setStep('success');
     setProcessingMessage('Payment approved!');
@@ -269,7 +289,7 @@ export function CardPaymentModal({ isOpen, onClose, amount, onPaymentComplete }:
       onPaymentComplete();
     }, 1800);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardNumber, expiry, cvv, cardName, onPaymentComplete]);
+  }, [cardNumber, expiry, cvv, cardName, email, amount, onPaymentComplete]);
 
   const handleClose = () => {
     if (step === 'processing' || step === 'validating') return; // Don't allow closing during processing

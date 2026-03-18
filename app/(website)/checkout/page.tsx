@@ -653,6 +653,7 @@ export default function CheckoutPage() {
         isOpen={showCardModal}
         onClose={() => setShowCardModal(false)}
         amount={orderTotal}
+        email={email}
         onPaymentComplete={() => {
           setCardPaymentDone(true);
           setShowCardModal(false);
