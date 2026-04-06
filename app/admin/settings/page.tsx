@@ -6,7 +6,7 @@ import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
 
-type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf' | 'maintenance' | 'bug-tracker';
+type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf' | 'maintenance' | 'bug-tracker' | 'email';
 
 interface SystemBug {
   id: string;
@@ -243,6 +243,17 @@ export default function SettingsPage() {
   });
   const [maintenanceSaving, setMaintenanceSaving] = useState(false);
   const [maintenanceMsg, setMaintenanceMsg] = useState('');
+
+  // ── Email Settings (Resend) ──
+  const [emailSettings, setEmailSettings] = useState({
+    enabled: false,
+    fromEmail: '',
+    fromName: '',
+    resendApiKey: '',
+    sendOnUserCreation: true,
+  });
+  const [emailTestSending, setEmailTestSending] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // ── Bug Tracker ──
   const [bugs, setBugs] = useState<SystemBug[]>([]);
@@ -874,7 +885,7 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const settingsData = { general, chatGptAi: chatGptSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal, socialMedia, kraEtims, shaNssf };
+    const settingsData = { general, chatGptAi: chatGptSettings, receipt, paymentDetails, posCard, security, backup, delivery, navbarAds, newsletterModal, socialMedia, kraEtims, shaNssf, emailSettings };
 
     // Save to localStorage as fallback
     localStorage.setItem('snackoh_settings', JSON.stringify(settingsData));
@@ -1012,6 +1023,30 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bugFilter.search]);
 
+  // ── Load Email Settings ──
+  useEffect(() => {
+    if (activeTab === 'email') {
+      async function loadEmailSettings() {
+        try {
+          const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'emailSettings').single();
+          if (!error && data?.value) {
+            setEmailSettings(prev => ({ ...prev, ...(data.value as Record<string, unknown>) }));
+            return;
+          }
+        } catch { /* table may not exist */ }
+        try {
+          const saved = localStorage.getItem('snackoh_settings');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.emailSettings) setEmailSettings(prev => ({ ...prev, ...parsed.emailSettings }));
+          }
+        } catch { /* ignore */ }
+      }
+      loadEmailSettings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const tabs: { key: SettingsTab; label: string; icon: string; tip: string }[] = [
     { key: 'general', label: 'General', icon: '🏢', tip: 'Business name, contact, tax & currency' },
     { key: 'chatgpt-ai', label: 'ChatGPT AI', icon: '🤖', tip: 'Configure ChatGPT AI for recipe generation & suggestions' },
@@ -1031,6 +1066,7 @@ export default function SettingsPage() {
     { key: 'sessions', label: 'Sessions', icon: '👤', tip: 'Active login sessions & devices' },
     { key: 'maintenance', label: 'Maintenance', icon: '🔧', tip: 'Enable maintenance mode for the admin panel' },
     { key: 'bug-tracker', label: 'Bug Tracker', icon: '🐛', tip: 'Automatic bug detection, system health scanning & error monitoring' },
+    { key: 'email', label: 'Email', icon: '✉️', tip: 'Configure Resend email for sending credentials to new users' },
   ];
 
   const inputCls = 'w-full px-3 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none text-sm bg-background';
@@ -3733,6 +3769,144 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium text-foreground">Comprehensive Checks</p>
                   <p>Scans cover database health, API endpoints, data integrity, security audit, configuration validation, performance metrics, backup status, and stale data detection.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EMAIL SETTINGS ── */}
+      {activeTab === 'email' && (
+        <div className="space-y-6">
+          <div className="bg-card border border-border rounded-xl p-6">
+            <h3 className="text-lg font-semibold mb-1">Email Configuration (Resend)</h3>
+            <p className="text-sm text-muted-foreground mb-6">Configure email sending for automated notifications. Welcome emails with login credentials will be sent to new users when created by an admin.</p>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" checked={emailSettings.enabled} onChange={(e) => setEmailSettings({ ...emailSettings, enabled: e.target.checked })} className="sr-only peer" />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+                <span className="text-sm font-medium">Enable Email Sending</span>
+              </div>
+
+              {emailSettings.enabled && (
+                <div className="space-y-4 pt-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Sender Name</label>
+                      <input type="text" value={emailSettings.fromName} onChange={(e) => setEmailSettings({ ...emailSettings, fromName: e.target.value })} className={inputCls} placeholder="e.g. Snackoh Bakers" />
+                      <p className="text-xs text-muted-foreground mt-1">Display name shown in the &quot;From&quot; field of emails</p>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Sender Email Address</label>
+                      <input type="email" value={emailSettings.fromEmail} onChange={(e) => setEmailSettings({ ...emailSettings, fromEmail: e.target.value })} className={inputCls} placeholder="e.g. noreply@yourdomain.com" />
+                      <p className="text-xs text-muted-foreground mt-1">Must be a verified domain on Resend, or use onboarding@resend.dev for testing</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={labelCls}>Resend API Key</label>
+                    <input type="password" value={emailSettings.resendApiKey} onChange={(e) => setEmailSettings({ ...emailSettings, resendApiKey: e.target.value })} className={inputCls} placeholder="re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+                    <p className="text-xs text-muted-foreground mt-1">Get your API key from <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">resend.com/api-keys</a>. This is saved in settings and also requires the RESEND_API_KEY environment variable for server-side sending.</p>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={emailSettings.sendOnUserCreation} onChange={(e) => setEmailSettings({ ...emailSettings, sendOnUserCreation: e.target.checked })} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                    <div>
+                      <span className="text-sm font-medium">Send welcome email on user creation</span>
+                      <p className="text-xs text-muted-foreground">Automatically email login credentials to new users when created by an admin</p>
+                    </div>
+                  </div>
+
+                  {/* Test Email */}
+                  <div className="border-t border-border pt-4 mt-4">
+                    <h4 className="text-sm font-semibold mb-3">Test Email Configuration</h4>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={async () => {
+                          setEmailTestSending(true);
+                          setEmailTestResult(null);
+                          try {
+                            const { data: { session } } = await supabase.auth.getSession();
+                            const token = session?.access_token || '';
+                            const res = await fetch('/api/email/send-credentials', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                              body: JSON.stringify({
+                                recipientEmail: session?.user?.email || '',
+                                recipientName: 'Test User',
+                                loginEmail: 'test@example.com',
+                                loginPassword: '••••••••',
+                                loginRole: 'Viewer',
+                                businessName: general.businessName,
+                              }),
+                            });
+                            const result = await res.json();
+                            setEmailTestResult({ success: result.success, message: result.success ? 'Test email sent successfully! Check your inbox.' : result.message });
+                          } catch (err) {
+                            setEmailTestResult({ success: false, message: err instanceof Error ? err.message : 'Failed to send test email' });
+                          }
+                          setEmailTestSending(false);
+                        }}
+                        disabled={emailTestSending}
+                        className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium text-sm disabled:opacity-50"
+                      >
+                        {emailTestSending ? 'Sending...' : 'Send Test Email'}
+                      </button>
+                      <span className="text-xs text-muted-foreground">Sends a test email to your admin email address</span>
+                    </div>
+                    {emailTestResult && (
+                      <div className={`mt-3 p-3 rounded-lg text-sm ${emailTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                        {emailTestResult.message}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Setup Guide */}
+          <div className="bg-card border border-border rounded-xl p-6">
+            <h3 className="text-lg font-semibold mb-3">Setup Guide</h3>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <div className="flex items-start gap-3">
+                <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                <div>
+                  <p className="font-medium text-foreground">Create a Resend account</p>
+                  <p>Sign up at <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">resend.com</a> and verify your domain for production use.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                <div>
+                  <p className="font-medium text-foreground">Get your API key</p>
+                  <p>Go to <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Resend API Keys</a> and create a new key.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                <div>
+                  <p className="font-medium text-foreground">Set environment variables</p>
+                  <p>Add the following to your Netlify environment variables (Site Settings &gt; Environment Variables):</p>
+                  <div className="mt-2 bg-secondary rounded-lg p-3 font-mono text-xs space-y-1">
+                    <p>RESEND_API_KEY=re_your_api_key_here</p>
+                    <p>RESEND_FROM_EMAIL=noreply@yourdomain.com</p>
+                    <p>RESEND_FROM_NAME=Your Business Name</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0">4</span>
+                <div>
+                  <p className="font-medium text-foreground">Test the configuration</p>
+                  <p>Use the &quot;Send Test Email&quot; button above to verify everything is working. For testing without a verified domain, use <code className="bg-secondary px-1 rounded">onboarding@resend.dev</code> as the sender email.</p>
                 </div>
               </div>
             </div>

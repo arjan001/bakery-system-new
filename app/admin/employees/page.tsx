@@ -30,7 +30,9 @@ interface Employee {
   status: 'Active' | 'Inactive' | 'Leave' | 'Probation';
   nextOfKin: string;
   nextOfKinPhone: string;
-  address: string;
+  postalAddress: string;
+  postalCode: string;
+  town: string;
   idNumber: string;
   idDocumentUrl: string;
   profilePhotoUrl: string;
@@ -90,7 +92,9 @@ function dbToEmployee(row: Record<string, unknown>): Employee {
     status: (row.status as Employee['status']) || 'Active',
     nextOfKin: (row.next_of_kin as string) || '',
     nextOfKinPhone: (row.next_of_kin_phone as string) || '',
-    address: (row.address as string) || '',
+    postalAddress: (row.postal_address as string) || (row.address as string) || '',
+    postalCode: (row.postal_code as string) || '',
+    town: (row.town as string) || '',
     idNumber: (row.id_number as string) || '',
     idDocumentUrl: (row.id_document_url as string) || '',
     profilePhotoUrl: (row.profile_photo_url as string) || '',
@@ -226,7 +230,7 @@ export default function EmployeesPage() {
         const defaultEmptyForm: Employee = {
           id: '', employeeIdNumber: '', firstName: '', lastName: '', designation: 'Mr',
           email: '', phone: '', department: 'Administration', role: '', category: 'Admin',
-          hireDate: '', status: 'Active', nextOfKin: '', nextOfKinPhone: '', address: '',
+          hireDate: '', status: 'Active', nextOfKin: '', nextOfKinPhone: '', postalAddress: '', postalCode: '', town: '',
           idNumber: '', idDocumentUrl: '', profilePhotoUrl: '', driverLicenseId: '', driverLicenseExpiry: '',
           hygieneCertNo: '', hygieneCertExpiry: '', certificates: [], bankName: '',
           bankAccountNo: '', nhifNo: '', nssfNo: '', kraPin: '', emergencyContact: '',
@@ -398,7 +402,9 @@ export default function EmployeesPage() {
     status: 'Active',
     nextOfKin: '',
     nextOfKinPhone: '',
-    address: '',
+    postalAddress: '',
+    postalCode: '',
+    town: '',
     idNumber: '',
     idDocumentUrl: '',
     profilePhotoUrl: '',
@@ -430,7 +436,7 @@ export default function EmployeesPage() {
   const [loginPassword, setLoginPassword] = useState('');
 
   const departments = ['Production', 'Sales', 'Delivery', 'Administration', 'Quality Control', 'Packaging', 'Cleaning'];
-  const [categories, setCategories] = useState<string[]>(['Baker', 'Cashier', 'Cleaner', 'Driver', 'Admin', 'Manager', 'Outlet Staff', 'Packer', 'Quality', 'Rider', 'Sales', 'Supervisor']);
+  const [categories, setCategories] = useState<string[]>(['Baker', 'Cashier', 'Cleaner', 'Driver', 'Admin', 'Manager', 'Outlet Staff', 'Packer', 'Quality', 'Rider', 'Sales', 'Supervisor', 'Accounts and Finance', 'Intern']);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const designations: Employee['designation'][] = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof'];
@@ -559,6 +565,30 @@ export default function EmployeesPage() {
           setSaveError(localError);
         } else {
           setSaveSuccess(prev => (prev ? prev + ' | ' : '') + `System login created for ${dataToSave.loginEmail}`);
+          // Send welcome email with credentials to the new user
+          try {
+            const emailRes = await fetch('/api/email/send-credentials', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                recipientEmail: dataToSave.email || dataToSave.loginEmail,
+                recipientName: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
+                loginEmail: dataToSave.loginEmail,
+                loginPassword: loginPassword,
+                loginRole: dataToSave.loginRole,
+              }),
+            });
+            const emailResult = await emailRes.json();
+            if (emailResult.success) {
+              setSaveSuccess(prev => (prev ? prev + ' | ' : '') + `Welcome email sent to ${dataToSave.email || dataToSave.loginEmail}`);
+            } else {
+              setSaveError(prev => (prev ? prev + ' | ' : '') + `Email not sent: ${emailResult.message}`);
+            }
+          } catch (emailErr) {
+            console.error('Email sending failed:', emailErr);
+            // Email failure is non-critical, don't block the user creation
+            setSaveError(prev => (prev ? prev + ' | ' : '') + 'Welcome email could not be sent. User was created successfully.');
+          }
         }
       } catch (authErr) {
         console.error('Auth creation failed:', authErr);
@@ -974,9 +1004,19 @@ export default function EmployeesPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Address</label>
-                  <input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Postal Address</label>
+                    <input type="text" value={formData.postalAddress} onChange={(e) => setFormData({ ...formData, postalAddress: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" placeholder="P.O. Box 123" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Postal Code</label>
+                    <input type="text" value={formData.postalCode} onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" placeholder="00100" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Town</label>
+                    <input type="text" value={formData.town} onChange={(e) => setFormData({ ...formData, town: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" placeholder="Nairobi" />
+                  </div>
                 </div>
                 <div className="border-t border-border pt-4">
                   <p className="text-sm font-medium mb-3">Next of Kin / Emergency Contacts</p>
@@ -1472,7 +1512,9 @@ export default function EmployeesPage() {
                 <div><span className="text-muted-foreground">Email:</span> <span className="font-medium ml-2">{showDetail.email || '---'}</span></div>
                 <div><span className="text-muted-foreground">Phone:</span> <span className="font-medium ml-2">{showDetail.phone || '---'}</span></div>
                 <div><span className="text-muted-foreground">National ID:</span> <span className="font-medium ml-2">{showDetail.idNumber || '---'}</span></div>
-                <div className="col-span-3"><span className="text-muted-foreground">Address:</span> <span className="font-medium ml-2">{showDetail.address || '---'}</span></div>
+                <div><span className="text-muted-foreground">Postal Address:</span> <span className="font-medium ml-2">{showDetail.postalAddress || '---'}</span></div>
+                <div><span className="text-muted-foreground">Postal Code:</span> <span className="font-medium ml-2">{showDetail.postalCode || '---'}</span></div>
+                <div><span className="text-muted-foreground">Town:</span> <span className="font-medium ml-2">{showDetail.town || '---'}</span></div>
                 {showDetail.idDocumentUrl && (
                   <div className="col-span-3 mt-2">
                     <span className="text-muted-foreground">ID Document:</span>
@@ -1496,6 +1538,8 @@ export default function EmployeesPage() {
                     showDetail.category === 'Sales' ? 'bg-purple-100 text-purple-800' :
                     showDetail.category === 'Rider' ? 'bg-cyan-100 text-cyan-800' :
                     showDetail.category === 'Cleaner' ? 'bg-lime-100 text-lime-800' :
+                    showDetail.category === 'Accounts and Finance' ? 'bg-emerald-100 text-emerald-800' :
+                    showDetail.category === 'Intern' ? 'bg-orange-100 text-orange-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>{showDetail.category}</span>
                 </span></div>
@@ -1743,6 +1787,8 @@ export default function EmployeesPage() {
                       emp.category === 'Admin' ? 'bg-teal-100 text-teal-800' :
                       emp.category === 'Rider' ? 'bg-cyan-100 text-cyan-800' :
                       emp.category === 'Cleaner' ? 'bg-lime-100 text-lime-800' :
+                      emp.category === 'Accounts and Finance' ? 'bg-emerald-100 text-emerald-800' :
+                      emp.category === 'Intern' ? 'bg-orange-100 text-orange-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>{emp.category}</span>
                   </td>
