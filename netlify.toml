@@ -1,3 +1,4 @@
+# Netlify build configuration
 [build]
   publish = ".next"
 
