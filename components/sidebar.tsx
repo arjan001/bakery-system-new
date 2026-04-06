@@ -156,9 +156,9 @@ const allNavGroups: NavGroup[] = [
     color: 'border-l-teal-500',
     items: [
       { label: 'Employees', href: '/admin/employees', tip: 'Staff profiles, certificates & payroll info', icon: UserCheck },
+      { label: 'User Creation', href: '/admin/roles-permissions', tip: 'Create users and assign system access permissions', icon: Shield },
       { label: 'Shift Management', href: '/admin/shifts', tip: 'Employee shifts, schedules & shift reports', icon: Clock },
       { label: 'Productivity Report', href: '/admin/employee-productivity', tip: 'Employee KPI tracking, performance & productivity metrics', icon: Activity },
-      { label: 'Roles & Permissions', href: '/admin/roles-permissions', tip: 'Access control — who can do what', icon: Shield },
     ],
   },
   {
@@ -310,7 +310,11 @@ export function Sidebar() {
   // Memoize filtered nav groups to avoid recalculating on every render
   const navGroups = useMemo(() => {
     if (permsLoading) return [];
-    if (isAdmin) return allNavGroups;
+    if (isAdmin) {
+      const peopleGroup = allNavGroups.find(group => group.title === 'PEOPLE');
+      const remainingGroups = allNavGroups.filter(group => group.title !== 'PEOPLE');
+      return peopleGroup ? [peopleGroup, ...remainingGroups] : allNavGroups;
+    }
 
     const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin, isOutletAdmin);
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useUserPermissions } from '@/lib/user-permissions';
 
 interface DailySales {
   date: string;
@@ -14,6 +15,7 @@ interface DailySales {
 }
 
 export default function Dashboard() {
+  const { isAdmin } = useUserPermissions();
   const [stats, setStats] = useState({ recipes: 0, products: 0, employees: 0, revenue: 0, orders: 0, inventory: 0, outlets: 0, pendingRequisitions: 0 });
   const [recentSales, setRecentSales] = useState<{ receipt: string; customer: string; total: number; method: string; date: string }[]>([]);
   const [outletsList, setOutletsList] = useState<{ name: string; type: string; status: string; is_main: boolean }[]>([]);
@@ -202,10 +204,11 @@ export default function Dashboard() {
               <p className="text-[10px] md:text-xs text-muted-foreground mb-0.5">Total Orders</p>
               <p className="text-sm md:text-lg font-bold">{stats.orders}</p>
             </div>
-            <div className="border border-border rounded-lg p-3 bg-card hover:shadow-sm transition-shadow">
-              <p className="text-[10px] md:text-xs text-muted-foreground mb-0.5">Active Employees</p>
+            <a href="/admin/employees" className="border border-border rounded-lg p-3 bg-card hover:shadow-sm transition-shadow block">
+              <p className="text-[10px] md:text-xs text-muted-foreground mb-0.5">Employees</p>
               <p className="text-sm md:text-lg font-bold">{stats.employees}</p>
-            </div>
+              <p className="text-[10px] text-primary">View Employee Management</p>
+            </a>
             <div className="border border-border rounded-lg p-3 bg-card hover:shadow-sm transition-shadow">
               <p className="text-[10px] md:text-xs text-muted-foreground mb-0.5">Active Outlets</p>
               <p className="text-sm md:text-lg font-bold text-orange-600">{stats.outlets}</p>
@@ -321,6 +324,12 @@ export default function Dashboard() {
               <div className="border border-border rounded-lg p-4 md:p-6">
                 <h2 className="mb-3 md:mb-4 font-semibold text-sm md:text-base">Quick Actions</h2>
                 <div className="space-y-1.5 md:space-y-2">
+                  {isAdmin && (
+                    <>
+                      <a href="/admin/roles-permissions" className="block px-3 md:px-4 py-2 md:py-2.5 text-xs md:text-sm bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors font-medium">User Creation</a>
+                      <a href="/admin/employees" className="block px-3 md:px-4 py-2 md:py-2.5 text-xs md:text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors font-medium border border-green-200">Employee Management</a>
+                    </>
+                  )}
                   <a href="/admin/pos" className="block px-3 md:px-4 py-2 md:py-2.5 text-xs md:text-sm bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors font-medium">Open POS</a>
                   <a href="/admin/reports" className="block px-3 md:px-4 py-2 md:py-2.5 text-xs md:text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors font-medium border border-green-200">View Reports</a>
                   <a href="/admin/shifts" className="block px-3 md:px-4 py-2 md:py-2.5 text-xs md:text-sm bg-secondary rounded-lg hover:bg-muted transition-colors">Shift Management</a>
