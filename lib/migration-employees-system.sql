@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS employee_categories (
 INSERT INTO employee_categories (name) VALUES
   ('Baker'), ('Driver'), ('Sales'), ('Admin'),
   ('Quality'), ('Packer'), ('Supervisor'), ('Manager'),
-  ('Rider'), ('Cleaner'), ('Cashier')
+  ('Rider'), ('Cleaner'), ('Cashier'), ('Outlet Staff'),
+  ('Accounts and Finance'), ('Intern')
 ON CONFLICT (name) DO NOTHING;
 
 -- ── BUSINESS SETTINGS TABLE ──

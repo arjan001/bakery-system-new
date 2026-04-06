@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS employees (
   status TEXT DEFAULT 'Active',
   next_of_kin TEXT,
   next_of_kin_phone TEXT,
-  address TEXT,
+  postal_address TEXT,
+  postal_code TEXT,
+  town TEXT,
   id_number TEXT,
   profile_photo_url TEXT,
   driver_license_id TEXT,
@@ -734,7 +736,8 @@ CREATE TABLE IF NOT EXISTS employee_categories (
 INSERT INTO employee_categories (name) VALUES
   ('Baker'), ('Driver'), ('Sales'), ('Admin'),
   ('Quality'), ('Packer'), ('Supervisor'), ('Manager'),
-  ('Rider'), ('Cleaner'), ('Cashier')
+  ('Rider'), ('Cleaner'), ('Cashier'), ('Outlet Staff'),
+  ('Accounts and Finance'), ('Intern')
 ON CONFLICT (name) DO NOTHING;
 
 -- =============================================
