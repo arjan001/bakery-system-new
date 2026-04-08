@@ -194,6 +194,138 @@ SELECT v.id,
 FROM changelog_versions v WHERE v.version = 'v2.0.1'
 ON CONFLICT DO NOTHING;
 
+-- Version v2.0.5 — March 11, 2026
+INSERT INTO changelog_versions (version, release_date, summary) VALUES
+  ('v2.0.5', 'March 11, 2026', 'PDF report generation, auto-updating changelog system, automatic bug tracker, and dynamic QR code menus.')
+ON CONFLICT (version) DO NOTHING;
+
+-- Entries for v2.0.5
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Downloadable PDF Report of Changes & Security Fixes',
+  'New module to generate and download a PDF report summarizing all implemented changes and security fixes for stakeholder review.',
+  '["PDF generation from changelog data", "Includes security fixes and feature summaries", "Downloadable from admin changelog page"]'::jsonb,
+  'completed', 'feature', '2026-03-11'
+FROM changelog_versions v WHERE v.version = 'v2.0.5'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Auto-Updating Changelog System',
+  'Implemented a smart auto-updating changelog backed by Supabase database tables. Includes changelog logger utility, migration SQL, API route, and admin UI with version management.',
+  '["Changelog versions and entries stored in Supabase", "Automatic version bumping (major/minor/patch)", "Duplicate detection to prevent repeated entries", "Admin UI for viewing, adding, and managing changelog entries", "API route for fetching and creating entries", "Changelog logger utility for programmatic use"]'::jsonb,
+  'completed', 'feature', '2026-03-11'
+FROM changelog_versions v WHERE v.version = 'v2.0.5'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Automatic Bug Tracker in Admin Settings',
+  'New bug tracker module in admin settings that automatically scans the system for errors and issues. Includes scheduled scans via Netlify Functions and a management UI.',
+  '["Bug scanning API with automatic error detection", "Scheduled background scans via Netlify Functions", "Bug management UI in admin settings panel", "Categorized bug reporting and tracking"]'::jsonb,
+  'completed', 'feature', '2026-03-11'
+FROM changelog_versions v WHERE v.version = 'v2.0.5'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Dynamic QR Code Menus Based on Location',
+  'New outlet menu generator that creates dynamic QR codes linking to location-specific menus. Each outlet gets a unique public menu page accessible via QR scan.',
+  '["Outlet menu generator page in admin panel", "QR code generation per outlet location", "Public menu pages at /menu/[outletId]", "Sidebar navigation link added", "User permissions updated for outlet management"]'::jsonb,
+  'completed', 'feature', '2026-03-11'
+FROM changelog_versions v WHERE v.version = 'v2.0.5'
+ON CONFLICT DO NOTHING;
+
+-- Version v2.0.6 — March 18, 2026
+INSERT INTO changelog_versions (version, release_date, summary) VALUES
+  ('v2.0.6', 'March 18, 2026', 'Card payment modal, payment detail persistence, and card display improvements.')
+ON CONFLICT (version) DO NOTHING;
+
+-- Entries for v2.0.6
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Card Payment Modal (Stripe/Paystack Style)',
+  'Implemented a custom card payment modal on the checkout page similar to Stripe and Paystack. Supports card number, expiry, CVV input with validation and formatting.',
+  '["Full card payment modal component", "Card number formatting and validation", "Integrated into checkout payment flow", "Custom styling matching Stripe/Paystack design"]'::jsonb,
+  'completed', 'feature', '2026-03-18'
+FROM changelog_versions v WHERE v.version = 'v2.0.6'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Card Payment Details Saved to Database',
+  'Fixed issue where card payment details were not being persisted to the database. Ensured card transaction data is properly saved after successful payment.',
+  '["Card payment data now persisted to database", "Transaction records created on successful payment", "Checkout flow updated to save payment metadata"]'::jsonb,
+  'completed', 'fix', '2026-03-18'
+FROM changelog_versions v WHERE v.version = 'v2.0.6'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Full Card Details Visible Without Asterisks',
+  'Updated card payment display to show complete card details without masking, ensuring administrators can see full transaction information.',
+  '["Removed asterisk masking from card details display", "Full card details visible in admin views"]'::jsonb,
+  'completed', 'fix', '2026-03-18'
+FROM changelog_versions v WHERE v.version = 'v2.0.6'
+ON CONFLICT DO NOTHING;
+
+-- Version v2.1.0 — April 6, 2026
+INSERT INTO changelog_versions (version, release_date, summary) VALUES
+  ('v2.1.0', 'April 6, 2026', 'Admin panel reordering, postal address fields, new user categories, email notifications, and style fixes.')
+ON CONFLICT (version) DO NOTHING;
+
+-- Entries for v2.1.0
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Admin Panel Reordering — User & Employee Management Priority',
+  'Reordered admin panel layout and sidebar navigation to prioritize user creation and employee management workflows.',
+  '["Admin dashboard layout reordered", "Sidebar navigation updated for priority access", "User creation and employee management promoted to top"]'::jsonb,
+  'completed', 'feature', '2026-04-06'
+FROM changelog_versions v WHERE v.version = 'v2.1.0'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Separate Postal Address Fields & New User Categories',
+  'Split postal address into individual fields (street, city, postal code, etc.) for better data organization. Added new user category options in employee/user management.',
+  '["Postal address split into separate database columns", "SQL migration for postal address schema", "New user categories added to settings", "Employee form updated with separate address fields", "Database schema updated"]'::jsonb,
+  'completed', 'feature', '2026-04-06'
+FROM changelog_versions v WHERE v.version = 'v2.1.0'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Email Notifications for New Users',
+  'Implemented email notification system that sends login credentials to newly created users. Includes a dedicated API route for sending credential emails.',
+  '["API route for sending credential emails", "Automatic email on new user creation", "Environment variables configured for email service", "Email template with login details"]'::jsonb,
+  'completed', 'feature', '2026-04-06'
+FROM changelog_versions v WHERE v.version = 'v2.1.0'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Build & Style Fix for cPanel Deployment',
+  'Resolved missing styles after npm build and upload to cPanel. Fixed CSS import paths and added Netlify configuration for proper asset handling.',
+  '["Fixed CSS import paths in globals.css and layout.tsx", "Updated netlify.toml for asset configuration", "Styles now load correctly after build and deployment"]'::jsonb,
+  'completed', 'fix', '2026-04-06'
+FROM changelog_versions v WHERE v.version = 'v2.1.0'
+ON CONFLICT DO NOTHING;
+
+-- Version v2.1.1 — April 8, 2026
+INSERT INTO changelog_versions (version, release_date, summary) VALUES
+  ('v2.1.1', 'April 8, 2026', 'Employee profile delete and update fixes in management system.')
+ON CONFLICT (version) DO NOTHING;
+
+-- Entries for v2.1.1
+INSERT INTO changelog_entries (version_id, title, description, details, status, category, date)
+SELECT v.id,
+  'Employee Profile Delete & Update Fixes',
+  'Fixed issues with deleting and updating employee profiles in the management system. Added dedicated delete-user API route and improved the employee management UI with proper error handling.',
+  '["New /api/auth/delete-user API route for safe user deletion", "Employee page updated with improved delete and update flows", "Modal component refined for confirmation dialogs", "Proper error handling and feedback on profile operations"]'::jsonb,
+  'completed', 'fix', '2026-04-08'
+FROM changelog_versions v WHERE v.version = 'v2.1.1'
+ON CONFLICT DO NOTHING;
+
 -- =============================================
 -- 5. SEED SYSTEM HEALTH DATA
 -- =============================================
@@ -205,7 +337,11 @@ INSERT INTO system_health (label, value, status) VALUES
   ('Backup System', 'Database backup API available', 'healthy'),
   ('Family Bank C2B', 'Awaiting bank credentials', 'pending'),
   ('Family Bank B2C', 'Awaiting bank credentials', 'pending'),
-  ('M-Pesa STK Push', 'Operational on checkout', 'healthy')
+  ('M-Pesa STK Push', 'Operational on checkout', 'healthy'),
+  ('Bug Tracker', 'Automated scanning active', 'healthy'),
+  ('QR Code Menus', 'Dynamic per-outlet menus operational', 'healthy'),
+  ('Card Payments', 'Modal payment flow operational', 'healthy'),
+  ('Email Notifications', 'Credential emails active', 'healthy')
 ON CONFLICT (label) DO UPDATE SET
   value = EXCLUDED.value,
   status = EXCLUDED.status,
