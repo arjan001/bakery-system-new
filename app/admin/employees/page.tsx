@@ -431,7 +431,15 @@ export default function EmployeesPage() {
     lastActivity: null,
   };
 
-  const [formData, setFormData] = useState<Employee>(emptyForm);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [formData, setFormDataRaw] = useState<Employee>(emptyForm);
+  const setFormData = useCallback((val: Employee | ((prev: Employee) => Employee)) => {
+    setFormDataRaw(val);
+    setHasUnsavedChanges(true);
+  }, []);
   const [newCert, setNewCert] = useState({ name: '', number: '', issueDate: '', expiryDate: '' });
   const [loginPassword, setLoginPassword] = useState('');
 
@@ -456,6 +464,7 @@ export default function EmployeesPage() {
     e.preventDefault();
     setSaveError(null);
     setSaveSuccess(null);
+    setIsSaving(true);
     let localError: string | null = null;
     const dataToSave = { ...formData };
     if (autoGenerateId && !editingId && !dataToSave.employeeIdNumber) {
@@ -604,10 +613,13 @@ export default function EmployeesPage() {
         // Only close modal and reset form on success
         setEditingId(null);
         setLoginPassword('');
+        setHasUnsavedChanges(false);
         resetForm();
         setShowForm(false);
       }
     }
+
+    setIsSaving(false);
 
     if (localError) {
       // Keep the modal open so the user can see the error and retry
@@ -619,19 +631,21 @@ export default function EmployeesPage() {
   };
 
   const resetForm = () => {
-    setFormData(emptyForm);
+    setFormDataRaw(emptyForm);
     setNewCert({ name: '', number: '', issueDate: '', expiryDate: '' });
     setActiveFormTab('personal');
     setAutoGenerateId(true);
     setLoginPassword('');
+    setHasUnsavedChanges(false);
   };
 
   const handleEdit = (emp: Employee) => {
-    setFormData(emp);
+    setFormDataRaw(emp);
     setEditingId(emp.id);
     setActiveFormTab('personal');
     setAutoGenerateId(!emp.employeeIdNumber);
     setShowForm(true);
+    setHasUnsavedChanges(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -681,9 +695,19 @@ export default function EmployeesPage() {
   };
 
   const closeModal = () => {
+    if (hasUnsavedChanges) {
+      setShowCloseConfirm(true);
+      return;
+    }
+    forceCloseModal();
+  };
+
+  const forceCloseModal = () => {
     setShowForm(false);
     setEditingId(null);
     resetForm();
+    setHasUnsavedChanges(false);
+    setShowCloseConfirm(false);
   };
 
   const handleAddCert = () => {
@@ -924,6 +948,7 @@ export default function EmployeesPage() {
               setShowForm(true);
               setEditingId(null);
               resetForm();
+              setHasUnsavedChanges(false);
             }}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium whitespace-nowrap"
           >
@@ -933,10 +958,10 @@ export default function EmployeesPage() {
       </div>
 
       {/* Employee Form Modal */}
-      <Modal isOpen={showForm} onClose={closeModal} title={editingId ? 'Edit Employee' : 'Onboard New Employee'} size="3xl">
+      <Modal isOpen={showForm} onClose={closeModal} title={editingId ? 'Edit Employee' : 'Onboard New Employee'} size="3xl" preventBackdropClose>
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Form Tabs */}
-          <div className="flex gap-2 border-b border-border pb-2 overflow-x-auto">
+          <div className="flex items-center gap-2 border-b border-border pb-2 overflow-x-auto">
             {formTabs.map(tab => (
               <button
                 key={tab}
@@ -951,6 +976,12 @@ export default function EmployeesPage() {
                 {formTabLabels[tab]}
               </button>
             ))}
+            {hasUnsavedChanges && (
+              <span className="ml-auto text-xs text-amber-600 font-medium flex items-center gap-1 whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Unsaved changes
+              </span>
+            )}
           </div>
 
           <div className="max-h-[28rem] overflow-y-auto space-y-4 pr-1">
@@ -1340,7 +1371,7 @@ export default function EmployeesPage() {
                         <input
                           type="password"
                           value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
+                          onChange={(e) => { setLoginPassword(e.target.value); setHasUnsavedChanges(true); }}
                           className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
                           placeholder={editingId ? 'Leave blank to keep current password' : 'Set login password (min 6 chars)'}
                           minLength={6}
@@ -1393,9 +1424,39 @@ export default function EmployeesPage() {
 
           <div className="flex gap-2 justify-end pt-4 border-t border-border">
             <button type="button" onClick={closeModal} className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors">Cancel</button>
-            <button type="submit" className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium">{editingId ? 'Update' : 'Create'} Employee</button>
+            <button type="submit" disabled={isSaving} className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+              {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isSaving ? 'Saving...' : `${editingId ? 'Update' : 'Create'} Employee`}
+            </button>
           </div>
         </form>
+
+        {/* Unsaved changes confirmation dialog */}
+        {showCloseConfirm && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/50" />
+            <div className="relative bg-card border border-border rounded-lg shadow-lg p-6 mx-4 max-w-sm w-full">
+              <h3 className="text-lg font-semibold text-foreground mb-2">Unsaved Changes</h3>
+              <p className="text-sm text-muted-foreground mb-4">You have unsaved changes. Are you sure you want to close without saving? All entered data will be lost.</p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowCloseConfirm(false)}
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-secondary transition-colors text-sm"
+                >
+                  Keep Editing
+                </button>
+                <button
+                  type="button"
+                  onClick={forceCloseModal}
+                  className="px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:opacity-90 text-sm font-medium"
+                >
+                  Discard Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Add Category Modal */}
