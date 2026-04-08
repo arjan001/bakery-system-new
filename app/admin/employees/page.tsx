@@ -601,13 +601,19 @@ export default function EmployeesPage() {
       await fetchEmployees();
       if (!localError) {
         setSaveSuccess(`Employee ${dataToSave.firstName} ${dataToSave.lastName} ${editingId ? 'updated' : 'created'} successfully.`);
+        // Only close modal and reset form on success
+        setEditingId(null);
+        setLoginPassword('');
+        resetForm();
+        setShowForm(false);
       }
     }
 
-    setEditingId(null);
-    setLoginPassword('');
-    resetForm();
-    setShowForm(false);
+    if (localError) {
+      // Keep the modal open so the user can see the error and retry
+      return;
+    }
+
     // Auto-dismiss messages after 5 seconds
     setTimeout(() => { setSaveError(null); setSaveSuccess(null); }, 5000);
   };
@@ -631,11 +637,38 @@ export default function EmployeesPage() {
   const handleDelete = async (id: string) => {
     // Prevent deletion of the main super admin
     if (mainSuperAdminId && id === mainSuperAdminId) return;
-    if (confirm('Are you sure you want to delete this employee?')) {
+    if (confirm('Are you sure you want to delete this employee? This will also remove their system login if they have one.')) {
       const emp = employees.find(e => e.id === id);
       try {
+        // Delete from employees table
         const { error } = await supabase.from('employees').delete().eq('id', id);
         if (error) throw error;
+
+        // Also delete from users table to prevent ghost re-appearance
+        // (fetchEmployees re-adds auth users not in employees table)
+        const empEmail = (emp?.loginEmail || emp?.email || '').toLowerCase();
+        if (empEmail) {
+          await supabase.from('users').delete().eq('email', empEmail);
+        }
+        // Also try deleting by id from users table (for auth-only users)
+        await supabase.from('users').delete().eq('id', id);
+
+        // Delete the Supabase Auth user via server-side API to fully remove system access
+        if (empEmail) {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token || '';
+            await fetch('/api/auth/delete-user', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ email: empEmail }),
+            });
+          } catch {
+            // Auth user deletion is best-effort; the users table cleanup above
+            // already prevents ghost re-appearance in the employee list
+          }
+        }
+
         logAudit({
           action: 'DELETE',
           module: 'Employees',
@@ -1502,6 +1535,12 @@ export default function EmployeesPage() {
                 {showDetail.employeeIdNumber && (
                   <p className="text-xs text-muted-foreground font-mono mt-1">ID: {showDetail.employeeIdNumber}</p>
                 )}
+                <button
+                  onClick={() => { setShowDetail(null); handleEdit(showDetail); }}
+                  className="mt-2 px-4 py-1.5 text-xs bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors font-semibold border border-blue-200"
+                >
+                  Edit Full Profile
+                </button>
               </div>
             </div>
 
@@ -1527,25 +1566,112 @@ export default function EmployeesPage() {
               </div>
             </div>
 
-            {/* Employment Information */}
+            {/* Employment Information — Inline Editable */}
             <div className="border-t border-border pt-4">
               <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Employment Information</h4>
               <div className="grid grid-cols-3 gap-x-6 gap-y-3 text-sm">
-                <div><span className="text-muted-foreground">Category:</span> <span className="font-medium ml-2">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    showDetail.category === 'Baker' ? 'bg-amber-100 text-amber-800' :
-                    showDetail.category === 'Driver' ? 'bg-blue-100 text-blue-800' :
-                    showDetail.category === 'Sales' ? 'bg-purple-100 text-purple-800' :
-                    showDetail.category === 'Rider' ? 'bg-cyan-100 text-cyan-800' :
-                    showDetail.category === 'Cleaner' ? 'bg-lime-100 text-lime-800' :
-                    showDetail.category === 'Accounts and Finance' ? 'bg-emerald-100 text-emerald-800' :
-                    showDetail.category === 'Intern' ? 'bg-orange-100 text-orange-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>{showDetail.category}</span>
-                </span></div>
-                <div><span className="text-muted-foreground">Department:</span> <span className="font-medium ml-2">{showDetail.department}</span></div>
+                <div>
+                  <span className="text-muted-foreground block mb-1">Category:</span>
+                  <select
+                    value={showDetail.category}
+                    onChange={async (e) => {
+                      const newVal = e.target.value;
+                      const oldVal = showDetail.category;
+                      if (newVal === oldVal) return;
+                      try {
+                        const { error } = await supabase.from('employees').update({ category: newVal }).eq('id', showDetail.id);
+                        if (error) throw error;
+                        logAudit({ action: 'UPDATE', module: 'Employees', record_id: showDetail.id, details: { field: 'category', from: oldVal, to: newVal, employee: `${showDetail.firstName} ${showDetail.lastName}` } });
+                        setEmployees(prev => prev.map(emp => emp.id === showDetail.id ? { ...emp, category: newVal } : emp));
+                        setShowDetail({ ...showDetail, category: newVal });
+                      } catch (err) {
+                        alert('Failed to update category: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                      }
+                    }}
+                    className="w-full px-2 py-1 border border-border rounded text-sm focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                  >
+                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block mb-1">Department:</span>
+                  <select
+                    value={showDetail.department}
+                    onChange={async (e) => {
+                      const newVal = e.target.value;
+                      const oldVal = showDetail.department;
+                      if (newVal === oldVal) return;
+                      try {
+                        const { error } = await supabase.from('employees').update({ department: newVal }).eq('id', showDetail.id);
+                        if (error) throw error;
+                        logAudit({ action: 'UPDATE', module: 'Employees', record_id: showDetail.id, details: { field: 'department', from: oldVal, to: newVal, employee: `${showDetail.firstName} ${showDetail.lastName}` } });
+                        setEmployees(prev => prev.map(emp => emp.id === showDetail.id ? { ...emp, department: newVal } : emp));
+                        setShowDetail({ ...showDetail, department: newVal });
+                      } catch (err) {
+                        alert('Failed to update department: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                      }
+                    }}
+                    className="w-full px-2 py-1 border border-border rounded text-sm focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                  >
+                    {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
+                  </select>
+                </div>
                 <div><span className="text-muted-foreground">Hire Date:</span> <span className="font-medium ml-2">{showDetail.hireDate}</span></div>
               </div>
+              {/* Role / Job Title — Inline Editable */}
+              <div className="mt-3">
+                <span className="text-muted-foreground text-sm block mb-1">Role / Job Title:</span>
+                <div className="flex gap-2 items-center max-w-md">
+                  <input
+                    type="text"
+                    defaultValue={showDetail.role}
+                    onBlur={async (e) => {
+                      const newVal = e.target.value.trim();
+                      const oldVal = showDetail.role;
+                      if (newVal === oldVal) return;
+                      try {
+                        const { error } = await supabase.from('employees').update({ role: newVal }).eq('id', showDetail.id);
+                        if (error) throw error;
+                        logAudit({ action: 'UPDATE', module: 'Employees', record_id: showDetail.id, details: { field: 'role', from: oldVal, to: newVal, employee: `${showDetail.firstName} ${showDetail.lastName}` } });
+                        setEmployees(prev => prev.map(emp => emp.id === showDetail.id ? { ...emp, role: newVal } : emp));
+                        setShowDetail({ ...showDetail, role: newVal });
+                      } catch (err) {
+                        alert('Failed to update role: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                      }
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    className="flex-1 px-2 py-1 border border-border rounded text-sm focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                    placeholder="e.g. Head Baker, Sales Rep"
+                  />
+                  <span className="text-xs text-muted-foreground">Press Enter or click away to save</span>
+                </div>
+              </div>
+              {/* Login Role (System Access) — Inline Editable */}
+              {showDetail.systemAccess && (
+                <div className="mt-3">
+                  <span className="text-muted-foreground text-sm block mb-1">System Login Role:</span>
+                  <select
+                    value={showDetail.loginRole}
+                    onChange={async (e) => {
+                      const newVal = e.target.value;
+                      const oldVal = showDetail.loginRole;
+                      if (newVal === oldVal) return;
+                      try {
+                        const { error } = await supabase.from('employees').update({ login_role: newVal }).eq('id', showDetail.id);
+                        if (error) throw error;
+                        logAudit({ action: 'UPDATE', module: 'Employees', record_id: showDetail.id, details: { field: 'login_role', from: oldVal, to: newVal, employee: `${showDetail.firstName} ${showDetail.lastName}` } });
+                        setEmployees(prev => prev.map(emp => emp.id === showDetail.id ? { ...emp, loginRole: newVal } : emp));
+                        setShowDetail({ ...showDetail, loginRole: newVal });
+                      } catch (err) {
+                        alert('Failed to update login role: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                      }
+                    }}
+                    className="max-w-xs px-2 py-1 border border-border rounded text-sm focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+                  >
+                    {loginRoles.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Emergency Contacts */}
