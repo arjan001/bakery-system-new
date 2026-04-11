@@ -80,6 +80,10 @@ CREATE TABLE IF NOT EXISTS employees (
   certificates JSONB DEFAULT '[]',
   bank_name TEXT,
   bank_account_no TEXT,
+  payroll_payment_method TEXT DEFAULT 'bank' CHECK (payroll_payment_method IN ('bank', 'mpesa')),
+  payroll_mpesa_phone TEXT,
+  salary_amount DECIMAL(12,2) DEFAULT 0,
+  salary_payment_frequency TEXT DEFAULT 'monthly' CHECK (salary_payment_frequency IN ('weekly', 'fortnightly', 'monthly')),
   nhif_no TEXT,
   nssf_no TEXT,
   kra_pin TEXT,
@@ -756,3 +760,5 @@ CREATE TABLE IF NOT EXISTS business_settings (
 -- =============================================
 CREATE INDEX IF NOT EXISTS idx_employees_login_email ON employees(login_email);
 CREATE INDEX IF NOT EXISTS idx_employees_system_access ON employees(system_access);
+CREATE INDEX IF NOT EXISTS idx_employees_salary_frequency ON employees(salary_payment_frequency);
+CREATE INDEX IF NOT EXISTS idx_employees_payroll_method ON employees(payroll_payment_method);

@@ -32,6 +32,40 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'primary_outlet_name') THEN
     ALTER TABLE employees ADD COLUMN primary_outlet_name TEXT;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'payroll_payment_method') THEN
+    ALTER TABLE employees ADD COLUMN payroll_payment_method TEXT DEFAULT 'bank';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'payroll_mpesa_phone') THEN
+    ALTER TABLE employees ADD COLUMN payroll_mpesa_phone TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'salary_amount') THEN
+    ALTER TABLE employees ADD COLUMN salary_amount DECIMAL(12,2) DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'salary_payment_frequency') THEN
+    ALTER TABLE employees ADD COLUMN salary_payment_frequency TEXT DEFAULT 'monthly';
+  END IF;
+END $$;
+
+-- Payroll constraints and defaults
+UPDATE employees
+SET payroll_payment_method = 'bank'
+WHERE payroll_payment_method IS NULL OR payroll_payment_method = '' OR payroll_payment_method NOT IN ('bank', 'mpesa');
+
+UPDATE employees
+SET salary_payment_frequency = 'monthly'
+WHERE salary_payment_frequency IS NULL OR salary_payment_frequency = '' OR salary_payment_frequency NOT IN ('weekly', 'fortnightly', 'monthly');
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employees_payroll_payment_method_check') THEN
+    ALTER TABLE employees
+    ADD CONSTRAINT employees_payroll_payment_method_check
+    CHECK (payroll_payment_method IN ('bank', 'mpesa'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employees_salary_payment_frequency_check') THEN
+    ALTER TABLE employees
+    ADD CONSTRAINT employees_salary_payment_frequency_check
+    CHECK (salary_payment_frequency IN ('weekly', 'fortnightly', 'monthly'));
+  END IF;
 END $$;
 
 -- ── ORDERS TABLE ──

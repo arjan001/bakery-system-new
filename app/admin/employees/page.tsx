@@ -43,6 +43,10 @@ interface Employee {
   certificates: Certificate[];
   bankName: string;
   bankAccountNo: string;
+  payrollPaymentMethod: 'bank' | 'mpesa';
+  payrollMpesaPhone: string;
+  salaryAmount: number;
+  salaryPaymentFrequency: 'weekly' | 'fortnightly' | 'monthly';
   nhifNo: string;
   nssfNo: string;
   kraPin: string;
@@ -105,6 +109,10 @@ function dbToEmployee(row: Record<string, unknown>): Employee {
     certificates: parsedCerts,
     bankName: (row.bank_name as string) || '',
     bankAccountNo: (row.bank_account_no as string) || '',
+    payrollPaymentMethod: ((row.payroll_payment_method as string) || 'bank') as Employee['payrollPaymentMethod'],
+    payrollMpesaPhone: (row.payroll_mpesa_phone as string) || '',
+    salaryAmount: Number((row.salary_amount as number) || 0),
+    salaryPaymentFrequency: ((row.salary_payment_frequency as string) || 'monthly') as Employee['salaryPaymentFrequency'],
     nhifNo: (row.nhif_no as string) || '',
     nssfNo: (row.nssf_no as string) || '',
     kraPin: (row.kra_pin as string) || '',
@@ -233,9 +241,10 @@ export default function EmployeesPage() {
           hireDate: '', status: 'Active', nextOfKin: '', nextOfKinPhone: '', postalAddress: '', postalCode: '', town: '',
           idNumber: '', idDocumentUrl: '', profilePhotoUrl: '', driverLicenseId: '', driverLicenseExpiry: '',
           hygieneCertNo: '', hygieneCertExpiry: '', certificates: [], bankName: '',
-          bankAccountNo: '', nhifNo: '', nssfNo: '', kraPin: '', emergencyContact: '',
+          bankAccountNo: '', payrollPaymentMethod: 'bank', payrollMpesaPhone: '', salaryAmount: 0, salaryPaymentFrequency: 'monthly',
+          nhifNo: '', nssfNo: '', kraPin: '', emergencyContact: '',
           emergencyPhone: '', notes: '', systemAccess: true, loginEmail: '', loginRole: 'Admin',
-          permissions: [...ALL_PERMISSIONS], lastLogin: null, lastActivity: null,
+          permissions: [...ALL_PERMISSIONS], primaryOutletId: '', primaryOutletName: '', lastLogin: null, lastActivity: null,
         };
         for (const authUser of usersData) {
           // Skip the main super admin (first registered user) — hidden from all admin views
@@ -415,6 +424,10 @@ export default function EmployeesPage() {
     certificates: [],
     bankName: '',
     bankAccountNo: '',
+    payrollPaymentMethod: 'bank',
+    payrollMpesaPhone: '',
+    salaryAmount: 0,
+    salaryPaymentFrequency: 'monthly',
     nhifNo: '',
     nssfNo: '',
     kraPin: '',
@@ -467,6 +480,9 @@ export default function EmployeesPage() {
     setIsSaving(true);
     let localError: string | null = null;
     const dataToSave = { ...formData };
+    if (dataToSave.payrollPaymentMethod !== 'mpesa') {
+      dataToSave.payrollMpesaPhone = '';
+    }
     if (autoGenerateId && !editingId && !dataToSave.employeeIdNumber) {
       dataToSave.employeeIdNumber = generateEmployeeId(dataToSave.category);
     }
@@ -502,7 +518,7 @@ export default function EmployeesPage() {
         if (error) {
           // If columns don't exist, try with only basic fields
           const basicRow = { ...dbRow };
-          const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name'];
+          const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name', 'payroll_payment_method', 'payroll_mpesa_phone', 'salary_amount', 'salary_payment_frequency'];
           for (const col of extendedCols) delete (basicRow as Record<string, unknown>)[col];
           const { data: fallbackData, error: fallbackError } = await supabase.from('employees').update(basicRow).eq('id', editingId).select();
           if (fallbackError) throw fallbackError;
@@ -524,7 +540,7 @@ export default function EmployeesPage() {
         if (error) {
           // If columns don't exist, try with only basic fields
           const basicRow = { ...dbRow };
-          const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name'];
+          const extendedCols = ['system_access', 'login_email', 'login_role', 'permissions', 'certificates', 'employee_id_number', 'profile_photo_url', 'primary_outlet_id', 'primary_outlet_name', 'payroll_payment_method', 'payroll_mpesa_phone', 'salary_amount', 'salary_payment_frequency'];
           for (const col of extendedCols) delete (basicRow as Record<string, unknown>)[col];
           const { data: fallbackData, error: fallbackError } = await supabase.from('employees').insert(basicRow).select();
           if (fallbackError) throw fallbackError;
@@ -1287,6 +1303,52 @@ export default function EmployeesPage() {
             {activeFormTab === 'payroll' && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Salary Amount</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.salaryAmount}
+                    onChange={(e) => setFormData({ ...formData, salaryAmount: Number(e.target.value || 0) })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Salary Payment Frequency</label>
+                  <select
+                    value={formData.salaryPaymentFrequency}
+                    onChange={(e) => setFormData({ ...formData, salaryPaymentFrequency: e.target.value as Employee['salaryPaymentFrequency'] })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                  >
+                    <option value="weekly">Weekly</option>
+                    <option value="fortnightly">Fortnightly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Payroll Payment Method</label>
+                  <select
+                    value={formData.payrollPaymentMethod}
+                    onChange={(e) => setFormData({ ...formData, payrollPaymentMethod: e.target.value as Employee['payrollPaymentMethod'] })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                  >
+                    <option value="bank">Bank Transfer</option>
+                    <option value="mpesa">M-PESA</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">M-PESA Phone</label>
+                  <input
+                    type="tel"
+                    value={formData.payrollMpesaPhone}
+                    onChange={(e) => setFormData({ ...formData, payrollMpesaPhone: e.target.value })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+                    placeholder="e.g. 254712345678"
+                    disabled={formData.payrollPaymentMethod !== 'mpesa'}
+                  />
+                </div>
+                <div>
                   <label className="block text-xs text-muted-foreground mb-1">Bank Name</label>
                   <input type="text" value={formData.bankName} onChange={(e) => setFormData({ ...formData, bankName: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none" />
                 </div>
@@ -1820,8 +1882,12 @@ export default function EmployeesPage() {
             <div className="border-t border-border pt-4">
               <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Payroll Details</h4>
               <div className="grid grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                <div><span className="text-muted-foreground">Salary:</span> <span className="font-medium ml-2">{Number(showDetail.salaryAmount || 0).toLocaleString()}</span></div>
+                <div><span className="text-muted-foreground">Frequency:</span> <span className="font-medium ml-2 capitalize">{showDetail.salaryPaymentFrequency || 'monthly'}</span></div>
+                <div><span className="text-muted-foreground">Method:</span> <span className="font-medium ml-2">{showDetail.payrollPaymentMethod === 'mpesa' ? 'M-PESA' : 'Bank Transfer'}</span></div>
                 <div><span className="text-muted-foreground">Bank:</span> <span className="font-medium ml-2">{showDetail.bankName || '---'}</span></div>
                 <div><span className="text-muted-foreground">Account:</span> <span className="font-medium ml-2 font-mono">{maskValue(showDetail.bankAccountNo)}</span></div>
+                <div><span className="text-muted-foreground">M-PESA:</span> <span className="font-medium ml-2 font-mono">{maskValue(showDetail.payrollMpesaPhone)}</span></div>
                 <div><span className="text-muted-foreground">NHIF:</span> <span className="font-medium ml-2 font-mono">{maskValue(showDetail.nhifNo)}</span></div>
                 <div><span className="text-muted-foreground">NSSF:</span> <span className="font-medium ml-2 font-mono">{maskValue(showDetail.nssfNo)}</span></div>
                 <div><span className="text-muted-foreground">KRA PIN:</span> <span className="font-medium ml-2 font-mono">{maskValue(showDetail.kraPin)}</span></div>
