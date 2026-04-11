@@ -42,6 +42,9 @@ const permRouteMap: Record<string, string[]> = {
   'Manage Orders': ['/admin/orders', '/admin/order-tracking'],
   'Manage Customers': ['/admin/customers'],
   'Manage Deliveries': ['/admin/delivery', '/admin/order-tracking', '/admin/rider-reports'],
+  'Queue Deliveries': ['/admin/delivery', '/admin/order-tracking'],
+  'Manage Mileage Logs': ['/admin/delivery'],
+  'Manage Refueling': ['/admin/expenses', '/admin/delivery'],
   'Manage Pricing': ['/admin/pricing'],
   'Manage Inventory': [
     '/admin/inventory',
@@ -99,7 +102,6 @@ const permRouteMap: Record<string, string[]> = {
 const roleDefaultRoutes: Record<string, string[]> = {
   // Rider/Driver: STRICTLY limited — only delivery-related modules
   Rider: [
-    '/admin',
     '/admin/delivery',
     '/admin/order-tracking',
     '/admin/rider-reports',
@@ -107,7 +109,6 @@ const roleDefaultRoutes: Record<string, string[]> = {
     '/admin/documentation',
   ],
   Driver: [
-    '/admin',
     '/admin/delivery',
     '/admin/order-tracking',
     '/admin/rider-reports',
@@ -160,6 +161,25 @@ const roleDefaultRoutes: Record<string, string[]> = {
 // Roles that are STRICTLY restricted — they can ONLY access their default routes,
 // regardless of any additional permissions in the database.
 const strictlyRestrictedRoles = new Set(['Rider', 'Driver']);
+const restrictedRolePermissionAllowList: Record<string, string[]> = {
+  Rider: [
+    'View Deliveries',
+    'Queue Deliveries',
+    'Manage Deliveries',
+  ],
+  Driver: [
+    'View Deliveries',
+    'Queue Deliveries',
+    'Manage Deliveries',
+    'Manage Mileage Logs',
+    'Manage Refueling',
+  ],
+};
+
+const restrictedRoleDefaultPermissions: Record<string, string[]> = {
+  Rider: ['View Deliveries', 'Queue Deliveries', 'Manage Deliveries'],
+  Driver: ['View Deliveries', 'Queue Deliveries', 'Manage Deliveries', 'Manage Mileage Logs', 'Manage Refueling'],
+};
 
 // Map permissions to allowed sidebar routes
 export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean, isOutletAdmin?: boolean): string[] {
@@ -167,7 +187,16 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
 
   // Strictly restricted roles: ONLY their default routes, no additional permissions
   if (strictlyRestrictedRoles.has(role)) {
-    return roleDefaultRoutes[role] || ['/admin/account'];
+    const defaults = roleDefaultRoutes[role] || ['/admin/account'];
+    const allowList = new Set(restrictedRolePermissionAllowList[role] || []);
+    const fallbackPerms = restrictedRoleDefaultPermissions[role] || [];
+    const scopedPerms = (permissions.length > 0 ? permissions : fallbackPerms).filter(perm => allowList.has(perm));
+    const routes = [...defaults];
+    for (const perm of scopedPerms) {
+      const mapped = permRouteMap[perm];
+      if (mapped) routes.push(...mapped);
+    }
+    return [...new Set(routes)];
   }
 
   const routes: string[] = [];
