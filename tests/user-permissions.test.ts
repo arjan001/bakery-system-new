@@ -27,6 +27,7 @@ describe('User Permissions', () => {
       expect(result).toContain('/admin/account');
       expect(result).not.toContain('/admin/orders');
       expect(result).not.toContain('/admin/reports');
+      expect(result).not.toContain('/admin/expenses');
     });
 
     it('should return strictly limited routes for Driver role', () => {
@@ -34,6 +35,21 @@ describe('User Permissions', () => {
       expect(result).toContain('/admin/delivery');
       expect(result).toContain('/admin/order-tracking');
       expect(result).not.toContain('/admin/inventory');
+      expect(result).not.toContain('/admin/expenses');
+    });
+
+    it('should allow tailored restricted permissions for Driver', () => {
+      const result = getAllowedRoutes(['Queue Deliveries', 'Manage Refueling'], 'Driver', false);
+      expect(result).toContain('/admin/delivery');
+      expect(result).toContain('/admin/order-tracking');
+      expect(result).toContain('/admin/expenses');
+    });
+
+    it('should ignore non-allowed permission overrides for Rider', () => {
+      const result = getAllowedRoutes(['Manage Inventory', 'System Settings'], 'Rider', false);
+      expect(result).toContain('/admin/delivery');
+      expect(result).not.toContain('/admin/inventory');
+      expect(result).not.toContain('/admin/settings');
     });
 
     it('should return Baker default routes plus permission-based routes', () => {
@@ -147,8 +163,7 @@ describe('User Permissions', () => {
       expect(isRouteAllowed('/admin/orders', [], 'Cashier', false)).toBe(true);
     });
 
-    it('should return true for routes covered by /admin prefix in Cashier defaults', () => {
-      // Cashier defaults include '/admin' which matches all /admin/* via prefix matching
+    it('should return true for routes covered by role defaults in Cashier', () => {
       expect(isRouteAllowed('/admin/pos', [], 'Cashier', false)).toBe(true);
       expect(isRouteAllowed('/admin/orders', [], 'Cashier', false)).toBe(true);
     });
@@ -162,16 +177,16 @@ describe('User Permissions', () => {
 
     it('should handle sub-routes (prefix matching)', () => {
       expect(isRouteAllowed('/admin/delivery/details', [], 'Rider', false)).toBe(true);
-      // Rider defaults include /admin, so /admin/settings/advanced will match via prefix
-      expect(isRouteAllowed('/admin/settings/advanced', [], 'Rider', false)).toBe(true);
+      expect(isRouteAllowed('/admin/settings/advanced', [], 'Rider', false)).toBe(false);
     });
 
     it('should allow Driver access to delivery and default routes', () => {
       expect(isRouteAllowed('/admin/delivery', [], 'Driver', false)).toBe(true);
       expect(isRouteAllowed('/admin/order-tracking', [], 'Driver', false)).toBe(true);
-      // Driver defaults include '/admin' which prefix-matches all admin sub-routes
       expect(isRouteAllowed('/admin/account', [], 'Driver', false)).toBe(true);
       expect(isRouteAllowed('/admin/rider-reports', [], 'Driver', false)).toBe(true);
+      expect(isRouteAllowed('/admin/expenses', [], 'Driver', false)).toBe(true);
+      expect(isRouteAllowed('/admin/settings', [], 'Driver', false)).toBe(false);
     });
 
     it('should allow outlet admin routes when user is outlet admin', () => {
