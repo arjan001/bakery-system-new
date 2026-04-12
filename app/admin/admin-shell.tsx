@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { Sidebar } from '@/components/sidebar';
 import { Header } from '@/components/header';
 import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
-import { UserPermissionsProvider, useUserPermissions, getAllowedRoutes } from '@/lib/user-permissions';
+import { UserPermissionsProvider, useUserPermissions, getAllowedRoutes, matchesAllowedRoute } from '@/lib/user-permissions';
 import { Loader2, ShieldAlert, LogOut, Wrench, Database, RefreshCw } from 'lucide-react';
 
 // Maintenance mode screen shown when admin panel is under maintenance
@@ -190,7 +190,7 @@ function AdminContent({ children }: { children: React.ReactNode }) {
 
     const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin, isOutletAdmin);
     if (allowedRoutes.length > 0) {
-      const isAllowed = allowedRoutes.some(route => pathname === route || pathname.startsWith(route + '/'));
+      const isAllowed = allowedRoutes.some(route => matchesAllowedRoute(pathname, route));
       if (!isAllowed) {
         // Redirect to first allowed route or account page
         router.push(allowedRoutes[0] || '/admin/account');

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useUserPermissions, getAllowedRoutes } from '@/lib/user-permissions';
+import { useUserPermissions, getAllowedRoutes, matchesAllowedRoute } from '@/lib/user-permissions';
 import { useSidebarNotifications, SidebarBadge } from '@/lib/use-sidebar-notifications';
 import {
   LayoutDashboard,
@@ -322,7 +322,9 @@ export function Sidebar() {
       .map(group => ({
         ...group,
         items: group.items.filter(item =>
-          allowedRoutes.some(route => item.href === route || item.href.startsWith(route + '/'))
+          allowedRoutes.some(route =>
+            matchesAllowedRoute(item.href, route) || matchesAllowedRoute(route, item.href)
+          )
         ),
       }))
       .filter(group => group.items.length > 0);

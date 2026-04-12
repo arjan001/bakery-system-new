@@ -568,9 +568,15 @@ export default function EmployeesPage() {
       setSaveError(localError);
     }
 
-    // Create Supabase Auth user via server-side API route
-    // This avoids session conflicts (admin stays logged in) and bypasses email confirmation
-    if (dataToSave.systemAccess && loginPassword && dataToSave.loginEmail) {
+    // Create/update Supabase Auth user via server-side API route only when needed.
+    // For existing employees, this should only run when a new password is intentionally provided.
+    const normalizedLoginPassword = loginPassword.trim();
+    const shouldManageAuthUser = Boolean(
+      dataToSave.systemAccess &&
+      dataToSave.loginEmail &&
+      (!editingId || normalizedLoginPassword)
+    );
+    if (shouldManageAuthUser) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || '';
@@ -579,7 +585,7 @@ export default function EmployeesPage() {
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({
             email: dataToSave.loginEmail,
-            password: loginPassword,
+            password: normalizedLoginPassword,
             fullName: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
             role: dataToSave.loginRole,
           }),
@@ -599,7 +605,7 @@ export default function EmployeesPage() {
                 recipientEmail: dataToSave.email || dataToSave.loginEmail,
                 recipientName: `${dataToSave.firstName} ${dataToSave.lastName}`.trim(),
                 loginEmail: dataToSave.loginEmail,
-                loginPassword: loginPassword,
+                loginPassword: normalizedLoginPassword,
                 loginRole: dataToSave.loginRole,
               }),
             });
@@ -660,6 +666,8 @@ export default function EmployeesPage() {
     setEditingId(emp.id);
     setActiveFormTab('personal');
     setAutoGenerateId(!emp.employeeIdNumber);
+    // Avoid carrying over a previous form session's password into unrelated updates.
+    setLoginPassword('');
     setShowForm(true);
     setHasUnsavedChanges(false);
   };
