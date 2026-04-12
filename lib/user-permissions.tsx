@@ -181,6 +181,27 @@ const restrictedRoleDefaultPermissions: Record<string, string[]> = {
   Driver: ['View Deliveries', 'Queue Deliveries', 'Manage Deliveries', 'Manage Mileage Logs', 'Manage Refueling'],
 };
 
+function normalizeRoutePath(path: string): string {
+  if (!path) return '';
+  if (path.length > 1 && path.endsWith('/')) {
+    return path.slice(0, -1);
+  }
+  return path;
+}
+
+// Route match helper used by both sidebar visibility and route guards.
+// Special case: '/admin' should only match dashboard itself, not every admin module.
+export function matchesAllowedRoute(pathname: string, allowedRoute: string): boolean {
+  const path = normalizeRoutePath(pathname);
+  const allowed = normalizeRoutePath(allowedRoute);
+
+  if (!path || !allowed) return false;
+  if (path === allowed) return true;
+  if (allowed === '/admin') return false;
+
+  return path.startsWith(allowed + '/');
+}
+
 // Map permissions to allowed sidebar routes
 export function getAllowedRoutes(permissions: string[], role: string, isAdmin: boolean, isOutletAdmin?: boolean): string[] {
   if (isAdmin) return []; // empty means all allowed
@@ -241,7 +262,7 @@ export function getAllowedRoutes(permissions: string[], role: string, isAdmin: b
 export function isRouteAllowed(pathname: string, permissions: string[], role: string, isAdmin: boolean, isOutletAdmin?: boolean): boolean {
   if (isAdmin) return true;
   const allowedRoutes = getAllowedRoutes(permissions, role, isAdmin, isOutletAdmin);
-  return allowedRoutes.some(route => pathname === route || pathname.startsWith(route + '/'));
+  return allowedRoutes.some(route => matchesAllowedRoute(pathname, route));
 }
 
 export function UserPermissionsProvider({ children }: { children: React.ReactNode }) {

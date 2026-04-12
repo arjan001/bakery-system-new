@@ -3,7 +3,7 @@
  * Covers: getAllowedRoutes, isRouteAllowed (pure functions, no React needed)
  */
 import { describe, it, expect } from 'vitest';
-import { getAllowedRoutes, isRouteAllowed } from '@/lib/user-permissions';
+import { getAllowedRoutes, isRouteAllowed, matchesAllowedRoute } from '@/lib/user-permissions';
 
 describe('User Permissions', () => {
   // ────────────────────────────── getAllowedRoutes ──────────────────────────────
@@ -196,6 +196,28 @@ describe('User Permissions', () => {
 
     it('should deny outlet routes when user is not outlet admin', () => {
       expect(isRouteAllowed('/admin/outlet-inventory', [], 'Viewer', false, false)).toBe(false);
+    });
+
+    it('should not treat dashboard route as wildcard access', () => {
+      expect(isRouteAllowed('/admin', ['View Dashboard'], 'Viewer', false)).toBe(true);
+      expect(isRouteAllowed('/admin/pos', ['View Dashboard'], 'Viewer', false)).toBe(false);
+      expect(isRouteAllowed('/admin/settings', ['View Dashboard'], 'Viewer', false)).toBe(false);
+    });
+  });
+
+  // ────────────────────────────── matchesAllowedRoute ──────────────────────────────
+  describe('matchesAllowedRoute', () => {
+    it('should match exact route paths', () => {
+      expect(matchesAllowedRoute('/admin/orders', '/admin/orders')).toBe(true);
+    });
+
+    it('should match valid sub-routes for non-dashboard modules', () => {
+      expect(matchesAllowedRoute('/admin/orders/123', '/admin/orders')).toBe(true);
+    });
+
+    it('should not treat /admin as wildcard for all modules', () => {
+      expect(matchesAllowedRoute('/admin/pos', '/admin')).toBe(false);
+      expect(matchesAllowedRoute('/admin', '/admin')).toBe(true);
     });
   });
 });

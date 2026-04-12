@@ -93,13 +93,43 @@ export async function POST(req: NextRequest) {
         try {
           // Find the user and update password
           const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-          const existingUser = userList?.users?.find(u => u.email === email);
+          const existingUser = userList?.users?.find(
+            u => u.email?.toLowerCase() === email.toLowerCase()
+          );
           if (existingUser) {
-            await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
+            const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
               password,
               email_confirm: true,
               user_metadata: { full_name: fullName || '', role: role || 'Viewer' },
             });
+            if (updateError) {
+              // Handle stale IDs/race conditions where the listed user no longer exists.
+              if (updateError.message.toLowerCase().includes('given id') && updateError.message.toLowerCase().includes('does not exist')) {
+                const { data: retryData, error: retryError } = await supabaseAdmin.auth.admin.createUser({
+                  email,
+                  password,
+                  email_confirm: true,
+                  user_metadata: { full_name: fullName || '', role: role || 'Viewer' },
+                });
+                if (retryError) {
+                  throw retryError;
+                }
+                if (retryData.user) {
+                  try {
+                    await supabaseAdmin.from('users').upsert({
+                      id: retryData.user.id,
+                      email,
+                      full_name: fullName || '',
+                      is_active: true,
+                    }, { onConflict: 'id' });
+                  } catch {
+                    // users table may not exist
+                  }
+                  return NextResponse.json({ success: true, userId: retryData.user.id, updated: true });
+                }
+              }
+              throw updateError;
+            }
             // Also upsert into users table
             try {
               await supabaseAdmin.from('users').upsert({
