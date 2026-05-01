@@ -84,7 +84,9 @@ function parseShelfLife(val: string): number {
 }
 
 function parseCatalogCSV(content: string): { rows: CatalogRow[]; errors: string[] } {
-  const lines = content.split(/\r?\n/).filter(l => l.trim());
+  // Strip UTF-8 BOM if present (Excel adds this on save)
+  const cleaned = content.replace(/^﻿/, '');
+  const lines = cleaned.split(/\r?\n/).filter(l => l.trim());
   const errors: string[] = [];
   const rows: CatalogRow[] = [];
 
@@ -177,6 +179,40 @@ function generateSampleCSV(): string {
   const sample1 = 'White Tea,BEV-01,Breakfast,"Freshly brewed Kenya tea served with milk",KES 80,KES 18,77.5%,cup,Made on order,Dairy,Halal,100,Made on order; high-turnover,All day,"Tea leaves, fresh milk, sugar"';
   const sample2 = 'Mandazi,BRK-01,Breakfast,"Pillowy Kenyan doughnuts with cardamom",KES 30,KES 8,73.3%,pcs,2,"Gluten, Dairy","Halal, Vegetarian",200,Batch-cook daily,Breakfast / Snack,"Wheat flour, coconut milk, sugar"';
   return [header, sample1, sample2].join('\n');
+}
+
+function csvEscape(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  const s = String(val);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function buildCatalogCSV(rows: Array<Record<string, unknown>>): string {
+  const header = 'Product Name,Code,Category,Description (Website),Selling Price (KES),Bulk Cost of Prod (KES),Gross Margin %,Stock Unit,Shelf Life (days),Allergens,Dietary Labels,Reorder Level,Notes / Made On Order,Availability,Key Ingredients (Bulk Sourcing)';
+  const lines = rows.map(r => {
+    const allergens = Array.isArray(r.allergens) ? (r.allergens as unknown[]).join(', ') : (r.allergens || '');
+    return [
+      csvEscape(r.product_name),
+      csvEscape(r.code),
+      csvEscape(r.category),
+      csvEscape(r.description),
+      csvEscape(r.selling_price),
+      csvEscape(r.cost_price),
+      csvEscape(r.gross_margin),
+      csvEscape(r.stock_unit),
+      csvEscape(r.shelf_life_days),
+      csvEscape(allergens),
+      csvEscape(r.dietary_labels),
+      csvEscape(r.reorder_level),
+      csvEscape(r.notes),
+      csvEscape(r.availability),
+      csvEscape(r.key_ingredients),
+    ].join(',');
+  });
+  return [header, ...lines].join('\n');
 }
 
 export default function CatalogUploadPage() {
@@ -360,6 +396,33 @@ export default function CatalogUploadPage() {
     URL.revokeObjectURL(url);
   };
 
+  const [exporting, setExporting] = useState(false);
+  const exportCurrentCatalog = async () => {
+    setExporting(true);
+    try {
+      const { data, error } = await supabase
+        .from('food_info')
+        .select('product_name, code, category, description, selling_price, cost_price, gross_margin, stock_unit, shelf_life_days, allergens, dietary_labels, reorder_level, notes, availability, key_ingredients')
+        .order('category', { ascending: true })
+        .order('product_name', { ascending: true });
+      if (error) throw error;
+      const csv = buildCatalogCSV((data || []) as Array<Record<string, unknown>>);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `catalog_export_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${(data || []).length} products`, 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Export failed: ${msg}`, 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       {/* Toast */}
@@ -370,20 +433,31 @@ export default function CatalogUploadPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Catalog Upload</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Upload a CSV file to bulk-import products into the catalogue, pricing tiers, and more.
           </p>
         </div>
-        <button
-          onClick={downloadSample}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border rounded-lg hover:bg-secondary transition-colors"
-        >
-          <Download size={16} />
-          Download Template
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={downloadSample}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border rounded-lg hover:bg-secondary transition-colors"
+          >
+            <Download size={16} />
+            Download Template
+          </button>
+          <button
+            onClick={exportCurrentCatalog}
+            disabled={exporting}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+            title="Download all current products as CSV (round-trip safe)"
+          >
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            {exporting ? 'Exporting...' : 'Export Current Catalog'}
+          </button>
+        </div>
       </div>
 
       {/* Upload Zone */}
