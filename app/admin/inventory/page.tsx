@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, FileDown, Pencil } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, FileDown, Pencil, Upload, Download } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
+import { InventoryCsvImport, buildInventoryCSV } from '@/components/inventory-csv-import';
 
 interface Distributor {
   id: string;
@@ -59,6 +60,8 @@ export default function InventoryPage() {
   // Datatable states
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -383,6 +386,31 @@ export default function InventoryPage() {
     }
   };
 
+  const exportInventoryCsv = async () => {
+    setExportingCsv(true);
+    try {
+      const { data, error } = await supabase
+        .from('inventory_items')
+        .select('name, type, category, quantity, unit, unit_cost, reorder_level, reorder_qty, auto_reorder, supplier, distributor_id, last_restocked')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      const csv = buildInventoryCSV((data || []) as Array<Record<string, unknown>>, distributors);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inventory_export_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${(data || []).length} items`, 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Export failed: ${msg}`, 'error');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
   const handleStockTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showStockModal || stockQty <= 0) return;
@@ -659,6 +687,21 @@ export default function InventoryPage() {
               + Add Item
             </button>
             <button
+              onClick={() => setShowCsvImport(true)}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
+              title="Bulk-import inventory from CSV"
+            >
+              <Upload size={14} /> Import CSV
+            </button>
+            <button
+              onClick={exportInventoryCsv}
+              disabled={exportingCsv}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5 disabled:opacity-50"
+              title="Download current inventory as CSV"
+            >
+              <Download size={14} /> {exportingCsv ? 'Exporting...' : 'Export CSV'}
+            </button>
+            <button
               onClick={() => exportPdf('Inventory-Items', inventoryTableRef)}
               className="px-4 py-2 border border-border rounded-lg hover:bg-secondary font-medium text-sm flex items-center gap-1.5"
             >
@@ -869,6 +912,13 @@ export default function InventoryPage() {
               </div>
             </form>
           </Modal>
+
+          <InventoryCsvImport
+            isOpen={showCsvImport}
+            onClose={() => setShowCsvImport(false)}
+            onImported={() => { fetchInventory(); }}
+            distributors={distributors}
+          />
 
           <div ref={inventoryTableRef}>
           <div className="border border-border rounded-lg overflow-x-auto">
