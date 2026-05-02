@@ -44,9 +44,17 @@ interface InventoryCategory {
   type: 'Consumable' | 'Non-Consumable';
 }
 
+interface OutletOption {
+  id: string;
+  name: string;
+  code: string | null;
+  is_main_branch: boolean;
+}
+
 export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [distributors, setDistributors] = useState<Distributor[]>([]);
+  const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -80,6 +88,16 @@ export default function InventoryPage() {
     if (data) setDistributors(data.map((r: Record<string, unknown>) => ({ id: r.id as string, name: (r.name || '') as string, category: (r.category || '') as string })));
   }, []);
 
+  const fetchOutlets = useCallback(async () => {
+    const { data } = await supabase
+      .from('outlets')
+      .select('id, name, code, is_main_branch, status')
+      .eq('status', 'Active')
+      .order('is_main_branch', { ascending: false })
+      .order('name', { ascending: true });
+    if (data) setOutlets(data as OutletOption[]);
+  }, []);
+
   const fetchTransactions = useCallback(async () => {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data } = await supabase
@@ -97,7 +115,7 @@ export default function InventoryPage() {
     })));
   }, []);
 
-  useEffect(() => { fetchInventory(); fetchDistributors(); fetchTransactions(); }, [fetchInventory, fetchDistributors, fetchTransactions]);
+  useEffect(() => { fetchInventory(); fetchDistributors(); fetchTransactions(); fetchOutlets(); }, [fetchInventory, fetchDistributors, fetchTransactions, fetchOutlets]);
 
   const [categories, setCategories] = useState<InventoryCategory[]>([]);
 
@@ -918,6 +936,7 @@ export default function InventoryPage() {
             onClose={() => setShowCsvImport(false)}
             onImported={() => { fetchInventory(); }}
             distributors={distributors}
+            outlets={outlets}
           />
 
           <div ref={inventoryTableRef}>

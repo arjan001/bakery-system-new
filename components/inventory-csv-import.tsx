@@ -4,12 +4,21 @@ import { useState, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
 import { logAudit, type AuditAction } from '@/lib/audit-logger';
-import { Upload, FileText, CheckCircle2, XCircle, AlertTriangle, Loader2, Download, Trash2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle2, XCircle, AlertTriangle, Loader2, Download, Trash2, Store } from 'lucide-react';
 
 interface Distributor {
   id: string;
   name: string;
 }
+
+interface OutletOption {
+  id: string;
+  name: string;
+  code?: string | null;
+  is_main_branch?: boolean;
+}
+
+const MAIN_TARGET = '__main__';
 
 interface InventoryRow {
   name: string;
@@ -38,6 +47,7 @@ interface Props {
   onClose: () => void;
   onImported: () => void;
   distributors: Distributor[];
+  outlets?: OutletOption[];
 }
 
 const TEMPLATE_HEADER = 'Item Name,Type,Category,Quantity,Unit,Unit Cost,Reorder Level,Reorder Qty,Auto Reorder,Supplier,Distributor,Last Restocked';
@@ -208,13 +218,14 @@ export function buildInventoryCSV(items: Array<Record<string, unknown>>, distrib
   return [TEMPLATE_HEADER, ...lines].join('\n');
 }
 
-export function InventoryCsvImport({ isOpen, onClose, onImported, distributors }: Props) {
+export function InventoryCsvImport({ isOpen, onClose, onImported, distributors, outlets = [] }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<InventoryRow[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [targetOutletId, setTargetOutletId] = useState<string>(MAIN_TARGET);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -281,42 +292,78 @@ export function InventoryCsvImport({ isOpen, onClose, onImported, distributors }
     const result: ImportResult = { total: parsedRows.length, success: 0, failed: 0, errors: [] };
 
     const distByName = new Map(distributors.map(d => [d.name.trim().toLowerCase(), d.id]));
+    const isMain = targetOutletId === MAIN_TARGET;
+    const targetOutlet = outlets.find(o => o.id === targetOutletId) || null;
+    const targetLabel = isMain ? 'Main Bakery' : (targetOutlet?.name || 'Selected Branch');
 
     for (let i = 0; i < parsedRows.length; i++) {
       const row = parsedRows[i];
       try {
         if (!row.name) throw new Error('Item name is required');
-        const distributorId = row.distributor
-          ? (distByName.get(row.distributor.toLowerCase()) || null)
-          : null;
 
-        const dbRow = {
-          name: row.name,
-          type: row.type,
-          category: row.category || null,
-          quantity: row.quantity,
-          unit: row.unit || 'pcs',
-          unit_cost: row.unit_cost,
-          reorder_level: row.reorder_level,
-          reorder_qty: row.reorder_qty,
-          auto_reorder: row.auto_reorder,
-          supplier: row.supplier || null,
-          distributor_id: distributorId,
-          last_restocked: row.last_restocked || null,
-        };
+        if (isMain) {
+          const distributorId = row.distributor
+            ? (distByName.get(row.distributor.toLowerCase()) || null)
+            : null;
 
-        const { data: existing } = await supabase
-          .from('inventory_items')
-          .select('id')
-          .eq('name', row.name)
-          .maybeSingle();
+          const dbRow = {
+            name: row.name,
+            type: row.type,
+            category: row.category || null,
+            quantity: row.quantity,
+            unit: row.unit || 'pcs',
+            unit_cost: row.unit_cost,
+            reorder_level: row.reorder_level,
+            reorder_qty: row.reorder_qty,
+            auto_reorder: row.auto_reorder,
+            supplier: row.supplier || null,
+            distributor_id: distributorId,
+            last_restocked: row.last_restocked || null,
+          };
 
-        if (existing) {
-          const { error } = await supabase.from('inventory_items').update(dbRow).eq('id', existing.id);
-          if (error) throw error;
+          const { data: existing } = await supabase
+            .from('inventory_items')
+            .select('id')
+            .eq('name', row.name)
+            .maybeSingle();
+
+          if (existing) {
+            const { error } = await supabase.from('inventory_items').update(dbRow).eq('id', existing.id);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase.from('inventory_items').insert(dbRow);
+            if (error) throw error;
+          }
         } else {
-          const { error } = await supabase.from('inventory_items').insert(dbRow);
-          if (error) throw error;
+          if (!targetOutlet) throw new Error('Selected branch not found');
+          const branchRow = {
+            outlet_id: targetOutlet.id,
+            item_name: row.name,
+            category: row.category || 'General',
+            quantity: row.quantity,
+            unit: row.unit || 'pieces',
+            unit_cost: row.unit_cost,
+            reorder_level: row.reorder_level,
+            supplier: row.supplier || null,
+            source: 'external' as const,
+            last_restocked: row.last_restocked || null,
+            status: 'Active' as const,
+          };
+
+          const { data: existing } = await supabase
+            .from('outlet_inventory')
+            .select('id')
+            .eq('outlet_id', targetOutlet.id)
+            .eq('item_name', row.name)
+            .maybeSingle();
+
+          if (existing) {
+            const { error } = await supabase.from('outlet_inventory').update(branchRow).eq('id', existing.id);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase.from('outlet_inventory').insert(branchRow);
+            if (error) throw error;
+          }
         }
         result.success++;
       } catch (err) {
@@ -332,11 +379,18 @@ export function InventoryCsvImport({ isOpen, onClose, onImported, distributors }
     logAudit({
       action: 'BULK_IMPORT' as AuditAction,
       module: 'Inventory',
-      record_id: 'inventory-csv',
-      details: { total: result.total, success: result.success, failed: result.failed, filename: file?.name },
+      record_id: isMain ? 'inventory-csv' : `inventory-csv:${targetOutlet?.id}`,
+      details: {
+        total: result.total,
+        success: result.success,
+        failed: result.failed,
+        filename: file?.name,
+        target: targetLabel,
+        outlet_id: isMain ? null : targetOutlet?.id,
+      },
       trackChangelog: true,
-      changelogTitle: `Bulk Inventory Import — ${result.success} Items`,
-      changelogDescription: `Imported ${result.success} of ${result.total} items from CSV "${file?.name || 'inventory'}"${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
+      changelogTitle: `Bulk Inventory Import — ${result.success} Items → ${targetLabel}`,
+      changelogDescription: `Imported ${result.success} of ${result.total} items from CSV "${file?.name || 'inventory'}" into ${targetLabel}${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
       changelogCategory: 'feature',
     });
 
@@ -344,9 +398,9 @@ export function InventoryCsvImport({ isOpen, onClose, onImported, distributors }
     setImporting(false);
 
     if (result.failed === 0) {
-      showToast(`Successfully imported ${result.success} items`, 'success');
+      showToast(`Successfully imported ${result.success} items into ${targetLabel}`, 'success');
     } else {
-      showToast(`Imported ${result.success}/${result.total}. ${result.failed} failed.`, 'error');
+      showToast(`Imported ${result.success}/${result.total} into ${targetLabel}. ${result.failed} failed.`, 'error');
     }
     onImported();
   };
@@ -435,6 +489,29 @@ export function InventoryCsvImport({ isOpen, onClose, onImported, distributors }
             </ul>
           </div>
         )}
+
+        <div className="bg-card border border-border rounded-lg p-3 space-y-2">
+          <label className="block text-sm font-medium text-foreground flex items-center gap-2">
+            <Store size={14} /> Target Branch
+          </label>
+          <select
+            value={targetOutletId}
+            onChange={(e) => setTargetOutletId(e.target.value)}
+            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+          >
+            <option value={MAIN_TARGET}>Main Bakery (central inventory)</option>
+            {outlets.map(o => (
+              <option key={o.id} value={o.id}>
+                {o.name}{o.code ? ` (${o.code})` : ''}{o.is_main_branch ? ' — Main Branch' : ''}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            {targetOutletId === MAIN_TARGET
+              ? 'Items will be added to the main bakery inventory (inventory_items).'
+              : 'Items will be added to the selected branch only (outlet_inventory) and will not affect main bakery stock.'}
+          </p>
+        </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
           <div className="flex items-center gap-2 mb-1">

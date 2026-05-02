@@ -1,9 +1,18 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { logAudit, type AuditAction } from '@/lib/audit-logger';
-import { Upload, FileText, CheckCircle2, XCircle, AlertTriangle, Loader2, Download, Trash2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle2, XCircle, AlertTriangle, Loader2, Download, Trash2, Store } from 'lucide-react';
+
+interface OutletOption {
+  id: string;
+  name: string;
+  code: string | null;
+  is_main_branch: boolean;
+}
+
+const MAIN_TARGET = '__main__';
 
 interface CatalogRow {
   product_name: string;
@@ -224,7 +233,25 @@ export default function CatalogUploadPage() {
   const [previewMode, setPreviewMode] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [writePricing, setWritePricing] = useState(true);
+  const [outlets, setOutlets] = useState<OutletOption[]>([]);
+  const [targetOutletId, setTargetOutletId] = useState<string>(MAIN_TARGET);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('outlets')
+        .select('id, name, code, is_main_branch, status')
+        .eq('status', 'Active')
+        .order('is_main_branch', { ascending: false })
+        .order('name', { ascending: true });
+      if (!cancelled) {
+        setOutlets((data || []) as OutletOption[]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -266,81 +293,136 @@ export default function CatalogUploadPage() {
   const handleImport = async () => {
     if (parsedRows.length === 0) return;
 
+    const isMain = targetOutletId === MAIN_TARGET;
+    const targetOutlet = outlets.find(o => o.id === targetOutletId) || null;
+    const targetLabel = isMain ? 'Main Catalog' : (targetOutlet?.name || 'Selected Branch');
+
     setImporting(true);
     const result: ImportResult = { total: parsedRows.length, success: 0, failed: 0, errors: [] };
 
     for (let i = 0; i < parsedRows.length; i++) {
       const row = parsedRows[i];
       try {
-        const dbRow = {
-          product_name: row.product_name,
-          code: row.code || null,
-          category: row.category,
-          description: row.description,
-          selling_price: row.selling_price,
-          cost_price: row.cost_price,
-          retail_price: row.selling_price,
-          gross_margin: row.gross_margin,
-          stock_unit: row.stock_unit,
-          shelf_life_days: row.shelf_life_days,
-          allergens: row.allergens,
-          dietary_labels: row.dietary_labels,
-          reorder_level: row.reorder_level,
-          notes: row.notes,
-          availability: row.availability,
-          key_ingredients: row.key_ingredients,
-          certification: row.dietary_labels,
-        };
+        if (isMain) {
+          const dbRow = {
+            product_name: row.product_name,
+            code: row.code || null,
+            category: row.category,
+            description: row.description,
+            selling_price: row.selling_price,
+            cost_price: row.cost_price,
+            retail_price: row.selling_price,
+            gross_margin: row.gross_margin,
+            stock_unit: row.stock_unit,
+            shelf_life_days: row.shelf_life_days,
+            allergens: row.allergens,
+            dietary_labels: row.dietary_labels,
+            reorder_level: row.reorder_level,
+            notes: row.notes,
+            availability: row.availability,
+            key_ingredients: row.key_ingredients,
+            certification: row.dietary_labels,
+          };
 
-        // Try upsert by code if code exists, otherwise insert
-        if (row.code) {
-          // Check if product with this code exists
-          const { data: existing } = await supabase
-            .from('food_info')
-            .select('id')
-            .eq('code', row.code)
-            .maybeSingle();
+          // Try upsert by code if code exists, otherwise insert
+          if (row.code) {
+            // Check if product with this code exists
+            const { data: existing } = await supabase
+              .from('food_info')
+              .select('id')
+              .eq('code', row.code)
+              .maybeSingle();
 
-          if (existing) {
-            const { error } = await supabase.from('food_info').update(dbRow).eq('id', existing.id);
-            if (error) throw error;
+            if (existing) {
+              const { error } = await supabase.from('food_info').update(dbRow).eq('id', existing.id);
+              if (error) throw error;
+            } else {
+              const { error } = await supabase.from('food_info').insert(dbRow);
+              if (error) throw error;
+            }
           } else {
             const { error } = await supabase.from('food_info').insert(dbRow);
             if (error) throw error;
           }
-        } else {
-          const { error } = await supabase.from('food_info').insert(dbRow);
-          if (error) throw error;
-        }
 
-        // Also write pricing tier if enabled
-        if (writePricing && row.selling_price > 0) {
-          const wholesalePrice = Math.round(row.selling_price * 0.77);
-          const pricingRow = {
-            product_code: row.code || null,
-            product_name: row.product_name,
-            cost: row.cost_price,
-            base_price: row.selling_price,
-            wholesale_price: wholesalePrice,
-            retail_price: row.selling_price,
-            margin: row.gross_margin,
-            active: true,
-          };
+          // Also write pricing tier if enabled (only for main catalog)
+          if (writePricing && row.selling_price > 0) {
+            const wholesalePrice = Math.round(row.selling_price * 0.77);
+            const pricingRow = {
+              product_code: row.code || null,
+              product_name: row.product_name,
+              cost: row.cost_price,
+              base_price: row.selling_price,
+              wholesale_price: wholesalePrice,
+              retail_price: row.selling_price,
+              margin: row.gross_margin,
+              active: true,
+            };
 
-          if (row.code) {
-            const { data: existingPricing } = await supabase
-              .from('pricing_tiers')
-              .select('id')
-              .eq('product_code', row.code)
-              .maybeSingle();
+            if (row.code) {
+              const { data: existingPricing } = await supabase
+                .from('pricing_tiers')
+                .select('id')
+                .eq('product_code', row.code)
+                .maybeSingle();
 
-            if (existingPricing) {
-              await supabase.from('pricing_tiers').update(pricingRow).eq('id', existingPricing.id);
+              if (existingPricing) {
+                await supabase.from('pricing_tiers').update(pricingRow).eq('id', existingPricing.id);
+              } else {
+                await supabase.from('pricing_tiers').insert(pricingRow);
+              }
             } else {
               await supabase.from('pricing_tiers').insert(pricingRow);
             }
+          }
+        } else {
+          // Branch / outlet target → write to outlet_products
+          if (!targetOutlet) throw new Error('Selected branch not found');
+          const wholesalePrice = row.selling_price > 0 ? Math.round(row.selling_price * 0.77) : 0;
+          const branchRow = {
+            outlet_id: targetOutlet.id,
+            product_name: row.product_name,
+            product_code: row.code || null,
+            category: row.category || 'General',
+            description: row.description || null,
+            retail_price: row.selling_price,
+            wholesale_price: wholesalePrice,
+            cost_price: row.cost_price,
+            stock_unit: row.stock_unit || 'pieces',
+            reorder_level: row.reorder_level || 0,
+            shelf_life_days: row.shelf_life_days || 0,
+            is_from_bakery: false,
+            is_active: true,
+            notes: row.notes || null,
+          };
+
+          // Match by outlet_id + product_code or product_name
+          let existingId: string | null = null;
+          if (row.code) {
+            const { data: byCode } = await supabase
+              .from('outlet_products')
+              .select('id')
+              .eq('outlet_id', targetOutlet.id)
+              .eq('product_code', row.code)
+              .maybeSingle();
+            existingId = byCode?.id ?? null;
+          }
+          if (!existingId) {
+            const { data: byName } = await supabase
+              .from('outlet_products')
+              .select('id')
+              .eq('outlet_id', targetOutlet.id)
+              .eq('product_name', row.product_name)
+              .maybeSingle();
+            existingId = byName?.id ?? null;
+          }
+
+          if (existingId) {
+            const { error } = await supabase.from('outlet_products').update(branchRow).eq('id', existingId);
+            if (error) throw error;
           } else {
-            await supabase.from('pricing_tiers').insert(pricingRow);
+            const { error } = await supabase.from('outlet_products').insert(branchRow);
+            if (error) throw error;
           }
         }
 
@@ -358,11 +440,18 @@ export default function CatalogUploadPage() {
     logAudit({
       action: 'BULK_IMPORT' as AuditAction,
       module: 'Catalog Upload',
-      record_id: 'catalog-csv',
-      details: { total: result.total, success: result.success, failed: result.failed, filename: file?.name },
+      record_id: isMain ? 'catalog-csv' : `catalog-csv:${targetOutlet?.id}`,
+      details: {
+        total: result.total,
+        success: result.success,
+        failed: result.failed,
+        filename: file?.name,
+        target: targetLabel,
+        outlet_id: isMain ? null : targetOutlet?.id,
+      },
       trackChangelog: true,
-      changelogTitle: `Bulk Catalog Import — ${result.success} Products`,
-      changelogDescription: `Imported ${result.success} of ${result.total} products from CSV file "${file?.name || 'catalog'}"${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
+      changelogTitle: `Bulk Catalog Import — ${result.success} Products → ${targetLabel}`,
+      changelogDescription: `Imported ${result.success} of ${result.total} products from CSV file "${file?.name || 'catalog'}" into ${targetLabel}${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
       changelogCategory: 'feature',
     });
 
@@ -370,9 +459,9 @@ export default function CatalogUploadPage() {
     setImporting(false);
 
     if (result.failed === 0) {
-      showToast(`Successfully imported ${result.success} products!`, 'success');
+      showToast(`Successfully imported ${result.success} products into ${targetLabel}!`, 'success');
     } else {
-      showToast(`Imported ${result.success}/${result.total} products. ${result.failed} failed.`, 'error');
+      showToast(`Imported ${result.success}/${result.total} products into ${targetLabel}. ${result.failed} failed.`, 'error');
     }
   };
 
@@ -543,14 +632,39 @@ export default function CatalogUploadPage() {
       {parsedRows.length > 0 && !importResult && (
         <div className="bg-card border border-border rounded-lg p-4 space-y-4">
           <h3 className="font-medium text-foreground">Import Options</h3>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-foreground flex items-center gap-2">
+              <Store size={14} /> Target Branch
+            </label>
+            <select
+              value={targetOutletId}
+              onChange={(e) => setTargetOutletId(e.target.value)}
+              className="w-full md:w-96 px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background"
+            >
+              <option value={MAIN_TARGET}>Main Catalog (all branches)</option>
+              {outlets.map(o => (
+                <option key={o.id} value={o.id}>
+                  {o.name}{o.code ? ` (${o.code})` : ''}{o.is_main_branch ? ' — Main Branch' : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {targetOutletId === MAIN_TARGET
+                ? 'Products will be added to the master catalog (food_info) and will be available to all branches.'
+                : 'Products will be added to the selected branch only (outlet_products) and will not affect the master catalog.'}
+            </p>
+          </div>
+
+          <label className={`flex items-center gap-2 text-sm ${targetOutletId === MAIN_TARGET ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
             <input
               type="checkbox"
-              checked={writePricing}
+              checked={writePricing && targetOutletId === MAIN_TARGET}
               onChange={(e) => setWritePricing(e.target.checked)}
+              disabled={targetOutletId !== MAIN_TARGET}
               className="rounded border-border"
             />
-            <span className="text-foreground">Also write pricing tiers (cost, wholesale, retail)</span>
+            <span className="text-foreground">Also write pricing tiers (cost, wholesale, retail) — main catalog only</span>
           </label>
           <div className="flex gap-3">
             <button
