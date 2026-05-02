@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, Upload, Send, Store, Loader2, X, Building2, AlertTriangle } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 
 interface RecipeOption {
@@ -40,6 +40,28 @@ interface FoodInfo {
   supplier: string;
 }
 
+interface OutletOption {
+  id: string;
+  name: string;
+  code: string | null;
+  outlet_type: string | null;
+  is_main_branch: boolean;
+}
+
+interface PricingMatch {
+  productCode: string;
+  productName: string;
+  cost: number;
+  retail: number;
+  wholesale: number;
+}
+
+interface BranchAssignmentExisting {
+  outletId: string;
+  productId: string;
+  outletProductId: string;
+}
+
 const ALLERGEN_OPTIONS = [
   'Gluten', 'Dairy', 'Eggs', 'Nuts', 'Sesame', 'Soy', 'Fish', 'Shellfish', 'Sulfites',
 ];
@@ -65,6 +87,18 @@ export default function FoodInfoPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const itemsPerPage = 10;
+
+  // Branch assignment states
+  const [outlets, setOutlets] = useState<OutletOption[]>([]);
+  const [pricingMap, setPricingMap] = useState<Record<string, PricingMatch>>({});
+  const [assignModal, setAssignModal] = useState<{ itemIds: string[] } | null>(null);
+  const [assignSelectedOutlets, setAssignSelectedOutlets] = useState<Set<string>>(new Set());
+  const [assignInitialStock, setAssignInitialStock] = useState<Record<string, number>>({});
+  const [existingAssignments, setExistingAssignments] = useState<BranchAssignmentExisting[]>([]);
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
+  const [outletFilter, setOutletFilter] = useState('');
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -124,7 +158,41 @@ export default function FoodInfoPage() {
     }
   }, []);
 
-  useEffect(() => { fetchItems(); fetchRecipes(); }, [fetchItems, fetchRecipes]);
+  const fetchOutlets = useCallback(async () => {
+    const { data } = await supabase
+      .from('outlets')
+      .select('id, name, code, outlet_type, is_main_branch, status')
+      .eq('status', 'Active')
+      .order('is_main_branch', { ascending: false })
+      .order('name', { ascending: true });
+    if (data) setOutlets(data as OutletOption[]);
+  }, []);
+
+  const fetchPricing = useCallback(async () => {
+    const { data } = await supabase
+      .from('pricing_tiers')
+      .select('product_code, product_name, cost, retail_price, wholesale_price')
+      .eq('active', true);
+    if (data) {
+      const map: Record<string, PricingMatch> = {};
+      for (const r of data as Record<string, unknown>[]) {
+        const code = ((r.product_code || '') as string).trim();
+        const name = ((r.product_name || '') as string).trim().toLowerCase();
+        const entry: PricingMatch = {
+          productCode: code,
+          productName: (r.product_name || '') as string,
+          cost: Number(r.cost || 0),
+          retail: Number(r.retail_price || 0),
+          wholesale: Number(r.wholesale_price || 0),
+        };
+        if (code) map[`code:${code}`] = entry;
+        if (name) map[`name:${name}`] = entry;
+      }
+      setPricingMap(map);
+    }
+  }, []);
+
+  useEffect(() => { fetchItems(); fetchRecipes(); fetchOutlets(); fetchPricing(); }, [fetchItems, fetchRecipes, fetchOutlets, fetchPricing]);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -366,6 +434,225 @@ export default function FoodInfoPage() {
     showToast(`${ids.length} product(s) deleted`, 'success');
   };
 
+  // ── Branch assignment ─────────────────────────────────────────────────────
+
+  const findPricing = useCallback((item: FoodInfo): PricingMatch | null => {
+    if (item.code) {
+      const byCode = pricingMap[`code:${item.code.trim()}`];
+      if (byCode) return byCode;
+    }
+    if (item.productName) {
+      const byName = pricingMap[`name:${item.productName.trim().toLowerCase()}`];
+      if (byName) return byName;
+    }
+    return null;
+  }, [pricingMap]);
+
+  const openAssignModal = async (itemIds: string[], preselectOutletId?: string) => {
+    if (itemIds.length === 0) return;
+    const initialStock: Record<string, number> = {};
+    itemIds.forEach(id => {
+      const item = items.find(i => i.id === id);
+      if (item) initialStock[id] = 0;
+    });
+    setAssignInitialStock(initialStock);
+    setAssignSelectedOutlets(new Set(preselectOutletId ? [preselectOutletId] : []));
+    setOverwriteExisting(false);
+    setOutletFilter('');
+    setContextMenu(null);
+
+    // Look up which (outlet, product) combinations already exist so the user is warned
+    const { data } = await supabase
+      .from('outlet_products')
+      .select('id, outlet_id, bakery_product_id, product_name')
+      .in('bakery_product_id', itemIds);
+    const existing: BranchAssignmentExisting[] = (data || []).map((r: Record<string, unknown>) => ({
+      outletId: (r.outlet_id || '') as string,
+      productId: (r.bakery_product_id || '') as string,
+      outletProductId: (r.id || '') as string,
+    }));
+    // Also catch matches by product name when no bakery_product_id linkage exists yet
+    const itemsToCheck = itemIds.map(id => items.find(i => i.id === id)).filter((i): i is FoodInfo => !!i);
+    if (itemsToCheck.length > 0) {
+      const { data: byName } = await supabase
+        .from('outlet_products')
+        .select('id, outlet_id, product_name, bakery_product_id')
+        .in('product_name', itemsToCheck.map(i => i.productName));
+      (byName || []).forEach((r: Record<string, unknown>) => {
+        const matchedItem = itemsToCheck.find(i => i.productName === r.product_name);
+        if (!matchedItem) return;
+        if (r.bakery_product_id && r.bakery_product_id === matchedItem.id) return; // already covered
+        existing.push({
+          outletId: (r.outlet_id || '') as string,
+          productId: matchedItem.id,
+          outletProductId: (r.id || '') as string,
+        });
+      });
+    }
+    setExistingAssignments(existing);
+    setAssignModal({ itemIds });
+  };
+
+  const handleAssignToBranches = async () => {
+    if (!assignModal) return;
+    if (assignSelectedOutlets.size === 0) {
+      showToast('Select at least one branch to continue', 'error');
+      return;
+    }
+    setAssigning(true);
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const targetOutletIds = Array.from(assignSelectedOutlets);
+    const targetOutletNames = targetOutletIds
+      .map(id => outlets.find(o => o.id === id)?.name)
+      .filter(Boolean)
+      .join(', ');
+
+    for (const outletId of targetOutletIds) {
+      const outlet = outlets.find(o => o.id === outletId);
+      if (!outlet) { failed += assignModal.itemIds.length; continue; }
+
+      // Determine the next sequence number prefix for product code generation on this outlet
+      const prefix = (outlet.code || outlet.name.replace(/[^A-Z]/gi, '').slice(0, 3) || 'BRN').toUpperCase();
+      const { data: existingCodes } = await supabase
+        .from('outlet_products')
+        .select('product_code')
+        .eq('outlet_id', outletId)
+        .like('product_code', `${prefix}-%`);
+      let maxSeq = 0;
+      (existingCodes || []).forEach((r: Record<string, unknown>) => {
+        const code = (r.product_code || '') as string;
+        const m = code.match(/(\d+)$/);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (!isNaN(n) && n > maxSeq) maxSeq = n;
+        }
+      });
+
+      let seqOffset = 0;
+      for (const itemId of assignModal.itemIds) {
+        const item = items.find(i => i.id === itemId);
+        if (!item) { failed++; continue; }
+
+        const existingHere = existingAssignments.find(
+          e => e.outletId === outletId && e.productId === itemId,
+        );
+        if (existingHere && !overwriteExisting) {
+          skipped++;
+          continue;
+        }
+
+        const pricing = findPricing(item);
+        const initialStock = Number(assignInitialStock[itemId] ?? 0);
+
+        seqOffset++;
+        const newCode = `${prefix}-${(maxSeq + seqOffset).toString().padStart(3, '0')}`;
+
+        const branchRow = {
+          outlet_id: outletId,
+          product_name: item.productName,
+          product_code: existingHere ? undefined : newCode,
+          category: 'Baked Goods',
+          description: item.recipeName ? `Bakery item linked to recipe ${item.recipeName}` : `Bakery catalogue item`,
+          image_url: item.imageUrl || null,
+          retail_price: pricing?.retail || 0,
+          wholesale_price: pricing?.wholesale || 0,
+          cost_price: pricing?.cost || 0,
+          current_stock: initialStock,
+          stock_unit: item.stockUnit || 'pieces',
+          reorder_level: item.reorderLevel || 0,
+          shelf_life_days: item.shelf_life_days || 0,
+          is_from_bakery: true,
+          bakery_product_id: item.id,
+          is_active: true,
+          barcode: null,
+          notes: `Linked from Product Catalogue (${item.code || item.productName})`,
+        };
+
+        try {
+          if (existingHere) {
+            const { product_code, ...updateRow } = branchRow;
+            void product_code;
+            const { error } = await supabase
+              .from('outlet_products')
+              .update(updateRow)
+              .eq('id', existingHere.outletProductId);
+            if (error) throw error;
+            updated++;
+          } else {
+            const { error } = await supabase
+              .from('outlet_products')
+              .insert(branchRow);
+            if (error) throw error;
+            inserted++;
+          }
+
+          logAudit({
+            action: existingHere ? 'UPDATE' : 'CREATE',
+            module: 'Product Catalogue',
+            record_id: item.id,
+            details: {
+              event: 'branch_assignment',
+              product_name: item.productName,
+              product_code: item.code,
+              target_branch: outlet.name,
+              target_outlet_id: outletId,
+              initial_stock: initialStock,
+              overwrite: !!existingHere && overwriteExisting,
+            },
+          });
+        } catch (err) {
+          failed++;
+          errors.push(`${item.productName} → ${outlet.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+    }
+
+    setAssigning(false);
+    setAssignModal(null);
+    setSelectedIds(new Set());
+
+    const totalOk = inserted + updated;
+    if (failed === 0 && totalOk > 0) {
+      showToast(
+        `Assigned to ${targetOutletIds.length} branch(es): ${inserted} added, ${updated} updated${skipped ? `, ${skipped} skipped` : ''}.`,
+        'success',
+      );
+    } else if (totalOk > 0) {
+      showToast(
+        `Partial: ${totalOk} ok, ${failed} failed${errors[0] ? ' — ' + errors[0] : ''}.`,
+        'error',
+      );
+    } else if (skipped > 0) {
+      showToast(`Nothing to do — ${skipped} already on the selected branch(es). Toggle "Update existing" to overwrite.`, 'error');
+    } else {
+      showToast(`Branch assignment failed${errors[0] ? ': ' + errors[0] : ''}`, 'error');
+    }
+  };
+
+  const toggleAssignOutlet = (outletId: string) => {
+    setAssignSelectedOutlets(prev => {
+      const n = new Set(prev);
+      if (n.has(outletId)) n.delete(outletId); else n.add(outletId);
+      return n;
+    });
+  };
+
+  const groupedOutlets = outlets.reduce<Record<string, OutletOption[]>>((acc, o) => {
+    const key = o.is_main_branch ? 'Main Branch' : (o.outlet_type || 'Other');
+    (acc[key] = acc[key] || []).push(o);
+    return acc;
+  }, {});
+  const groupOrder = ['Main Branch', 'Bakery', 'Coffee Shop', 'Restaurant', 'Outlet', 'Other'];
+  const sortedGroupKeys = Object.keys(groupedOutlets).sort((a, b) => {
+    const ai = groupOrder.indexOf(a);
+    const bi = groupOrder.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
   const toggleAllergen = (allergen: string) => {
     setFormData({
       ...formData,
@@ -484,12 +771,21 @@ export default function FoodInfoPage() {
             />
           </div>
           {selectedIds.size > 0 && (
-            <button
-              onClick={handleBulkDelete}
-              className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
-            >
-              <Trash2 size={14} /> Delete {selectedIds.size} selected
-            </button>
+            <>
+              <button
+                onClick={() => openAssignModal(Array.from(selectedIds))}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium shadow-sm"
+                title="Assign selected products to one or more branches"
+              >
+                <Building2 size={14} /> Assign {selectedIds.size} to Branch{selectedIds.size === 1 ? '' : 'es'}
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+              >
+                <Trash2 size={14} /> Delete {selectedIds.size} selected
+              </button>
+            </>
           )}
         </div>
         <button
@@ -906,7 +1202,17 @@ export default function FoodInfoPage() {
                 const isLowStock = item.currentStock > 0 && item.reorderLevel > 0 && item.currentStock <= item.reorderLevel;
                 const isOutOfStock = item.currentStock === 0 && item.reorderLevel > 0;
                 return (
-                  <tr key={item.id} className={`border-b border-border hover:bg-secondary/50 transition-colors ${selectedIds.has(item.id) ? 'bg-primary/5' : ''}`}>
+                  <tr
+                    key={item.id}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      if (!selectedIds.has(item.id)) {
+                        setSelectedIds(new Set([item.id]));
+                      }
+                      setContextMenu({ x: e.clientX, y: e.clientY, itemId: item.id });
+                    }}
+                    className={`border-b border-border hover:bg-secondary/50 transition-colors cursor-context-menu ${selectedIds.has(item.id) ? 'bg-primary/5' : ''}`}
+                  >
                     <td className="px-3 py-3 text-center">
                       <button type="button" onClick={() => toggleSelect(item.id)} className="text-muted-foreground hover:text-foreground">
                         {selectedIds.has(item.id) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
@@ -961,6 +1267,19 @@ export default function FoodInfoPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(item)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors font-medium">Edit</button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            if (!selectedIds.has(item.id)) setSelectedIds(new Set([item.id]));
+                            setContextMenu({ x: rect.right, y: rect.bottom, itemId: item.id });
+                          }}
+                          className="px-2 py-1 text-xs bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200 transition-colors font-medium flex items-center gap-1"
+                          title="Assign to a branch (right-click row for the same menu)"
+                        >
+                          <Building2 size={11} /> Branch
+                        </button>
                         <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors font-medium">Delete</button>
                       </div>
                     </td>
@@ -1008,6 +1327,376 @@ export default function FoodInfoPage() {
           </div>
         </div>
       )}
+
+      {/* Right-click / row-action context menu (Assign to branch) */}
+      {contextMenu && (() => {
+        const ctxItem = items.find(i => i.id === contextMenu.itemId);
+        if (!ctxItem) return null;
+        const targetIds = selectedIds.size > 1 && selectedIds.has(contextMenu.itemId)
+          ? Array.from(selectedIds)
+          : [contextMenu.itemId];
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setContextMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+            />
+            <div
+              className="fixed z-50 w-72 bg-white border border-border rounded-xl shadow-2xl py-1.5 animate-in fade-in zoom-in-95 duration-100"
+              style={{
+                left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1024) - 300),
+                top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 768) - 320),
+              }}
+            >
+              <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+                <div className="text-xs">
+                  <p className="font-semibold truncate max-w-[180px]">
+                    {targetIds.length === 1 ? ctxItem.productName : `${targetIds.length} products selected`}
+                  </p>
+                  <p className="text-muted-foreground">Branch & quick actions</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setContextMenu(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Close menu"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                Add to Branch
+              </div>
+              <button
+                type="button"
+                onClick={() => openAssignModal(targetIds)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-emerald-50 text-emerald-800"
+              >
+                <Building2 size={14} className="text-emerald-600" />
+                <span className="flex-1 text-left">
+                  <span className="block font-medium">Assign to branch(es)&hellip;</span>
+                  <span className="block text-[11px] text-muted-foreground">Pick one or more branches & set initial stock</span>
+                </span>
+              </button>
+
+              {outlets.length > 0 && (
+                <>
+                  <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground font-semibold border-t border-border mt-1">
+                    Quick add to&hellip;
+                  </div>
+                  <div className="max-h-44 overflow-y-auto">
+                    {outlets.map(o => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => openAssignModal(targetIds, o.id)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-secondary text-left"
+                      >
+                        <Store size={13} className="text-muted-foreground" />
+                        <span className="flex-1 truncate">
+                          {o.name}
+                          {o.code ? <span className="text-muted-foreground"> ({o.code})</span> : null}
+                        </span>
+                        {o.is_main_branch ? (
+                          <span className="text-[9px] uppercase font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Main</span>
+                        ) : o.outlet_type ? (
+                          <span className="text-[9px] uppercase font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{o.outlet_type}</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {targetIds.length === 1 && (
+                <>
+                  <div className="border-t border-border mt-1" />
+                  <button
+                    type="button"
+                    onClick={() => { setContextMenu(null); handleEdit(ctxItem); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-secondary"
+                  >
+                    Edit product
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setContextMenu(null); handleDelete(ctxItem.id); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 text-red-700"
+                  >
+                    <Trash2 size={13} /> Delete product
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Assign-to-Branches modal */}
+      <Modal
+        isOpen={!!assignModal}
+        onClose={() => { if (!assigning) setAssignModal(null); }}
+        title="Assign Products to Branches"
+        size="3xl"
+      >
+        {assignModal && (() => {
+          const targetItems = assignModal.itemIds
+            .map(id => items.find(i => i.id === id))
+            .filter((i): i is FoodInfo => !!i);
+
+          const filteredOutlets = outlets.filter(o => {
+            if (!outletFilter) return true;
+            const t = outletFilter.toLowerCase();
+            return (
+              o.name.toLowerCase().includes(t) ||
+              (o.code || '').toLowerCase().includes(t) ||
+              (o.outlet_type || '').toLowerCase().includes(t)
+            );
+          });
+
+          const conflictsByItem: Record<string, string[]> = {};
+          existingAssignments.forEach(e => {
+            if (!assignSelectedOutlets.has(e.outletId)) return;
+            const o = outlets.find(x => x.id === e.outletId);
+            if (!o) return;
+            (conflictsByItem[e.productId] = conflictsByItem[e.productId] || []).push(o.name);
+          });
+          const conflictCount = Object.values(conflictsByItem).reduce((s, a) => s + a.length, 0);
+          const totalAssignments = assignSelectedOutlets.size * targetItems.length;
+          const newAssignments = totalAssignments - conflictCount;
+
+          return (
+            <div className="space-y-4 p-1">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex gap-3 items-start">
+                <Building2 size={18} className="text-emerald-700 mt-0.5 shrink-0" />
+                <div className="text-sm text-emerald-900">
+                  <p className="font-semibold">
+                    Send {targetItems.length} product{targetItems.length === 1 ? '' : 's'} to one or more branches
+                  </p>
+                  <p className="text-xs text-emerald-800 mt-0.5">
+                    Each branch (main bakery, baker outlets, coffee shops…) keeps its own product list.
+                    Products you pick here are linked back to this catalogue, so price and recipe updates can flow through.
+                    Pricing is auto-filled from the active pricing tier when the product code matches.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                {/* LEFT: Branch selection */}
+                <div className="lg:col-span-3 border border-border rounded-lg overflow-hidden flex flex-col">
+                  <div className="bg-secondary/50 px-3 py-2 text-sm font-medium flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Store size={14} /> Pick Branches
+                      <span className="text-xs text-muted-foreground">({assignSelectedOutlets.size} selected)</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAssignSelectedOutlets(new Set(filteredOutlets.map(o => o.id)))}
+                        className="text-[11px] font-semibold text-primary hover:underline"
+                      >
+                        Select all{outletFilter ? ' shown' : ''}
+                      </button>
+                      <span className="text-muted-foreground">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setAssignSelectedOutlets(new Set())}
+                        className="text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 border-b border-border">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={outletFilter}
+                        onChange={(e) => setOutletFilter(e.target.value)}
+                        placeholder="Filter branches by name, type, or code…"
+                        className="w-full pl-8 pr-3 py-1.5 border border-border rounded text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {outlets.length === 0 ? (
+                      <div className="p-4 text-sm text-muted-foreground text-center">
+                        No active branches found. Add outlets under <strong>Outlets</strong> first.
+                      </div>
+                    ) : sortedGroupKeys.map(group => {
+                      const inGroup = (groupedOutlets[group] || []).filter(o => filteredOutlets.includes(o));
+                      if (inGroup.length === 0) return null;
+                      const allInGroupSelected = inGroup.every(o => assignSelectedOutlets.has(o.id));
+                      return (
+                        <div key={group}>
+                          <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-y border-border text-[11px] uppercase font-bold text-slate-700">
+                            <span>{group} <span className="text-slate-400 font-normal">({inGroup.length})</span></span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAssignSelectedOutlets(prev => {
+                                  const n = new Set(prev);
+                                  if (allInGroupSelected) {
+                                    inGroup.forEach(o => n.delete(o.id));
+                                  } else {
+                                    inGroup.forEach(o => n.add(o.id));
+                                  }
+                                  return n;
+                                });
+                              }}
+                              className="text-[10px] text-primary hover:underline font-semibold"
+                            >
+                              {allInGroupSelected ? 'Deselect group' : 'Select group'}
+                            </button>
+                          </div>
+                          {inGroup.map(o => {
+                            const checked = assignSelectedOutlets.has(o.id);
+                            return (
+                              <label
+                                key={o.id}
+                                className={`flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-secondary/40 border-b border-border last:border-0 ${checked ? 'bg-emerald-50/50' : ''}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleAssignOutlet(o.id)}
+                                  className="w-4 h-4 accent-emerald-600"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium truncate flex items-center gap-2">
+                                    {o.name}
+                                    {o.is_main_branch && (
+                                      <span className="text-[9px] uppercase font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Main</span>
+                                    )}
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground truncate">
+                                    {o.code || '—'}
+                                    {o.outlet_type ? <> &bull; {o.outlet_type}</> : null}
+                                  </p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* RIGHT: Items & per-item initial stock */}
+                <div className="lg:col-span-2 border border-border rounded-lg overflow-hidden flex flex-col">
+                  <div className="bg-secondary/50 px-3 py-2 text-sm font-medium flex items-center justify-between">
+                    <span>Selected products</span>
+                    <span className="text-xs text-muted-foreground">{targetItems.length}</span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto divide-y divide-border">
+                    {targetItems.map(it => {
+                      const conflicts = conflictsByItem[it.id] || [];
+                      const pricing = findPricing(it);
+                      return (
+                        <div key={it.id} className="px-3 py-2 text-sm">
+                          <div className="flex items-start gap-2">
+                            {it.imageUrl ? (
+                              <img src={it.imageUrl} alt={it.productName} className="w-9 h-9 rounded object-cover shrink-0" />
+                            ) : (
+                              <div className="w-9 h-9 rounded bg-gray-100 flex items-center justify-center shrink-0">
+                                <span className="text-[10px] text-gray-400">N/A</span>
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{it.productName}</p>
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                {it.code || '—'}
+                                {pricing ? <> &bull; KSh {pricing.retail.toLocaleString()}</> : <> &bull; <span className="text-amber-600">no pricing tier</span></>}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <label className="text-[11px] text-muted-foreground">Initial stock</label>
+                            <input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={assignInitialStock[it.id] ?? 0}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                setAssignInitialStock(prev => ({ ...prev, [it.id]: isNaN(v) ? 0 : v }));
+                              }}
+                              className="w-20 px-2 py-1 border border-border rounded text-sm text-right font-mono outline-none focus:ring-2 focus:ring-primary/40"
+                            />
+                            <span className="text-[11px] text-muted-foreground">{it.stockUnit}</span>
+                          </div>
+                          {conflicts.length > 0 && (
+                            <p className="mt-1 text-[11px] text-amber-700 flex items-start gap-1">
+                              <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                              <span>Already on: {conflicts.join(', ')}</span>
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={overwriteExisting}
+                  onChange={(e) => setOverwriteExisting(e.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-medium">Update existing branch products</span>
+                  <span className="block text-xs text-muted-foreground">
+                    When a product is already on a selected branch, refresh its pricing, image, and stock from this catalogue.
+                    Off by default so you do not accidentally overwrite branch-specific edits.
+                  </span>
+                </span>
+              </label>
+
+              {assignSelectedOutlets.size > 0 && (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 flex flex-wrap gap-x-6 gap-y-1">
+                  <span><strong>{newAssignments}</strong> new branch product{newAssignments === 1 ? '' : 's'} will be created</span>
+                  {conflictCount > 0 && (
+                    <span>
+                      <strong>{conflictCount}</strong> existing will be {overwriteExisting ? 'updated' : 'skipped'}
+                    </span>
+                  )}
+                  <span><strong>{assignSelectedOutlets.size}</strong> branch{assignSelectedOutlets.size === 1 ? '' : 'es'} &times; {targetItems.length} product{targetItems.length === 1 ? '' : 's'}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setAssignModal(null)}
+                  disabled={assigning}
+                  className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-secondary disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAssignToBranches}
+                  disabled={assigning || assignSelectedOutlets.size === 0 || (newAssignments === 0 && !overwriteExisting)}
+                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {assigning ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  {assigning
+                    ? `Assigning…`
+                    : assignSelectedOutlets.size === 0
+                      ? `Pick at least one branch`
+                      : `Add to ${assignSelectedOutlets.size} branch${assignSelectedOutlets.size === 1 ? '' : 'es'}`}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 }
