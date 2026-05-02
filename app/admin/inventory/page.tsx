@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '@/components/modal';
 import { supabase } from '@/lib/supabase';
-import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, FileDown, Pencil, Upload, Download } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, ChevronLeft, ChevronRight, FileDown, Pencil, Upload, Download, Send, Store, Loader2, MoreVertical, X } from 'lucide-react';
 import { logAudit } from '@/lib/audit-logger';
 import { InventoryCsvImport, buildInventoryCSV } from '@/components/inventory-csv-import';
 
@@ -70,6 +70,14 @@ export default function InventoryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+
+  // Dispatch-to-Branch states
+  const [dispatchModal, setDispatchModal] = useState<{ itemIds: string[] } | null>(null);
+  const [dispatchOutletId, setDispatchOutletId] = useState<string>('');
+  const [dispatchQuantities, setDispatchQuantities] = useState<Record<string, number>>({});
+  const [deductFromMain, setDeductFromMain] = useState<boolean>(true);
+  const [dispatching, setDispatching] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -341,6 +349,134 @@ export default function InventoryPage() {
     setInventory(prev => prev.filter(i => !selectedIds.has(i.id)));
     setSelectedIds(new Set());
     showToast(`${ids.length} item(s) deleted`, 'success');
+  };
+
+  const openDispatchModal = (itemIds: string[]) => {
+    if (itemIds.length === 0) return;
+    const initialQty: Record<string, number> = {};
+    itemIds.forEach(id => {
+      const item = inventory.find(i => i.id === id);
+      if (item) initialQty[id] = item.quantity > 0 ? item.quantity : 1;
+    });
+    setDispatchQuantities(initialQty);
+    setDispatchOutletId(prev => prev || outlets[0]?.id || '');
+    setDeductFromMain(true);
+    setDispatchModal({ itemIds });
+    setContextMenu(null);
+  };
+
+  const handleDispatchToBranch = async () => {
+    if (!dispatchModal || !dispatchOutletId) return;
+    const targetOutlet = outlets.find(o => o.id === dispatchOutletId);
+    if (!targetOutlet) {
+      showToast('Selected branch not found', 'error');
+      return;
+    }
+    setDispatching(true);
+    let success = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const today = new Date().toISOString().split('T')[0];
+
+    for (const itemId of dispatchModal.itemIds) {
+      const item = inventory.find(i => i.id === itemId);
+      if (!item) { failed++; continue; }
+      const qty = Number(dispatchQuantities[itemId] ?? 0);
+      if (!qty || qty <= 0) {
+        failed++;
+        errors.push(`${item.name}: invalid quantity`);
+        continue;
+      }
+      if (deductFromMain && qty > item.quantity) {
+        failed++;
+        errors.push(`${item.name}: requested ${qty} but only ${item.quantity} ${item.unit} on hand`);
+        continue;
+      }
+
+      try {
+        const { data: existing } = await supabase
+          .from('outlet_inventory')
+          .select('id, quantity')
+          .eq('outlet_id', targetOutlet.id)
+          .eq('item_name', item.name)
+          .maybeSingle();
+
+        const branchRow = {
+          outlet_id: targetOutlet.id,
+          item_name: item.name,
+          category: item.category || 'General',
+          unit: item.unit || 'pieces',
+          unit_cost: item.unitCost,
+          reorder_level: item.reorderLevel,
+          supplier: item.supplier || null,
+          source: 'main_branch' as const,
+          last_restocked: today,
+          status: 'Active' as const,
+        };
+
+        if (existing) {
+          const newQty = Number(existing.quantity || 0) + qty;
+          const { error } = await supabase
+            .from('outlet_inventory')
+            .update({ ...branchRow, quantity: newQty })
+            .eq('id', existing.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('outlet_inventory')
+            .insert({ ...branchRow, quantity: qty });
+          if (error) throw error;
+        }
+
+        if (deductFromMain) {
+          const newMainQty = Math.max(0, item.quantity - qty);
+          const { error: updErr } = await supabase
+            .from('inventory_items')
+            .update({ quantity: newMainQty })
+            .eq('id', item.id);
+          if (updErr) throw updErr;
+
+          await supabase.from('inventory_transactions').insert({
+            item_id: item.id,
+            type: 'output',
+            quantity: qty,
+            reference: `Dispatched to ${targetOutlet.name}`,
+          });
+        }
+
+        logAudit({
+          action: 'CREATE',
+          module: 'Inventory',
+          record_id: item.id,
+          details: {
+            name: item.name,
+            dispatched_quantity: qty,
+            target_branch: targetOutlet.name,
+            target_outlet_id: targetOutlet.id,
+            deducted_from_main: deductFromMain,
+          },
+        });
+        success++;
+      } catch (err) {
+        failed++;
+        errors.push(`${item.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }
+
+    setDispatching(false);
+    setDispatchModal(null);
+    setSelectedIds(new Set());
+    await fetchInventory();
+    if (deductFromMain) await fetchTransactions();
+
+    if (failed === 0) {
+      showToast(`Dispatched ${success} item(s) to ${targetOutlet.name}`, 'success');
+    } else {
+      showToast(
+        `Dispatched ${success}/${success + failed} to ${targetOutlet.name}. ${failed} failed${errors[0] ? ': ' + errors[0] : ''}.`,
+        'error',
+      );
+    }
   };
 
   const handleDeleteCategory = async (id: string) => {
@@ -686,12 +822,21 @@ export default function InventoryPage() {
                 <option>Non-Consumable</option>
               </select>
               {selectedIds.size > 0 && (
-                <button
-                  onClick={handleBulkDelete}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
-                >
-                  <Trash2 size={14} /> Delete {selectedIds.size} selected
-                </button>
+                <>
+                  <button
+                    onClick={() => openDispatchModal(Array.from(selectedIds))}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
+                    title="Send selected items to a branch outlet"
+                  >
+                    <Send size={14} /> Dispatch {selectedIds.size} to Branch
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                  >
+                    <Trash2 size={14} /> Delete {selectedIds.size} selected
+                  </button>
+                </>
               )}
             </div>
             <button
@@ -973,7 +1118,17 @@ export default function InventoryPage() {
                     const dailyUsage = getDailyUsage(item.id);
                     const daysLeft = getDaysRemaining(item);
                     return (
-                      <tr key={item.id} className={`border-b border-border hover:bg-secondary/50 ${isLowStock ? 'bg-red-50/50' : ''} ${selectedIds.has(item.id) ? 'bg-primary/5' : ''}`}>
+                      <tr
+                        key={item.id}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          if (!selectedIds.has(item.id)) {
+                            setSelectedIds(new Set([item.id]));
+                          }
+                          setContextMenu({ x: e.clientX, y: e.clientY, itemId: item.id });
+                        }}
+                        className={`border-b border-border hover:bg-secondary/50 cursor-context-menu ${isLowStock ? 'bg-red-50/50' : ''} ${selectedIds.has(item.id) ? 'bg-primary/5' : ''}`}
+                      >
                         <td className="px-3 py-3 text-center">
                           <button type="button" onClick={() => toggleSelect(item.id)} className="text-muted-foreground hover:text-foreground">
                             {selectedIds.has(item.id) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
@@ -1036,6 +1191,19 @@ export default function InventoryPage() {
                             <button onClick={() => handleEdit(item)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">
                               Edit
                             </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                if (!selectedIds.has(item.id)) setSelectedIds(new Set([item.id]));
+                                setContextMenu({ x: rect.right, y: rect.bottom, itemId: item.id });
+                              }}
+                              className="px-2 py-1 text-xs bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200 flex items-center gap-1"
+                              title="Branch actions (also available via right-click)"
+                            >
+                              <MoreVertical size={12} /> Branch
+                            </button>
                             <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">
                               Delete
                             </button>
@@ -1086,6 +1254,252 @@ export default function InventoryPage() {
             </div>
           )}
           </div>
+
+          {/* Right-click / row-action context menu */}
+          {contextMenu && (() => {
+            const ctxItem = inventory.find(i => i.id === contextMenu.itemId);
+            if (!ctxItem) return null;
+            const targetIds = selectedIds.size > 1 && selectedIds.has(contextMenu.itemId)
+              ? Array.from(selectedIds)
+              : [contextMenu.itemId];
+            return (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+                <div
+                  className="fixed z-50 w-72 bg-white border border-border rounded-xl shadow-2xl py-1.5 animate-in fade-in zoom-in-95 duration-100"
+                  style={{
+                    left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1024) - 300),
+                    top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 768) - 280),
+                  }}
+                >
+                  <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+                    <div className="text-xs">
+                      <p className="font-semibold truncate max-w-[180px]">{targetIds.length === 1 ? ctxItem.name : `${targetIds.length} items selected`}</p>
+                      <p className="text-muted-foreground">Branch & quick actions</p>
+                    </div>
+                    <button type="button" onClick={() => setContextMenu(null)} className="text-muted-foreground hover:text-foreground" aria-label="Close menu">
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                    Drop to Branch
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openDispatchModal(targetIds)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-emerald-50 text-emerald-800"
+                  >
+                    <Send size={14} className="text-emerald-600" />
+                    <span className="flex-1 text-left">
+                      <span className="block font-medium">Dispatch to a branch&hellip;</span>
+                      <span className="block text-[11px] text-muted-foreground">Pick a branch and quantity</span>
+                    </span>
+                  </button>
+
+                  {outlets.length > 0 && (
+                    <>
+                      <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground font-semibold border-t border-border mt-1">
+                        Quick send to&hellip;
+                      </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {outlets.map(o => (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => {
+                              setDispatchOutletId(o.id);
+                              openDispatchModal(targetIds);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-secondary text-left"
+                          >
+                            <Store size={13} className="text-muted-foreground" />
+                            <span className="flex-1 truncate">
+                              {o.name}
+                              {o.code ? <span className="text-muted-foreground"> ({o.code})</span> : null}
+                            </span>
+                            {o.is_main_branch && (
+                              <span className="text-[9px] uppercase font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Main</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {targetIds.length === 1 && (
+                    <>
+                      <div className="border-t border-border mt-1" />
+                      <button
+                        type="button"
+                        onClick={() => { handleEdit(ctxItem); setContextMenu(null); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-secondary"
+                      >
+                        <Pencil size={13} /> Edit item
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setContextMenu(null); handleDelete(ctxItem.id); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 text-red-700"
+                      >
+                        <Trash2 size={13} /> Delete item
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+
+          {/* Dispatch to Branch modal */}
+          <Modal
+            isOpen={!!dispatchModal}
+            onClose={() => { if (!dispatching) setDispatchModal(null); }}
+            title="Dispatch Inventory to Branch"
+            size="lg"
+          >
+            {dispatchModal && (() => {
+              const items = dispatchModal.itemIds
+                .map(id => inventory.find(i => i.id === id))
+                .filter((i): i is InventoryItem => !!i);
+              const selectedOutlet = outlets.find(o => o.id === dispatchOutletId);
+              const totalQty = items.reduce((sum, it) => sum + (Number(dispatchQuantities[it.id]) || 0), 0);
+              const totalValue = items.reduce((sum, it) => sum + (Number(dispatchQuantities[it.id]) || 0) * it.unitCost, 0);
+              const overflows = items.filter(it => deductFromMain && (Number(dispatchQuantities[it.id]) || 0) > it.quantity);
+
+              return (
+                <div className="space-y-4 p-1">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex gap-3 items-start">
+                    <Send size={18} className="text-emerald-700 mt-0.5" />
+                    <div className="text-sm text-emerald-900">
+                      <p className="font-semibold">Drop {items.length} item{items.length === 1 ? '' : 's'} into a branch</p>
+                      <p className="text-xs text-emerald-800 mt-0.5">
+                        Items are added to the selected branch&apos;s inventory (<code>outlet_inventory</code>). If a matching item already exists on that branch, the dispatched quantity is added to the running balance.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 flex items-center gap-2">
+                      <Store size={14} /> Target Branch
+                    </label>
+                    <select
+                      value={dispatchOutletId}
+                      onChange={(e) => setDispatchOutletId(e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/50 outline-none bg-background text-sm"
+                    >
+                      <option value="">— Choose a branch —</option>
+                      {outlets.map(o => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}{o.code ? ` (${o.code})` : ''}{o.is_main_branch ? ' — Main Branch' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {outlets.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-700">No active branches found. Create an outlet under Outlets to dispatch inventory.</p>
+                    )}
+                  </div>
+
+                  <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={deductFromMain}
+                      onChange={(e) => setDeductFromMain(e.target.checked)}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="font-medium">Deduct dispatched quantity from main inventory</span>
+                      <span className="block text-xs text-muted-foreground">
+                        When on, the dispatch is treated as a real stock movement: main quantities go down and a transaction is logged. Turn off to seed a branch without changing the main bakery&apos;s on-hand stock.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <div className="bg-secondary/50 px-3 py-2 text-sm font-medium flex items-center justify-between">
+                      <span>Items & quantities</span>
+                      <span className="text-xs text-muted-foreground">
+                        Total: {totalQty.toLocaleString()} units &bull; KSh {totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-border">
+                      {items.map(it => {
+                        const qty = Number(dispatchQuantities[it.id] ?? 0);
+                        const tooMuch = deductFromMain && qty > it.quantity;
+                        return (
+                          <div key={it.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{it.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                On hand: <span className="font-mono">{it.quantity}</span> {it.unit}
+                                {it.category ? <> &bull; {it.category}</> : null}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min={0}
+                                max={deductFromMain ? it.quantity : undefined}
+                                step="any"
+                                value={qty}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  setDispatchQuantities(prev => ({ ...prev, [it.id]: isNaN(v) ? 0 : v }));
+                                }}
+                                className={`w-24 px-2 py-1 border rounded text-sm text-right font-mono outline-none focus:ring-2 ${tooMuch ? 'border-red-400 focus:ring-red-300 bg-red-50' : 'border-border focus:ring-primary/50'}`}
+                              />
+                              <span className="text-xs text-muted-foreground w-10">{it.unit}</span>
+                              <button
+                                type="button"
+                                onClick={() => setDispatchQuantities(prev => ({ ...prev, [it.id]: it.quantity }))}
+                                className="text-[10px] uppercase font-semibold text-primary hover:underline px-1"
+                                title="Send all of the on-hand quantity"
+                              >
+                                All
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {overflows.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-xs text-red-700">
+                      {overflows.length === 1
+                        ? `Quantity for "${overflows[0].name}" exceeds on-hand stock.`
+                        : `${overflows.length} items have quantities greater than on-hand stock.`}
+                      &nbsp;Reduce the quantity or turn off &ldquo;Deduct from main inventory&rdquo;.
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end pt-3 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setDispatchModal(null)}
+                      disabled={dispatching}
+                      className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-secondary disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDispatchToBranch}
+                      disabled={dispatching || !dispatchOutletId || !selectedOutlet || items.length === 0 || overflows.length > 0 || totalQty <= 0}
+                      className="flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {dispatching ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                      {dispatching
+                        ? `Dispatching ${items.length}…`
+                        : selectedOutlet
+                          ? `Drop ${items.length} item${items.length === 1 ? '' : 's'} to ${selectedOutlet.name}`
+                          : `Choose a branch to continue`}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </Modal>
         </div>
       )}
 
