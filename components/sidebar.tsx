@@ -58,10 +58,13 @@ import {
   FileUp,
   History,
   QrCode,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { useSystemAlerts, SystemAlert } from '@/lib/use-system-alerts';
 
 interface NavItem {
   label: string;
@@ -235,6 +238,68 @@ interface SearchResult {
   group: NavGroup;
 }
 
+const alertTypeIcons: Record<SystemAlert['type'], LucideIcon> = {
+  low_stock: Package,
+  pending_requisition: ClipboardList,
+  outlet_requisition: ClipboardCopy,
+  overdue_debtor: TrendingDown,
+  pending_expense: Receipt,
+  production_active: Factory,
+  pending_order: ShoppingCart,
+};
+
+const alertSeverityColors: Record<SystemAlert['severity'], { bg: string; text: string; border: string }> = {
+  critical: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' },
+  warning: { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200' },
+  info: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
+};
+
+function SidebarAlertItem({ alert, collapsed, onClear }: { alert: SystemAlert; collapsed: boolean; onClear: (id: string) => void }) {
+  const Icon = alertTypeIcons[alert.type] || AlertTriangle;
+  const colors = alertSeverityColors[alert.severity];
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href={alert.href}
+            className={`flex items-center justify-center p-2 rounded-lg ${colors.bg} ${colors.text} transition-colors hover:opacity-80 relative`}
+          >
+            <Icon size={16} className={alert.severity === 'critical' ? 'animate-pulse' : ''} />
+            <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-0.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+              {alert.count > 9 ? '!' : alert.count}
+            </span>
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p className="font-semibold">{alert.title}</p>
+          <p className="text-xs opacity-75">{alert.message}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <div className={`flex items-start gap-2 px-2.5 py-2 rounded-lg ${colors.bg} border ${colors.border} group`}>
+      <Link href={alert.href} className="flex items-start gap-2 flex-1 min-w-0">
+        <Icon size={14} className={`${colors.text} shrink-0 mt-0.5 ${alert.severity === 'critical' ? 'animate-pulse' : ''}`} />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold leading-tight truncate">{alert.title}</p>
+          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 truncate">{alert.message}</p>
+        </div>
+      </Link>
+      <button
+        onClick={(e) => { e.preventDefault(); onClear(alert.id); }}
+        className="shrink-0 p-0.5 rounded hover:bg-white/50 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Clear this alert"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -245,6 +310,8 @@ export function Sidebar() {
   const { isAdmin, permissions, role, loading: permsLoading, isOutletAdmin } = useUserPermissions();
   const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
   const badges = useSidebarNotifications();
+  const { activeAlerts, activeCount: alertCount, clearAlert, clearAllAlerts } = useSystemAlerts();
+  const [alertsExpanded, setAlertsExpanded] = useState(true);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -530,7 +597,63 @@ export function Sidebar() {
           </div>
         ) : (
           /* Normal navigation view */
-          navGroups.map((group) => (
+          <>
+            {/* ── System Alerts Section ── */}
+            {alertCount > 0 && (
+              <div className="mb-4">
+                {collapsed ? (
+                  <div className="space-y-1 px-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => setCollapsed(false)}
+                          className="w-full flex items-center justify-center p-2 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors relative"
+                        >
+                          <AlertTriangle size={18} className={alertCount > 0 ? 'animate-pulse' : ''} />
+                          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                            {alertCount > 9 ? '!' : alertCount}
+                          </span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">{alertCount} system alert{alertCount !== 1 ? 's' : ''}</TooltipContent>
+                    </Tooltip>
+                    <div className="border-b border-border/40 mx-1" />
+                  </div>
+                ) : (
+                  <div>
+                    <button
+                      onClick={() => setAlertsExpanded(!alertsExpanded)}
+                      className="w-full flex items-center justify-between px-3 mb-1.5"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle size={11} className="text-amber-500" />
+                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Alerts</span>
+                        <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full font-bold">{alertCount}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); clearAllAlerts(); }}
+                          className="text-[9px] px-1.5 py-0.5 text-muted-foreground hover:text-foreground rounded transition-colors"
+                          title="Clear all alerts"
+                        >
+                          Clear
+                        </button>
+                        {alertsExpanded ? <ChevronUp size={12} className="text-muted-foreground" /> : <ChevronDown size={12} className="text-muted-foreground" />}
+                      </div>
+                    </button>
+                    {alertsExpanded && (
+                      <div className="space-y-1 px-1">
+                        {activeAlerts.map(alert => (
+                          <SidebarAlertItem key={alert.id} alert={alert} collapsed={false} onClear={clearAlert} />
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2 mb-1 border-b border-border/40 mx-1" />
+                  </div>
+                )}
+              </div>
+            )}
+            {navGroups.map((group) => (
             <div key={group.title} className="mb-4">
               {!collapsed && (
                 <p className="px-3 mb-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{group.title}</p>
@@ -569,7 +692,8 @@ export function Sidebar() {
                 })}
               </div>
             </div>
-          ))
+          ))}
+          </>
         )}
       </nav>
 
