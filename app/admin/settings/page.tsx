@@ -240,6 +240,7 @@ export default function SettingsPage() {
     message: 'System under automatic maintenance and backup. Please check back shortly.',
     started_at: null as string | null,
     started_by: null as string | null,
+    bypass_code: 'admin2024secure',
   });
   const [maintenanceSaving, setMaintenanceSaving] = useState(false);
   const [maintenanceMsg, setMaintenanceMsg] = useState('');
@@ -3329,6 +3330,73 @@ export default function SettingsPage() {
             </button>
           </div>
 
+          {/* Admin Bypass Code */}
+          <div className="border-2 border-dashed border-amber-300 rounded-lg p-6 bg-amber-50/30">
+            <h3 className="font-semibold mb-1 flex items-center gap-2">
+              <span className="text-lg">🔑</span> Admin Bypass Code
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              When maintenance is active, <strong>all users</strong> (including admins) see the maintenance page at <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">/admin</code>. To access the admin panel during maintenance, navigate to <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">/admin/{'{'} bypass code {'}'}</code>.
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={maintenanceMode.bypass_code}
+                  onChange={e => setMaintenanceMode({ ...maintenanceMode, bypass_code: e.target.value.replace(/[^a-zA-Z0-9_-]/g, '') })}
+                  className={inputCls}
+                  placeholder="e.g. admin2024secure"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+                  let code = 'admin';
+                  for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+                  setMaintenanceMode({ ...maintenanceMode, bypass_code: code });
+                }}
+                className="px-3 py-2 text-xs bg-secondary text-foreground rounded-lg hover:bg-secondary/80 border border-border font-medium whitespace-nowrap"
+              >
+                Generate New
+              </button>
+            </div>
+            {maintenanceMode.bypass_code && (
+              <div className="mt-3 p-3 bg-white rounded-lg border border-amber-200">
+                <p className="text-xs text-muted-foreground mb-1">Access URL during maintenance:</p>
+                <code className="text-sm font-mono text-amber-700 break-all">
+                  /admin/{maintenanceMode.bypass_code}
+                </code>
+              </div>
+            )}
+            <button
+              onClick={async () => {
+                setMaintenanceSaving(true);
+                try {
+                  await supabase.from('business_settings').upsert(
+                    { key: 'maintenance_mode', value: maintenanceMode, updated_at: new Date().toISOString() },
+                    { onConflict: 'key' }
+                  );
+                  logAudit({
+                    action: 'UPDATE',
+                    module: 'Maintenance Mode',
+                    record_id: 'maintenance_mode',
+                    details: { bypass_code_updated: true },
+                    trackChangelog: false,
+                  });
+                  setMaintenanceMsg('Bypass code saved');
+                } catch {
+                  setMaintenanceMsg('Failed to save bypass code');
+                }
+                setMaintenanceSaving(false);
+                setTimeout(() => setMaintenanceMsg(''), 3000);
+              }}
+              disabled={maintenanceSaving || !maintenanceMode.bypass_code}
+              className="mt-3 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium disabled:opacity-50"
+            >
+              {maintenanceSaving ? 'Saving...' : 'Save Bypass Code'}
+            </button>
+          </div>
+
           {/* How It Works */}
           <div className="border border-border rounded-lg p-6 bg-card">
             <h3 className="font-semibold mb-3">How Maintenance Mode Works</h3>
@@ -3343,15 +3411,15 @@ export default function SettingsPage() {
               <div className="flex items-start gap-3">
                 <span className="text-lg">🔒</span>
                 <div>
-                  <p className="font-medium text-foreground">Admin Panel</p>
-                  <p>All staff members see a professional maintenance & backup screen when trying to access any admin page.</p>
+                  <p className="font-medium text-foreground">Admin Panel Blocked</p>
+                  <p>When maintenance is ON, <strong>all users</strong> see the maintenance screen at <code className="bg-muted px-1 py-0.5 rounded text-[11px]">/admin</code> — including admins and the owner account. No one can access the admin panel normally.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <span className="text-lg">👑</span>
+                <span className="text-lg">🔑</span>
                 <div>
-                  <p className="font-medium text-foreground">Owner/Super Admin</p>
-                  <p>The primary owner account (super admin) can still access the admin panel to manage settings and disable maintenance mode.</p>
+                  <p className="font-medium text-foreground">Bypass Code Access</p>
+                  <p>Navigate to <code className="bg-muted px-1 py-0.5 rounded text-[11px]">/admin/{'{bypass_code}'}</code> to gain access during maintenance. This creates a session-based bypass so you can manage settings and disable maintenance mode. Only those who know the bypass code can get in.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
