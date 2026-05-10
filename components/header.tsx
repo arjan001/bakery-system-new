@@ -4,10 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-logger';
 import { useRouter } from 'next/navigation';
-import { Bell, ShoppingBag, Volume2, VolumeX, Download } from 'lucide-react';
+import { Bell, ShoppingBag, Volume2, VolumeX, Download, AlertTriangle, Package, ClipboardList, FileText, Receipt, Factory, ShoppingCart, X, Check } from 'lucide-react';
 import Link from 'next/link';
 import { usePwaInstall } from '@/components/pwa-install-prompt';
 import { useUserPermissions } from '@/lib/user-permissions';
+import { useSystemAlerts, SystemAlert } from '@/lib/use-system-alerts';
 
 interface OnlineOrderNotif {
   id: string;
@@ -108,6 +109,64 @@ class OrderAlarm {
   }
 }
 
+const alertIconMap: Record<SystemAlert['type'], React.ComponentType<{ size?: number; className?: string }>> = {
+  low_stock: Package,
+  pending_requisition: ClipboardList,
+  outlet_requisition: ClipboardList,
+  overdue_debtor: FileText,
+  pending_expense: Receipt,
+  production_active: Factory,
+  pending_order: ShoppingCart,
+};
+
+const severityStyles: Record<SystemAlert['severity'], { bg: string; icon: string; ring: string }> = {
+  critical: { bg: 'bg-red-50', icon: 'text-red-600', ring: 'ring-red-200' },
+  warning: { bg: 'bg-amber-50', icon: 'text-amber-600', ring: 'ring-amber-200' },
+  info: { bg: 'bg-blue-50', icon: 'text-blue-600', ring: 'ring-blue-200' },
+};
+
+function SystemAlertRow({ alert, onClear, onClose }: { alert: SystemAlert; onClear: (id: string) => void; onClose: () => void }) {
+  const Icon = alertIconMap[alert.type] || AlertTriangle;
+  const styles = severityStyles[alert.severity];
+
+  return (
+    <div className={`flex items-start gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors ${styles.bg}`}>
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${styles.icon} bg-white ring-1 ${styles.ring}`}>
+        <Icon size={14} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold">{alert.title}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{alert.message}</p>
+        <div className="flex items-center gap-1.5 mt-1">
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+            alert.severity === 'critical' ? 'bg-red-100 text-red-700' :
+            alert.severity === 'warning' ? 'bg-amber-100 text-amber-700' :
+            'bg-blue-100 text-blue-700'
+          }`}>
+            {alert.severity === 'critical' ? 'URGENT' : alert.severity === 'warning' ? 'ATTENTION' : 'INFO'}
+          </span>
+          <span className="text-[10px] font-bold text-muted-foreground">{alert.count} item{alert.count !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 shrink-0">
+        <Link
+          href={alert.href}
+          onClick={onClose}
+          className="text-[10px] px-2 py-0.5 bg-primary text-primary-foreground rounded font-medium hover:opacity-90"
+        >
+          View
+        </Link>
+        <button
+          onClick={() => onClear(alert.id)}
+          className="text-[10px] px-2 py-0.5 bg-secondary text-muted-foreground rounded hover:bg-secondary/70 flex items-center gap-0.5"
+        >
+          <X size={8} />Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Header() {
   const router = useRouter();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -119,8 +178,10 @@ export function Header() {
   const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
   const { isAdmin } = useUserPermissions();
   const alarmRef = useRef<OrderAlarm | null>(null);
-  // Track IDs of orders that have been acknowledged (clicked/dismissed)
   const acknowledgedRef = useRef<Set<string>>(new Set());
+  const { activeAlerts, activeCount: alertCount, clearAlert, clearAllAlerts } = useSystemAlerts();
+  const [showAlertDropdown, setShowAlertDropdown] = useState(false);
+  const alertRef = useRef<HTMLDivElement>(null);
 
   const [user, setUser] = useState({
     name: 'Admin User',
@@ -278,6 +339,7 @@ export function Header() {
     const handleClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowDropdown(false);
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotifDropdown(false);
+      if (alertRef.current && !alertRef.current.contains(e.target as Node)) setShowAlertDropdown(false);
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -406,6 +468,64 @@ export function Header() {
         >
           {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
+
+        {/* ── System Alerts Icon ── */}
+        <div className="relative" ref={alertRef}>
+          <button
+            onClick={() => setShowAlertDropdown(v => !v)}
+            className={`relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-secondary transition-colors ${alertCount > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}
+            title="System alerts"
+          >
+            <AlertTriangle
+              size={18}
+              strokeWidth={alertCount > 0 ? 2.5 : 2}
+              className={alertCount > 0 ? 'animate-pulse' : ''}
+            />
+            {alertCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {alertCount > 9 ? '9+' : alertCount}
+              </span>
+            )}
+          </button>
+
+          {showAlertDropdown && (
+            <div className="absolute right-0 mt-2 w-96 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="px-4 py-3 bg-secondary/50 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-amber-600" />
+                  <p className="text-sm font-bold">System Alerts</p>
+                  {alertCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full font-bold">
+                      {alertCount}
+                    </span>
+                  )}
+                </div>
+                {alertCount > 0 && (
+                  <button
+                    onClick={clearAllAlerts}
+                    className="text-[10px] px-2 py-1 bg-secondary text-muted-foreground rounded hover:bg-secondary/70 font-medium flex items-center gap-1"
+                  >
+                    <Check size={10} />
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              {activeAlerts.length === 0 ? (
+                <div className="px-4 py-8 text-center">
+                  <Check size={24} className="text-green-500/50 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">All clear — no active alerts</p>
+                </div>
+              ) : (
+                <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                  {activeAlerts.map(alert => (
+                    <SystemAlertRow key={alert.id} alert={alert} onClear={clearAlert} onClose={() => setShowAlertDropdown(false)} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ── Notification Bell ── */}
         <div className="relative" ref={notifRef}>
