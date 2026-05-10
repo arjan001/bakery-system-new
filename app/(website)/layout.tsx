@@ -7,6 +7,7 @@ import { CartProvider, useCart } from '@/lib/cart-context';
 import { supabase } from '@/lib/supabase';
 import { ShoppingBag, Search, User, Heart, X, Plus, Minus, Menu, ChevronRight, ChevronLeft, Mail } from 'lucide-react';
 import CookieConsent from '@/components/cookie-consent';
+import { MaintenanceScreen } from '@/components/maintenance-screen';
 
 // ─── Marquee Announcement Bar ────────────────────────────────────────────────
 function AnnouncementBar() {
@@ -711,9 +712,35 @@ function Footer() {
 }
 
 // ─── Root Layout ─────────────────────────────────────────────────────────────
-export default function WebsiteLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <CartProvider>
+function WebsiteContent({ children }: { children: React.ReactNode }) {
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceTemplate, setMaintenanceTemplate] = useState('general');
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    async function checkMaintenance() {
+      try {
+        const { data, error } = await supabase
+          .from('business_settings')
+          .select('value')
+          .eq('key', 'maintenance_mode')
+          .single();
+
+        if (!error && data?.value && typeof data.value === 'object') {
+          const val = data.value as Record<string, unknown>;
+          if (val.enabled === true) {
+            setMaintenanceMode(true);
+            setMaintenanceTemplate((val.template as string) || 'general');
+          }
+        }
+      } catch { /* table may not exist */ }
+      setChecking(false);
+    }
+    checkMaintenance();
+  }, []);
+
+  if (checking) {
+    return (
       <div className="min-h-screen flex flex-col">
         <AnnouncementBar />
         <Navbar />
@@ -723,6 +750,30 @@ export default function WebsiteLayout({ children }: { children: React.ReactNode 
         <NewsletterModal />
         <CookieConsent />
       </div>
+    );
+  }
+
+  if (maintenanceMode) {
+    return <MaintenanceScreen template={maintenanceTemplate} />;
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <AnnouncementBar />
+      <Navbar />
+      <main className="flex-1">{children}</main>
+      <Footer />
+      <CartDrawer />
+      <NewsletterModal />
+      <CookieConsent />
+    </div>
+  );
+}
+
+export default function WebsiteLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <CartProvider>
+      <WebsiteContent>{children}</WebsiteContent>
     </CartProvider>
   );
 }

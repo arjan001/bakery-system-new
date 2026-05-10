@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS business_settings (
 INSERT INTO business_settings (key, value, updated_at)
 VALUES (
   'maintenance_mode',
-  '{"enabled": false, "message": "System under automatic maintenance and backup. Please check back shortly.", "started_at": null, "started_by": null}'::jsonb,
+  '{"enabled": false, "template": "general", "started_at": null, "started_by": null}'::jsonb,
   NOW()
 )
 ON CONFLICT (key) DO NOTHING;

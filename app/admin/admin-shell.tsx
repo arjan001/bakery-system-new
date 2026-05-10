@@ -7,136 +7,8 @@ import { Sidebar } from '@/components/sidebar';
 import { Header } from '@/components/header';
 import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
 import { UserPermissionsProvider, useUserPermissions, getAllowedRoutes, matchesAllowedRoute } from '@/lib/user-permissions';
-import { Loader2, ShieldAlert, LogOut, Wrench, Shield, Clock, Globe, HardDrive, Server, WifiOff } from 'lucide-react';
-
-function MaintenanceScreen({ message }: { message?: string }) {
-  const [time, setTime] = useState(new Date());
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setProgress(prev => (prev >= 100 ? 0 : prev + 0.5));
-    }, 100);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/auth/login';
-  };
-
-  return (
-    <div className="min-h-screen bg-[#0a0e1a] flex items-center justify-center px-4 relative overflow-hidden">
-      {/* Animated grid background */}
-      <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
-
-      {/* Floating orbs */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-orange-500/10 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute -bottom-32 -right-32 w-[500px] h-[500px] bg-blue-500/8 rounded-full blur-[150px] animate-pulse" style={{ animationDelay: '2s' }} />
-        <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-purple-500/5 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '4s' }} />
-      </div>
-
-      <div className="max-w-lg w-full relative z-10">
-        <div className="bg-white/[0.03] backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/[0.06] overflow-hidden">
-          {/* Top status bar */}
-          <div className="flex items-center justify-between px-6 py-3 bg-white/[0.02] border-b border-white/[0.06]">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
-              <span className="text-[11px] font-mono text-orange-400/80 uppercase tracking-wider">System Maintenance Active</span>
-            </div>
-            <span className="text-[11px] font-mono text-white/30">{time.toLocaleTimeString()}</span>
-          </div>
-
-          <div className="p-8 pb-6">
-            {/* Icon */}
-            <div className="relative w-20 h-20 mx-auto mb-6">
-              <div className="absolute inset-0 bg-gradient-to-br from-orange-500/20 to-orange-600/10 rounded-2xl rotate-6 animate-pulse" />
-              <div className="relative w-20 h-20 bg-gradient-to-br from-orange-500 to-orange-700 rounded-2xl flex items-center justify-center shadow-xl shadow-orange-500/20">
-                <Wrench size={36} className="text-white" />
-              </div>
-            </div>
-
-            <h1 className="text-2xl font-bold text-white text-center mb-2">Under Maintenance</h1>
-            <p className="text-white/50 text-sm text-center mb-8 max-w-sm mx-auto leading-relaxed">
-              {message || 'We\'re performing scheduled maintenance to improve your experience. The system will be back shortly.'}
-            </p>
-
-            {/* Status cards */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              <div className="bg-white/[0.03] rounded-xl p-3.5 border border-white/[0.06]">
-                <div className="flex items-center gap-2 mb-2">
-                  <Server size={14} className="text-orange-400" />
-                  <span className="text-[10px] font-semibold text-white/40 uppercase tracking-wider">Systems</span>
-                </div>
-                <p className="text-xs text-orange-300 font-medium">Optimizing</p>
-              </div>
-              <div className="bg-white/[0.03] rounded-xl p-3.5 border border-white/[0.06]">
-                <div className="flex items-center gap-2 mb-2">
-                  <HardDrive size={14} className="text-blue-400" />
-                  <span className="text-[10px] font-semibold text-white/40 uppercase tracking-wider">Backup</span>
-                </div>
-                <p className="text-xs text-blue-300 font-medium">In Progress</p>
-              </div>
-              <div className="bg-white/[0.03] rounded-xl p-3.5 border border-white/[0.06]">
-                <div className="flex items-center gap-2 mb-2">
-                  <Globe size={14} className="text-green-400" />
-                  <span className="text-[10px] font-semibold text-white/40 uppercase tracking-wider">Website</span>
-                </div>
-                <p className="text-xs text-green-300 font-medium">Online</p>
-              </div>
-              <div className="bg-white/[0.03] rounded-xl p-3.5 border border-white/[0.06]">
-                <div className="flex items-center gap-2 mb-2">
-                  <WifiOff size={14} className="text-red-400" />
-                  <span className="text-[10px] font-semibold text-white/40 uppercase tracking-wider">Admin</span>
-                </div>
-                <p className="text-xs text-red-300 font-medium">Offline</p>
-              </div>
-            </div>
-
-            {/* Progress bar */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-semibold text-white/30 uppercase tracking-wider">Progress</span>
-                <span className="text-[10px] font-mono text-orange-400/60">{Math.round(progress)}%</span>
-              </div>
-              <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-orange-500 to-orange-400 rounded-full transition-all duration-200" style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-
-            <div className="bg-orange-500/[0.06] border border-orange-500/10 rounded-xl p-4 mb-6">
-              <div className="flex items-start gap-3">
-                <Clock size={16} className="text-orange-400 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-orange-200/70 leading-relaxed">
-                  The customer-facing website remains fully operational. Admin access will resume once maintenance is complete.
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="w-full px-6 py-3 bg-white/[0.05] text-white/80 font-medium text-sm rounded-xl hover:bg-white/[0.08] transition-all border border-white/[0.08] flex items-center justify-center gap-2"
-            >
-              <LogOut size={15} />
-              Sign Out
-            </button>
-          </div>
-
-          {/* Bottom bar */}
-          <div className="px-6 py-3 bg-white/[0.01] border-t border-white/[0.04] text-center">
-            <p className="text-[10px] text-white/20 font-mono">SNACKOH Bakers Management System</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { Loader2, ShieldAlert, LogOut, Shield } from 'lucide-react';
+import { MaintenanceScreen } from '@/components/maintenance-screen';
 
 // Impersonation banner shown when an admin is viewing the system as another user
 function ImpersonationBanner() {
@@ -320,7 +192,7 @@ export default function AdminShell({
   const [checking, setChecking] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [maintenanceTemplate, setMaintenanceTemplate] = useState('general');
   const [maintenanceBypassed, setMaintenanceBypassed] = useState(false);
 
   useEffect(() => {
@@ -393,7 +265,7 @@ export default function AdminShell({
             const val = maint.value as Record<string, unknown>;
             if (val.enabled === true) {
               setMaintenanceMode(true);
-              setMaintenanceMessage((val.message as string) || '');
+              setMaintenanceTemplate((val.template as string) || 'general');
 
               // Check for existing bypass session
               if (sessionStorage.getItem('maintenance_bypass') === 'true') {
@@ -464,7 +336,16 @@ export default function AdminShell({
 
   // Show maintenance screen unless bypassed
   if (maintenanceMode && !maintenanceBypassed) {
-    return <MaintenanceScreen message={maintenanceMessage} />;
+    return (
+      <MaintenanceScreen
+        template={maintenanceTemplate}
+        showLogout
+        onLogout={async () => {
+          await supabase.auth.signOut();
+          window.location.href = '/auth/login';
+        }}
+      />
+    );
   }
 
   return (
