@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { products } from '@/lib/products';
 import type { Offer } from '@/lib/products';
 import { logAudit } from '@/lib/audit-logger';
+import { MAINTENANCE_TEMPLATES } from '@/components/maintenance-screen';
 
 type SettingsTab = 'general' | 'chatgpt-ai' | 'offers' | 'navbar-ads' | 'newsletter' | 'social-media' | 'receipt' | 'payment' | 'family-bank' | 'posCard' | 'security' | 'backup' | 'sessions' | 'delivery' | 'kra-etims' | 'sha-nssf' | 'maintenance' | 'bug-tracker' | 'email';
 
@@ -237,7 +238,7 @@ export default function SettingsPage() {
   // ── Maintenance Mode ──
   const [maintenanceMode, setMaintenanceMode] = useState({
     enabled: false,
-    message: 'System under automatic maintenance and backup. Please check back shortly.',
+    template: 'general',
     started_at: null as string | null,
     started_by: null as string | null,
     bypass_code: 'admin2024secure',
@@ -3224,10 +3225,10 @@ export default function SettingsPage() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <span className="text-xl">🔧</span> Admin Panel Maintenance Mode
+                  <span className="text-xl">🔧</span> Maintenance Mode
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  When enabled, all staff accessing the admin panel will see a maintenance & backup screen. The customer-facing website remains fully operational.
+                  When enabled, the entire system — including the customer-facing website and admin panel — will display a maintenance page.
                 </p>
               </div>
               <button
@@ -3255,11 +3256,11 @@ export default function SettingsPage() {
                       trackChangelog: true,
                       changelogTitle: newEnabled ? 'Maintenance Mode Enabled' : 'Maintenance Mode Disabled',
                       changelogDescription: newEnabled
-                        ? 'System-wide maintenance mode activated. Non-admin users see maintenance screen.'
+                        ? 'System-wide maintenance mode activated. All users see maintenance screen.'
                         : 'Maintenance mode deactivated. System is fully accessible to all users.',
                       changelogCategory: 'infrastructure',
                     });
-                    setMaintenanceMsg(newEnabled ? 'Maintenance mode ENABLED - staff will see maintenance screen' : 'Maintenance mode DISABLED - admin panel is accessible');
+                    setMaintenanceMsg(newEnabled ? 'Maintenance mode ENABLED — entire system is in maintenance' : 'Maintenance mode DISABLED — system is fully accessible');
                   } catch {
                     setMaintenanceMsg('Failed to update maintenance mode');
                   }
@@ -3285,49 +3286,54 @@ export default function SettingsPage() {
                 <div className={`w-3 h-3 rounded-full ${maintenanceMode.enabled ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
                 <div>
                   <p className={`font-semibold text-sm ${maintenanceMode.enabled ? 'text-red-800' : 'text-green-800'}`}>
-                    {maintenanceMode.enabled ? 'Maintenance Mode is ACTIVE' : 'Admin Panel is Operational'}
+                    {maintenanceMode.enabled ? 'Maintenance Mode is ACTIVE' : 'System is Operational'}
                   </p>
                   <p className={`text-xs ${maintenanceMode.enabled ? 'text-red-600' : 'text-green-600'}`}>
                     {maintenanceMode.enabled
                       ? `Started ${maintenanceMode.started_at ? new Date(maintenanceMode.started_at).toLocaleString() : 'just now'}`
-                      : 'All staff can access the admin dashboard normally'}
+                      : 'All users can access the website and admin dashboard normally'}
                   </p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Custom Maintenance Message */}
+          {/* Maintenance Template Selection */}
           <div className="border border-border rounded-lg p-6 bg-card">
-            <h3 className="font-semibold mb-1">Maintenance Message</h3>
-            <p className="text-xs text-muted-foreground mb-4">Customize the message displayed to staff during maintenance</p>
-            <textarea
-              value={maintenanceMode.message}
-              onChange={e => setMaintenanceMode({ ...maintenanceMode, message: e.target.value })}
-              rows={3}
-              className={inputCls}
-              placeholder="System under automatic maintenance and backup..."
-            />
-            <button
-              onClick={async () => {
-                setMaintenanceSaving(true);
-                try {
-                  await supabase.from('business_settings').upsert(
-                    { key: 'maintenance_mode', value: maintenanceMode, updated_at: new Date().toISOString() },
-                    { onConflict: 'key' }
-                  );
-                  setMaintenanceMsg('Maintenance message updated');
-                } catch {
-                  setMaintenanceMsg('Failed to save message');
-                }
-                setMaintenanceSaving(false);
-                setTimeout(() => setMaintenanceMsg(''), 3000);
-              }}
-              disabled={maintenanceSaving}
-              className="mt-3 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium disabled:opacity-50"
-            >
-              {maintenanceSaving ? 'Saving...' : 'Save Message'}
-            </button>
+            <h3 className="font-semibold mb-1">Maintenance Template</h3>
+            <p className="text-xs text-muted-foreground mb-4">Select a predefined maintenance page template. This determines what visitors see during maintenance.</p>
+            <div className="grid gap-3">
+              {Object.entries(MAINTENANCE_TEMPLATES).map(([key, tpl]) => (
+                <button
+                  key={key}
+                  onClick={async () => {
+                    const updated = { ...maintenanceMode, template: key };
+                    setMaintenanceMode(updated);
+                    setMaintenanceSaving(true);
+                    try {
+                      await supabase.from('business_settings').upsert(
+                        { key: 'maintenance_mode', value: updated, updated_at: new Date().toISOString() },
+                        { onConflict: 'key' }
+                      );
+                      setMaintenanceMsg(`Template set to "${tpl.title}"`);
+                    } catch {
+                      setMaintenanceMsg('Failed to save template');
+                    }
+                    setMaintenanceSaving(false);
+                    setTimeout(() => setMaintenanceMsg(''), 3000);
+                  }}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition-all ${maintenanceMode.template === key ? 'border-orange-500 bg-orange-50/50 ring-1 ring-orange-200' : 'border-border hover:border-gray-300 bg-white'}`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-sm text-foreground">{tpl.title}</span>
+                    {maintenanceMode.template === key && (
+                      <span className="text-[10px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full uppercase">Active</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{tpl.message}</p>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Admin Bypass Code */}
@@ -3336,7 +3342,7 @@ export default function SettingsPage() {
               <span className="text-lg">🔑</span> Admin Bypass Code
             </h3>
             <p className="text-xs text-muted-foreground mb-4">
-              When maintenance is active, <strong>all users</strong> (including admins) see the maintenance page at <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">/admin</code>. To access the admin panel during maintenance, navigate to <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">/admin/{'{'} bypass code {'}'}</code>.
+              When maintenance is active, navigate to <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">/admin/{'{'} bypass code {'}'}</code> to access the admin panel.
             </p>
             <div className="flex items-center gap-3">
               <div className="flex-1 relative">
@@ -3404,22 +3410,22 @@ export default function SettingsPage() {
               <div className="flex items-start gap-3">
                 <span className="text-lg">🌐</span>
                 <div>
-                  <p className="font-medium text-foreground">Customer Website</p>
-                  <p>Remains fully operational. Online orders, browsing, and the store continue as normal.</p>
+                  <p className="font-medium text-foreground">Entire System Affected</p>
+                  <p>When enabled, both the customer-facing website and the admin panel display the selected maintenance template. No one can access the system normally.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <span className="text-lg">🔒</span>
+                <span className="text-lg">📋</span>
                 <div>
-                  <p className="font-medium text-foreground">Admin Panel Blocked</p>
-                  <p>When maintenance is ON, <strong>all users</strong> see the maintenance screen at <code className="bg-muted px-1 py-0.5 rounded text-[11px]">/admin</code> — including admins and the owner account. No one can access the admin panel normally.</p>
+                  <p className="font-medium text-foreground">Predefined Templates</p>
+                  <p>Choose from ready-made templates for common scenarios — scheduled maintenance, system updates, backups, errors, and security updates.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <span className="text-lg">🔑</span>
                 <div>
                   <p className="font-medium text-foreground">Bypass Code Access</p>
-                  <p>Navigate to <code className="bg-muted px-1 py-0.5 rounded text-[11px]">/admin/{'{bypass_code}'}</code> to gain access during maintenance. This creates a session-based bypass so you can manage settings and disable maintenance mode. Only those who know the bypass code can get in.</p>
+                  <p>Navigate to <code className="bg-muted px-1 py-0.5 rounded text-[11px]">/admin/{'{bypass_code}'}</code> to gain session-based access during maintenance. Only those who know the bypass code can get into the admin panel.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
